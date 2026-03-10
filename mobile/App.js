@@ -11,6 +11,7 @@ import ForecastScreen from './src/screens/ForecastScreen';
 import MLScreen from './src/screens/MLScreen';
 import DerivativesScreen from './src/screens/DerivativesScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
+import BacktestScreen from './src/screens/BacktestScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme';
 
@@ -31,6 +32,7 @@ export default function App() {
               'ML/AI': focused ? 'hardware-chip' : 'hardware-chip-outline',
               Derivatives: focused ? 'bar-chart' : 'bar-chart-outline',
               Scanner: focused ? 'search' : 'search-outline',
+              Backtest: focused ? 'time' : 'time-outline',
               Settings: focused ? 'settings' : 'settings-outline',
             };
             return <Ionicons name={icons[route.name] || 'home-outline'} size={size} color={color} />;
@@ -84,6 +86,11 @@ export default function App() {
           name="Scanner"
           component={ScannerScreen}
           options={{ headerTitle: 'Contract Scanner · All Markets' }}
+        />
+        <Tab.Screen
+          name="Backtest"
+          component={BacktestScreen}
+          options={{ headerTitle: 'Strategy Backtester' }}
         />
         <Tab.Screen
           name="Settings"
