@@ -303,6 +303,85 @@ async def control_bot(req: BotControlRequest, background_tasks: BackgroundTasks)
 
     raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")
 
+@app.get("/api/forecast")
+async def get_forecast(symbol: str = "BTCUSD"):
+    """Run MarketForecaster on recent candles and return structured forecast."""
+    try:
+        from src.intelligence.market_forecaster import MarketForecaster
+
+        candles = []
+        current_price = 0.0
+
+        if config.trading.dry_run:
+            import random, math
+            base = 67000.0
+            for i in range(100):
+                trend = 15.0 * math.sin(i / 10) + i * 3
+                noise = random.gauss(0, 80)
+                c = base + trend + noise
+                candles.append({
+                    "close": c, "open": c - random.uniform(-50, 50),
+                    "high": c + random.uniform(30, 120),
+                    "low":  c - random.uniform(30, 120),
+                    "volume": random.uniform(150, 400),
+                })
+            current_price = candles[-1]["close"]
+        else:
+            try:
+                raw = app_state.exchange.get_candles(symbol, resolution="1h", count=100)
+                candles = raw
+                ticker = app_state.exchange.get_ticker(symbol)
+                current_price = ticker.mark_price
+            except Exception:
+                return {"error": "Failed to fetch candle data", "symbol": symbol}
+
+        if not candles or current_price == 0.0:
+            return {"error": "No candle data available", "symbol": symbol}
+
+        forecaster = MarketForecaster(config)
+        fc = forecaster.forecast(candles, current_price)
+
+        tc = config.trading
+        leverage  = getattr(tc, "leverage", 5)
+        taker_fee = getattr(tc, "taker_fee_rate", 0.0005)
+        rt_fee_pct = taker_fee * 2 * leverage * 100
+
+        return {
+            "symbol": symbol,
+            "current_price": round(current_price, 2),
+            "candles_used": len(candles),
+            "adx": fc.adx,
+            "plus_di": fc.plus_di,
+            "minus_di": fc.minus_di,
+            "trend_direction": fc.trend_direction,
+            "trend_strength": fc.trend_strength_label,
+            "is_trending": fc.is_trending,
+            "market_regime": fc.market_regime,
+            "regime_confidence": fc.regime_confidence,
+            "forecast_price_1": fc.forecast_price_1,
+            "forecast_price_3": fc.forecast_price_3,
+            "forecast_price_5": fc.forecast_price_5,
+            "forecast_bias": fc.forecast_bias,
+            "forecast_slope_pct": fc.forecast_slope_pct,
+            "regression_r2": fc.regression_r2,
+            "vwap": fc.vwap,
+            "vwap_position": fc.vwap_position,
+            "vwap_distance_pct": fc.vwap_distance_pct,
+            "pivot_point": fc.pivot_point,
+            "resistance_levels": fc.resistance_levels,
+            "support_levels": fc.support_levels,
+            "breakeven_move_pct": fc.breakeven_move_pct,
+            "round_trip_fee_pct": rt_fee_pct,
+            "taker_fee_pct": taker_fee * 100,
+            "leverage": leverage,
+            "forecast_score": fc.forecast_score,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Forecast error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/trade")
 async def manual_trade(req: TradeRequest):
     """Manually place a trade (bypasses autonomous AI)."""

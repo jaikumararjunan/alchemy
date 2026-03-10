@@ -9,6 +9,7 @@ import { useStore } from '../store/useStore';
 import { colors, card } from '../theme';
 import StatCard from '../components/StatCard';
 import EmotionMeter from '../components/EmotionMeter';
+import ForecastCard from '../components/ForecastCard';
 import api from '../services/api';
 
 const { width } = Dimensions.get('window');
@@ -16,21 +17,23 @@ const { width } = Dimensions.get('window');
 export default function DashboardScreen() {
   const { market, emotion, geo, portfolio, botState, sentimentHistory,
           connected, setConnected, processWSData, setPortfolio, setMarket,
-          setEmotion, setGeo } = useStore();
+          setEmotion, setGeo, forecast, setForecast } = useStore();
   const [refreshing, setRefreshing] = React.useState(false);
 
   // Load initial data
   const loadData = useCallback(async () => {
     try {
-      const [port, mkt, emo] = await Promise.all([
+      const [port, mkt, emo, fc] = await Promise.all([
         api.getPortfolio(),
         api.getMarket(market.symbol || 'BTCUSD'),
         api.getEmotion(),
+        api.getForecast(market.symbol || 'BTCUSD'),
       ]);
       if (port.stats) setPortfolio(port.stats);
       if (mkt) setMarket(mkt);
       if (emo.emotion) setEmotion(emo.emotion);
       if (emo.geopolitical) setGeo(emo.geopolitical);
+      if (fc && !fc.error) setForecast(fc);
     } catch (e) {}
   }, []);
 
@@ -138,6 +141,11 @@ export default function DashboardScreen() {
           sub={`PF: ${(portfolio.profit_factor || 0).toFixed(2)}`}
           valueColor={colors.red}
         />
+      </View>
+
+      {/* Market Forecast */}
+      <View style={{ paddingHorizontal: 16 }}>
+        <ForecastCard forecast={{ ...forecast, current_price: forecast.current_price || market.mark_price || 0 }} />
       </View>
 
       {/* Emotion Intelligence */}

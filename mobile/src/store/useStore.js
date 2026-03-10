@@ -54,6 +54,18 @@ export const useStore = create((set, get) => ({
   trades: [],
   setTrades: (trades) => set({ trades }),
 
+  // Market Forecast
+  forecast: {
+    adx: 0, trend_direction: 'neutral', trend_strength: 'none',
+    market_regime: 'ranging', regime_confidence: 0,
+    forecast_bias: 'neutral', forecast_price_3: null, regression_r2: 0,
+    vwap: null, vwap_position: 'at', vwap_distance_pct: 0,
+    support_levels: [], resistance_levels: [],
+    breakeven_move_pct: 0, round_trip_fee_pct: 0, leverage: 5,
+    forecast_score: 0, current_price: 0, timestamp: null,
+  },
+  setForecast: (forecast) => set({ forecast }),
+
   // Bot State
   botState: {
     cycle: 0, mode: 'monitoring', total_trades: 0,
