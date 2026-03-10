@@ -32,30 +32,79 @@ class OrchestratorState:
     decisions: list = field(default_factory=list)  # AI decision log
 
 
-ORCHESTRATOR_SYSTEM_PROMPT = """You are ALCHEMY, a fully autonomous crypto trading AI for Delta Exchange.
+ORCHESTRATOR_SYSTEM_PROMPT = """You are ALCHEMY, a fully autonomous crypto trading AI for Delta Exchange India.
 You have complete authority to make trading decisions based on real-time market data,
-geopolitical intelligence, and emotional market analysis.
+geopolitical intelligence, emotional market analysis, and forward price forecasting.
 
-Your mission: Maximize risk-adjusted returns on Delta Exchange crypto derivatives
-while rigorously protecting capital.
+MISSION
+=======
+Maximise risk-adjusted returns on Delta Exchange crypto perpetuals
+while rigorously protecting capital — NET of all brokerage costs.
 
-Core Decision Framework:
-1. ANALYZE: Process emotion scores, geo events, technical indicators, and portfolio state
-2. DECIDE: Make clear buy/sell/hold decisions with specific parameters
-3. EXECUTE: Use provided tools to interact with the exchange
-4. MONITOR: Track positions, adjust stops, manage risk dynamically
-5. ADAPT: Learn from trade outcomes and adjust strategy
+DECISION FRAMEWORK  (execute in order every cycle)
+===================================================
+1. FORECAST  — call get_market_forecast FIRST to understand trend strength (ADX),
+               market regime (trending/ranging/volatile), and projected price direction.
+2. ANALYSE   — call get_technical_indicators and get_market_data
+3. SENTIMENT — call analyze_news_sentiment for emotion and geopolitical signals
+4. PORTFOLIO — call get_portfolio_state for current exposure
+5. DECIDE    — synthesise all signals; at least 2 of 3 layers must agree
+6. EXECUTE   — place_trade only when conditions are clearly met (see below)
+7. MONITOR   — update_stop_loss to trail profitable positions
 
-Risk Rules (NON-NEGOTIABLE):
-- Never risk more than 2% per trade
-- Always set stop losses before entering
-- Halt trading if daily drawdown > 5%
-- Reduce position size in high geopolitical risk environments
-- Never trade against strong momentum without high confidence
+TREND & REGIME RULES
+=====================
+TRENDING market (ADX >= 25): trade WITH the trend — never fade a strong move.
+  Enter in the direction of +DI > -DI (long) or -DI > +DI (short).
+  Use pullbacks to VWAP or nearest pivot support/resistance as entry points.
 
-You must call tools to get current data before making decisions.
-Always explain your reasoning in the 'reasoning' field of your decisions.
-Be decisive - markets wait for no one."""
+RANGING market (ADX < 20): mean-revert — buy support, sell resistance.
+  Use Bollinger Band extremes as entry signals. Position size 30-50% of normal.
+
+VOLATILE market: wait for breakout with volume. Minimum confidence 0.70.
+
+Linear regression forecast: if R2 > 0.40, give it significant weight.
+  Forecast price 3 periods ahead > current price = bullish bias.
+  Forecast price 3 periods ahead < current price = bearish bias.
+
+VWAP: price above VWAP = institutional bullish bias. Below = bearish.
+  Trading against VWAP direction requires confidence >= 0.75.
+
+BROKERAGE — COST RULES (NON-NEGOTIABLE)
+=========================================
+Delta Exchange charges 0.05% taker fee per side (market orders).
+At 5x leverage, round-trip cost on margin = approx 0.50% per trade.
+
+YOU MUST ACCOUNT FOR FEES IN EVERY TRADE:
+  - Minimum TP = breakeven_move_pct (from get_market_forecast) + at least 0.5% net profit
+  - Net R:R after fees must be >= 1.5 — reject any trade below this
+  - Fee estimate: size_usd x leverage x 0.001 (round-trip) in USD
+  - NEVER enter a trade where the expected move < fee cost
+  - Always report the estimated fee cost and net R:R in your reasoning
+
+RISK RULES (NON-NEGOTIABLE)
+============================
+- Never risk more than 2% of account balance per trade
+- Always set stop losses BEFORE entering — no naked positions
+- Halt all trading if daily drawdown > 5%
+- Reduce position size 50% when geo risk is HIGH
+- No new positions when geo risk is CRITICAL
+- Minimum net R:R (after fees) = 1.5
+- Minimum confidence = 0.50 (0.70 in volatile regime)
+- Maximum 3 open positions simultaneously
+
+STRONG BUY requires ALL of:
+  * Combined score >= +0.60
+  * Forecast bias = bullish (or neutral with ADX >= 35 and +DI > -DI)
+  * Price at or above VWAP
+  * Net R:R >= 1.5 after fees
+  * Geo risk != critical
+
+STRONG SELL requires equivalent bearish confirmation.
+HOLD when signals conflict or any condition above is missing.
+
+Always explain: which signals aligned, what forecast says,
+and exact net R:R calculation including fee cost."""
 
 
 class AIOrchestrator:
@@ -187,6 +236,25 @@ class AIOrchestrator:
                 }
             },
             {
+                "name": "get_market_forecast",
+                "description": (
+                    "Run the market forecaster: computes ADX trend strength, market regime "
+                    "(trending/ranging/volatile), linear-regression price projection "
+                    "(1/3/5 periods ahead with R² quality score), VWAP position, "
+                    "pivot-point support/resistance levels, and brokerage break-even distance. "
+                    "Call this FIRST in every cycle before making any trade decision."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "symbol":    {"type": "string", "description": "Trading symbol e.g. BTCUSD"},
+                        "timeframe": {"type": "string",
+                                      "enum": ["1m", "5m", "15m", "1h", "4h", "1d"],
+                                      "description": "Candle timeframe for analysis (default: 1h)"}
+                    }
+                }
+            },
+            {
                 "name": "get_trade_history",
                 "description": "Get recent trade history and performance statistics",
                 "input_schema": {
@@ -222,6 +290,8 @@ class AIOrchestrator:
                 return json.dumps(self._tool_update_stop_loss(tool_input))
             elif tool_name == "set_trading_mode":
                 return json.dumps(self._tool_set_trading_mode(tool_input))
+            elif tool_name == "get_market_forecast":
+                return json.dumps(self._tool_get_market_forecast(tool_input))
             elif tool_name == "get_trade_history":
                 return json.dumps(self._tool_get_trade_history(tool_input))
             else:
@@ -434,6 +504,12 @@ class AIOrchestrator:
         take_profit = price * (1 + tp_pct) if side == "buy" else price * (1 - tp_pct)
         contracts = max(int(size_usd * leverage), 1)
 
+        # Brokerage cost estimate
+        notional_usd   = size_usd * leverage
+        taker_fee_rate = getattr(self.config.trading, "taker_fee_rate", 0.0005)
+        round_trip_fee = round(notional_usd * taker_fee_rate * 2, 4)
+        fee_pct_margin = round(taker_fee_rate * 2 * leverage * 100, 4)
+
         self.state.total_trades += 1
         self.state.last_action = f"{side.upper()} {contracts} contracts @ ${price:,.0f}"
         self.state.last_action_time = datetime.now(timezone.utc).isoformat()
@@ -443,18 +519,22 @@ class AIOrchestrator:
             "action": f"{side.upper()} {symbol}",
             "price": price, "contracts": contracts,
             "stop_loss": round(stop_loss, 2), "take_profit": round(take_profit, 2),
+            "estimated_fee_usd": round_trip_fee,
+            "fee_pct_of_margin": fee_pct_margin,
             "reasoning": reasoning[:200],
         }
         self.state.decisions.insert(0, decision)
         self.state.decisions = self.state.decisions[:50]
 
         if self.config.trading.dry_run:
-            logger.info(f"[DRY RUN] Trade: {side} {contracts}x {symbol} @ {price}")
+            logger.info(f"[DRY RUN] Trade: {side} {contracts}x {symbol} @ {price} | fee≈${round_trip_fee:.2f}")
             return {
                 "status": "dry_run_simulated", "symbol": symbol, "side": side,
                 "contracts": contracts, "price": price,
                 "stop_loss": round(stop_loss, 2), "take_profit": round(take_profit, 2),
                 "size_usd": size_usd, "leverage": leverage,
+                "estimated_round_trip_fee_usd": round_trip_fee,
+                "fee_pct_of_margin": fee_pct_margin,
             }
 
         from src.exchange.delta_client import Order
@@ -497,6 +577,104 @@ class AIOrchestrator:
         logger.info(f"Trading mode changed to: {mode} | Reason: {reason}")
         return {"status": "ok", "mode": mode, "reason": reason}
 
+    def _tool_get_market_forecast(self, inp: dict) -> dict:
+        """Run MarketForecaster on cached candles and return structured result."""
+        from src.intelligence.market_forecaster import MarketForecaster
+        candles = self._cached_data.get("candles", [])
+        market  = self._cached_data.get("market", {})
+        price   = market.get("mark_price", 0.0)
+
+        # If no candles cached yet, fetch them first
+        if not candles or price == 0.0:
+            self._tool_get_market_data(inp)
+            candles = self._cached_data.get("candles", [])
+            market  = self._cached_data.get("market", {})
+            price   = market.get("mark_price", 67000.0)
+
+        forecaster = MarketForecaster(self.config)
+        fc = forecaster.forecast(candles, price)
+
+        tc = self.config.trading
+        leverage   = getattr(tc, "leverage", 5)
+        taker_fee  = getattr(tc, "taker_fee_rate", 0.0005)
+        rt_fee_pct = taker_fee * 2 * leverage * 100    # % of margin
+
+        result = {
+            # Trend
+            "adx":                  fc.adx,
+            "plus_di":              fc.plus_di,
+            "minus_di":             fc.minus_di,
+            "trend_direction":      fc.trend_direction,
+            "trend_strength":       fc.trend_strength_label,
+            "is_trending":          fc.is_trending,
+            "is_strong_trend":      fc.is_strong_trend,
+            # Regime
+            "market_regime":        fc.market_regime,
+            "regime_confidence":    fc.regime_confidence,
+            # Price forecast
+            "forecast_price_1":     fc.forecast_price_1,
+            "forecast_price_3":     fc.forecast_price_3,
+            "forecast_price_5":     fc.forecast_price_5,
+            "forecast_bias":        fc.forecast_bias,
+            "forecast_slope_pct":   fc.forecast_slope_pct,
+            "regression_r2":        fc.regression_r2,
+            # VWAP
+            "vwap":                 fc.vwap,
+            "vwap_position":        fc.vwap_position,
+            "vwap_distance_pct":    fc.vwap_distance_pct,
+            # Support / resistance
+            "pivot_point":          fc.pivot_point,
+            "resistance_levels":    fc.resistance_levels,
+            "support_levels":       fc.support_levels,
+            # Brokerage
+            "breakeven_move_pct":   fc.breakeven_move_pct,
+            "taker_fee_pct":        taker_fee * 100,
+            "round_trip_fee_pct_of_margin": rt_fee_pct,
+            "leverage":             leverage,
+            "fee_note": (
+                f"Round-trip fee = {rt_fee_pct:.2f}% of margin. "
+                f"TP must exceed {fc.breakeven_move_pct:.2f}% from entry to be profitable. "
+                f"Net R:R must be >= 1.5 after deducting fee from both reward and risk."
+            ),
+            # Composite score
+            "forecast_score":       fc.forecast_score,
+            # Decision hint
+            "trading_hint": self._forecast_hint(fc, price),
+        }
+        self._cached_data["forecast"] = result
+        return result
+
+    @staticmethod
+    def _forecast_hint(fc, price: float) -> str:
+        """Human-readable one-liner trading guidance from forecast data."""
+        hints = []
+        if fc.adx >= 35:
+            hints.append(f"Strong {fc.trend_direction} trend (ADX={fc.adx:.1f}) — trade WITH the trend")
+        elif fc.adx >= 25:
+            hints.append(f"Moderate trend (ADX={fc.adx:.1f}) — favour {fc.trend_direction} entries")
+        else:
+            hints.append(f"Ranging market (ADX={fc.adx:.1f}) — use mean-reversion strategy")
+
+        if fc.regression_r2 > 0.40:
+            hints.append(
+                f"Regression strongly {fc.forecast_bias} (R²={fc.regression_r2:.2f}, "
+                f"3-bar target ${fc.forecast_price_3:,.0f})"
+            )
+
+        if fc.vwap:
+            hints.append(f"Price {fc.vwap_position} VWAP (${fc.vwap:,.0f})")
+
+        if fc.support_levels:
+            hints.append(f"Key support: ${fc.support_levels[0]:,.0f}")
+        if fc.resistance_levels:
+            hints.append(f"Key resistance: ${fc.resistance_levels[0]:,.0f}")
+
+        hints.append(
+            f"Break-even (fees): {fc.breakeven_move_pct:.2f}% of margin — "
+            f"set TP > {fc.breakeven_move_pct + 0.5:.2f}% for minimum viable profit"
+        )
+        return " | ".join(hints)
+
     def _tool_get_trade_history(self, inp: dict) -> dict:
         limit = inp.get("limit", 10)
         perf = self.risk_manager.get_performance_summary()
@@ -530,22 +708,40 @@ class AIOrchestrator:
         logger.info(f"AI Cycle #{self.state.cycle_count} starting...")
 
         # Autonomous prompt - Claude decides what to do
+        tc  = self.config.trading
+        taker_fee   = getattr(tc, "taker_fee_rate", 0.0005)
+        leverage    = getattr(tc, "leverage", 5)
+        rt_fee_pct  = taker_fee * 2 * leverage * 100
+
         user_message = f"""
-You are running autonomous trading cycle #{self.state.cycle_count}.
-Current time: {datetime.now(timezone.utc).isoformat()}
-Trading symbol: {self.config.trading.symbol}
-Current mode: {self.state.current_mode}
-Dry run: {self.config.trading.dry_run}
+Autonomous trading cycle #{self.state.cycle_count}
+Time    : {datetime.now(timezone.utc).isoformat()}
+Symbol  : {self.config.trading.symbol}
+Mode    : {self.state.current_mode}
+Dry run : {self.config.trading.dry_run}
 
-Execute your full decision cycle:
-1. Get current market data and technical indicators
-2. Analyze news sentiment and geopolitical events
-3. Check portfolio state
-4. Based on all data, make a trading decision
-5. Execute any trades if conditions are right
-6. Set or update trading mode based on market conditions
+BROKERAGE REMINDER (Delta Exchange):
+  Taker fee : {taker_fee * 100:.3f}% per side
+  Leverage  : {leverage}×
+  Round-trip cost on margin ≈ {rt_fee_pct:.2f}%
+  → Net R:R must be ≥ 1.5 after fees to proceed
 
-Be decisive. Use your tools. Make the best decision for maximum risk-adjusted returns.
+REQUIRED STEPS (in this exact order):
+1. get_market_forecast  ← START HERE — determines trend, regime, forecast price, break-even
+2. get_technical_indicators  ← RSI, MACD, Bollinger Bands, VWAP confirmation
+3. analyze_news_sentiment    ← Claude emotion + geopolitical risk
+4. get_portfolio_state       ← current balance, positions, P&L
+5. get_market_data           ← latest tick price, spread, volume
+6. DECISION: based on all above, decide BUY / SELL / HOLD
+   - Confirm forecast + technicals + sentiment agree on direction
+   - Calculate net R:R after the {rt_fee_pct:.2f}% fee cost
+   - Only trade if net R:R ≥ 1.5 and confidence ≥ 0.50
+7. Execute trade or update stops if warranted
+8. Adjust trading mode if market regime has changed
+
+Trade WITH the trend in trending markets.
+Use mean-reversion in ranging markets.
+NEVER enter if the fee cost exceeds the expected profit.
 """
 
         messages = [{"role": "user", "content": user_message}]
