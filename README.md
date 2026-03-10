@@ -1,0 +1,2 @@
+# alchemy
+Trading with AI
