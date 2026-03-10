@@ -42,6 +42,10 @@ class AlchemyAPI {
   getDecisions(limit = 20) { return this.get(`/api/decisions?limit=${limit}`); }
   getConfig() { return this.get('/api/config'); }
   getForecast(symbol = 'BTCUSD') { return this.get(`/api/forecast?symbol=${symbol}`); }
+  getMlAnalysis(symbol = 'BTCUSD') { return this.get(`/api/ml/analyze?symbol=${symbol}`); }
+  getMlStatus() { return this.get('/api/ml/status'); }
+  trainModels() { return this.post('/api/ml/train', {}); }
+  analyzeSentiment(headlines) { return this.post('/api/ml/sentiment', { headlines }); }
 
   botControl(action, intervalMinutes) {
     return this.post('/api/bot/control', { action, interval_minutes: intervalMinutes });

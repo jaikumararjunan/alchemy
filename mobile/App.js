@@ -8,6 +8,7 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import PositionsScreen from './src/screens/PositionsScreen';
 import IntelligenceScreen from './src/screens/IntelligenceScreen';
 import ForecastScreen from './src/screens/ForecastScreen';
+import MLScreen from './src/screens/MLScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme';
 
@@ -25,6 +26,7 @@ export default function App() {
               Positions: focused ? 'analytics' : 'analytics-outline',
               Intelligence: focused ? 'bulb' : 'bulb-outline',
               Forecast: focused ? 'trending-up' : 'trending-up-outline',
+              'ML/AI': focused ? 'hardware-chip' : 'hardware-chip-outline',
               Settings: focused ? 'settings' : 'settings-outline',
             };
             return <Ionicons name={icons[route.name] || 'home-outline'} size={size} color={color} />;
@@ -63,6 +65,11 @@ export default function App() {
           name="Forecast"
           component={ForecastScreen}
           options={{ headerTitle: 'Market Forecast & Technicals' }}
+        />
+        <Tab.Screen
+          name="ML/AI"
+          component={MLScreen}
+          options={{ headerTitle: 'ML / AI Analysis Engine' }}
         />
         <Tab.Screen
           name="Settings"
