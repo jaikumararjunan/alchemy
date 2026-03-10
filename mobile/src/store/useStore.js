@@ -98,6 +98,10 @@ export const useStore = create((set, get) => ({
   derivativesSignal: null,
   setDerivativesSignal: (derivativesSignal) => set({ derivativesSignal }),
 
+  // Contract Scanner
+  scanResult: null,
+  setScanResult: (scanResult) => set({ scanResult }),
+
   // Config
   config: { dry_run: true, symbol: 'BTCUSD', interval_minutes: 30, leverage: 5 },
   setConfig: (config) => set({ config }),

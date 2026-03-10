@@ -38,18 +38,22 @@ geopolitical intelligence, emotional market analysis, and forward price forecast
 
 MISSION
 =======
-Maximise risk-adjusted returns on Delta Exchange crypto perpetuals
+Maximise risk-adjusted returns across ALL Delta Exchange crypto perpetuals
 while rigorously protecting capital — NET of all brokerage costs.
+You can trade ANY perpetual contract (BTC, ETH, SOL, BNB, XRP, AVAX, DOGE, MATIC, LINK, DOT, etc.)
+Use scan_all_contracts each cycle to find the BEST opportunity across the full universe.
 
 DECISION FRAMEWORK  (execute in order every cycle)
 ===================================================
-1. FORECAST  — call get_market_forecast FIRST to understand trend strength (ADX),
-               market regime (trending/ranging/volatile), and projected price direction.
-2. ANALYSE   — call get_technical_indicators and get_market_data
-3. SENTIMENT — call analyze_news_sentiment for emotion and geopolitical signals
-4. PORTFOLIO — call get_portfolio_state for current exposure
-5. DECIDE    — synthesise all signals; at least 2 of 3 layers must agree
-6. EXECUTE   — place_trade only when conditions are clearly met (see below)
+1. SCAN      — call scan_all_contracts FIRST. This scores ALL watched contracts and returns
+               a ranked list. Pick the top-ranked BUY or SELL opportunity.
+2. FORECAST  — call get_market_forecast for the chosen symbol to get ADX, regime, forecast.
+3. ANALYSE   — call get_technical_indicators and get_market_data for that symbol.
+4. SENTIMENT — call analyze_news_sentiment for emotion and geopolitical risk.
+5. PORTFOLIO — call get_portfolio_state — check available capital and open positions.
+6. DECIDE    — synthesise all signals; at least 2 of 3 layers must agree
+7. EXECUTE   — place_trade only when conditions are clearly met (see below)
+8. DIVERSIFY — you may open up to 3 positions across DIFFERENT symbols simultaneously.
 7. MONITOR   — update_stop_loss to trail profitable positions
 
 TREND & REGIME RULES
@@ -263,6 +267,46 @@ class AIOrchestrator:
                         "limit": {"type": "integer", "description": "Number of recent trades to retrieve"}
                     }
                 }
+            },
+            {
+                "name": "scan_all_contracts",
+                "description": (
+                    "Scan ALL watched perpetual contracts (BTC, ETH, SOL, BNB, XRP, AVAX, DOGE, MATIC, LINK, DOT, etc.) "
+                    "and return a ranked list of opportunities sorted by signal strength × confidence. "
+                    "Call this FIRST each cycle to find the best contract to trade. "
+                    "Returns: ranked_contracts (all scored), top_opportunities (actionable picks), "
+                    "composite_score, action (BUY/SELL/HOLD), confidence, ADX, regime, and suggested_size_pct "
+                    "for capital allocation across multiple positions."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "symbols": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional subset of symbols to scan. Omit to scan the full watch-list."
+                        },
+                        "top_n": {
+                            "type": "integer",
+                            "description": "Number of top opportunities to return (default 5)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_derivatives_data",
+                "description": (
+                    "Get derivatives market data for a symbol: funding rate, spot-perp basis, "
+                    "open interest trend, liquidation levels, and aggregate derivatives signal. "
+                    "Use this to understand positioning and squeeze risks before trading."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {"type": "string", "description": "Trading symbol e.g. BTCUSD"}
+                    },
+                    "required": ["symbol"]
+                }
             }
         ]
 
@@ -294,6 +338,10 @@ class AIOrchestrator:
                 return json.dumps(self._tool_get_market_forecast(tool_input))
             elif tool_name == "get_trade_history":
                 return json.dumps(self._tool_get_trade_history(tool_input))
+            elif tool_name == "scan_all_contracts":
+                return json.dumps(self._tool_scan_all_contracts(tool_input))
+            elif tool_name == "get_derivatives_data":
+                return json.dumps(self._tool_get_derivatives_data(tool_input))
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
         except Exception as e:
@@ -683,6 +731,70 @@ class AIOrchestrator:
                 "cycle_count": self.state.cycle_count,
                 "total_ai_trades": self.state.total_trades}
 
+    def _tool_scan_all_contracts(self, inp: dict) -> dict:
+        """Scan all watched perpetual contracts and return ranked opportunities."""
+        try:
+            from src.scanner.contract_scanner import ContractScanner
+            symbols = inp.get("symbols") or getattr(self.config.trading, "watch_list", None)
+            top_n   = inp.get("top_n", 5)
+            scanner = ContractScanner(
+                config=self.config,
+                exchange=self.exchange if not self.config.trading.dry_run else None,
+            )
+            result  = scanner.scan(symbols)
+            # Store top symbol in cache for subsequent tool calls
+            if result.top_opportunities:
+                best = result.top_opportunities[0]
+                self._cached_data["scan_best_symbol"] = best.symbol
+            top_n_result = result.top_opportunities[:top_n]
+            return {
+                "total_scanned": result.total_scanned,
+                "total_actionable": result.total_actionable,
+                "market_summary": result.market_summary,
+                "top_opportunities": [c.to_dict() for c in top_n_result],
+                "all_ranked": [c.to_dict() for c in result.ranked_contracts[:15]],
+                "scan_duration_seconds": round(result.scan_duration_seconds, 2),
+                "scan_timestamp": result.scan_timestamp,
+                "instruction": (
+                    "Pick the highest-ranked BUY or SELL from top_opportunities. "
+                    "Use that symbol for get_market_forecast and subsequent analysis. "
+                    "Check suggested_size_pct for capital allocation across positions."
+                ),
+            }
+        except Exception as e:
+            logger.error(f"scan_all_contracts failed: {e}")
+            return {"error": str(e), "fallback_symbol": self.config.trading.symbol}
+
+    def _tool_get_derivatives_data(self, inp: dict) -> dict:
+        """Return derivatives market intelligence for a symbol."""
+        try:
+            symbol = inp.get("symbol", self.config.trading.symbol)
+            from src.derivatives.derivatives_signal import DerivativesSignalEngine
+            import random as _r
+            engine = DerivativesSignalEngine()
+            if self.config.trading.dry_run:
+                price    = self._cached_data.get("market", {}).get("mark_price", 67000.0)
+                funding  = _r.gauss(0.0001, 0.0006)
+                spot     = price * (1 + _r.gauss(0, 0.001))
+                oi       = _r.uniform(400e6, 900e6)
+            else:
+                try:
+                    ticker  = self.exchange.get_ticker(symbol)
+                    price   = ticker.mark_price
+                    oi      = ticker.open_interest
+                    resp    = self.exchange._request("GET", f"/v2/tickers/{symbol}", auth=False)
+                    funding = float(resp.get("result", {}).get("funding_rate", 0.0001))
+                    spot    = price * 0.9997
+                except Exception:
+                    price = 67000.0; funding = 0.0001; spot = 66980.0; oi = 500e6
+            ds = engine.analyze(
+                current_price=price, funding_rate=funding,
+                spot_price=spot, open_interest=oi,
+            )
+            return ds.to_dict()
+        except Exception as e:
+            return {"error": str(e)}
+
     @staticmethod
     def _ema(data: list, period: int) -> float:
         k = 2 / (period + 1)
@@ -713,12 +825,16 @@ class AIOrchestrator:
         leverage    = getattr(tc, "leverage", 5)
         rt_fee_pct  = taker_fee * 2 * leverage * 100
 
+        watch = getattr(tc, "watch_list", [tc.symbol])
+        top_n = getattr(tc, "top_contracts_to_trade", 3)
+
         user_message = f"""
 Autonomous trading cycle #{self.state.cycle_count}
 Time    : {datetime.now(timezone.utc).isoformat()}
-Symbol  : {self.config.trading.symbol}
 Mode    : {self.state.current_mode}
 Dry run : {self.config.trading.dry_run}
+
+WATCH-LIST ({len(watch)} contracts): {', '.join(watch)}
 
 BROKERAGE REMINDER (Delta Exchange):
   Taker fee : {taker_fee * 100:.3f}% per side
@@ -727,21 +843,26 @@ BROKERAGE REMINDER (Delta Exchange):
   → Net R:R must be ≥ 1.5 after fees to proceed
 
 REQUIRED STEPS (in this exact order):
-1. get_market_forecast  ← START HERE — determines trend, regime, forecast price, break-even
-2. get_technical_indicators  ← RSI, MACD, Bollinger Bands, VWAP confirmation
-3. analyze_news_sentiment    ← Claude emotion + geopolitical risk
-4. get_portfolio_state       ← current balance, positions, P&L
-5. get_market_data           ← latest tick price, spread, volume
-6. DECISION: based on all above, decide BUY / SELL / HOLD
-   - Confirm forecast + technicals + sentiment agree on direction
+1. scan_all_contracts  ← START HERE — scores ALL {len(watch)} contracts and ranks them.
+                         Choose the highest-ranked BUY or SELL opportunity.
+                         You may trade up to {top_n} different symbols simultaneously.
+2. get_market_forecast for the chosen symbol
+3. get_technical_indicators + get_market_data for that symbol
+4. analyze_news_sentiment ← applies to all crypto broadly
+5. get_portfolio_state    ← check available capital and current positions
+6. OPTIONALLY: get_derivatives_data for the chosen symbol (funding/OI/squeeze risk)
+7. DECISION: BUY / SELL / HOLD
+   - Confirm scan score + forecast + technicals + sentiment all agree on direction
    - Calculate net R:R after the {rt_fee_pct:.2f}% fee cost
    - Only trade if net R:R ≥ 1.5 and confidence ≥ 0.50
-7. Execute trade or update stops if warranted
-8. Adjust trading mode if market regime has changed
+   - Use suggested_size_pct from scan to allocate capital across positions
+8. Execute trade(s) — may trade different symbols in the same cycle
+9. Update trailing stops on existing positions
+10. Adjust trading mode if regime has changed
 
 Trade WITH the trend in trending markets.
 Use mean-reversion in ranging markets.
-NEVER enter if the fee cost exceeds the expected profit.
+NEVER enter if fee cost exceeds expected profit.
 """
 
         messages = [{"role": "user", "content": user_message}]

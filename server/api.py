@@ -382,6 +382,70 @@ async def get_forecast(symbol: str = "BTCUSD"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/scanner/contracts")
+async def scanner_contracts():
+    """List all tradeable perpetual symbols in the watch-list."""
+    try:
+        from src.scanner.contract_scanner import DEFAULT_WATCH_LIST
+        watch = getattr(config.trading, "watch_list", DEFAULT_WATCH_LIST)
+        return {
+            "watch_list": watch,
+            "total": len(watch),
+            "top_contracts_to_trade": getattr(config.trading, "top_contracts_to_trade", 3),
+            "scan_all_contracts": getattr(config.trading, "scan_all_contracts", False),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/scanner/scan")
+async def scanner_scan(symbols: Optional[str] = None):
+    """
+    Scan all (or specified) perpetual contracts and return ranked opportunities.
+    symbols: optional comma-separated list, e.g. BTCUSD,ETHUSD,SOLUSD
+    """
+    try:
+        from src.scanner.contract_scanner import ContractScanner, DEFAULT_WATCH_LIST
+        sym_list = None
+        if symbols:
+            sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
+        if not sym_list:
+            sym_list = getattr(config.trading, "watch_list", DEFAULT_WATCH_LIST)
+
+        scanner = ContractScanner(
+            config=config,
+            exchange=app_state.exchange if not config.trading.dry_run else None,
+        )
+        result = scanner.scan(sym_list)
+        return result.to_dict()
+    except Exception as e:
+        logger.error(f"Scanner error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/scanner/top")
+async def scanner_top(n: int = 5):
+    """Return only the top N actionable opportunities from a quick scan."""
+    try:
+        from src.scanner.contract_scanner import ContractScanner, DEFAULT_WATCH_LIST
+        sym_list = getattr(config.trading, "watch_list", DEFAULT_WATCH_LIST)
+        scanner  = ContractScanner(
+            config=config,
+            exchange=app_state.exchange if not config.trading.dry_run else None,
+        )
+        result = scanner.scan(sym_list)
+        top_n  = result.top_opportunities[:n]
+        return {
+            "top_opportunities": [c.to_dict() for c in top_n],
+            "total_scanned": result.total_scanned,
+            "total_actionable": result.total_actionable,
+            "market_summary": result.market_summary,
+            "scan_timestamp": result.scan_timestamp,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/ml/analyze")
 async def ml_analyze(symbol: str = "BTCUSD"):
     """Run full ML pipeline: price prediction, anomaly detection, sentiment, signal."""
