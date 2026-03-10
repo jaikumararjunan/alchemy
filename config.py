@@ -55,10 +55,20 @@ class TradingConfig:
     bullish_threshold: float = field(default_factory=lambda: float(os.getenv("BULLISH_THRESHOLD", "0.6")))
     bearish_threshold: float = field(default_factory=lambda: float(os.getenv("BEARISH_THRESHOLD", "-0.6")))
     stop_loss_pct: float = 2.0
-    take_profit_pct: float = 4.0
+    # TP widened from 4.0 → 4.5 so net R:R stays ≥ 1.5 after round-trip brokerage
+    take_profit_pct: float = 4.5
     dry_run: bool = field(default_factory=lambda: os.getenv("DRY_RUN", "true").lower() == "true")
     leverage: int = 5
     analysis_interval_minutes: int = 30
+    # ── Brokerage fees (Delta Exchange India) ──────────────────────────────────
+    # Market orders (taker): 0.05 % per side → 0.10 % round-trip on notional.
+    # At 5× leverage the effective cost on margin ≈ 0.50 % per trade.
+    taker_fee_rate: float = field(
+        default_factory=lambda: float(os.getenv("TAKER_FEE_RATE", "0.0005"))
+    )
+    maker_fee_rate: float = field(
+        default_factory=lambda: float(os.getenv("MAKER_FEE_RATE", "0.0002"))
+    )
 
 
 @dataclass
