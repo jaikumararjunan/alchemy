@@ -41,6 +41,7 @@ class AlchemyAPI {
   getNews(limit = 20) { return this.get(`/api/news?limit=${limit}`); }
   getDecisions(limit = 20) { return this.get(`/api/decisions?limit=${limit}`); }
   getConfig() { return this.get('/api/config'); }
+  getForecast(symbol = 'BTCUSD') { return this.get(`/api/forecast?symbol=${symbol}`); }
 
   botControl(action, intervalMinutes) {
     return this.post('/api/bot/control', { action, interval_minutes: intervalMinutes });

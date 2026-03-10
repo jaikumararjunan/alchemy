@@ -6,29 +6,53 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest --forceExit",
+    "test:coverage": "jest --coverage --forceExit"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|zustand)"
+    ],
+    "moduleNameMapper": {
+      "^react-native-chart-kit$": "<rootDir>/__mocks__/react-native-chart-kit.js",
+      "^expo-status-bar$": "<rootDir>/__mocks__/expo-status-bar.js",
+      "^@expo/vector-icons$": "<rootDir>/__mocks__/@expo/vector-icons.js"
+    },
+    "testEnvironment": "node",
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx}",
+      "!src/**/*.test.{js,jsx}"
+    ]
   },
   "dependencies": {
+    "@expo/vector-icons": "^14.0.0",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/stack": "^6.4.1",
     "expo": "~51.0.0",
+    "expo-haptics": "~13.0.1",
+    "expo-notifications": "~0.28.3",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
     "react-native": "0.74.5",
-    "@react-navigation/native": "^6.1.18",
-    "@react-navigation/bottom-tabs": "^6.6.1",
-    "@react-navigation/stack": "^6.4.1",
+    "react-native-chart-kit": "^6.12.0",
+    "react-native-gesture-handler": "~2.16.1",
+    "react-native-reanimated": "~3.10.1",
     "react-native-safe-area-context": "4.10.5",
     "react-native-screens": "3.31.1",
     "react-native-svg": "15.2.0",
-    "react-native-chart-kit": "^6.12.0",
-    "@expo/vector-icons": "^14.0.0",
-    "expo-notifications": "~0.28.3",
-    "expo-haptics": "~13.0.1",
-    "zustand": "^4.5.4",
-    "react-native-reanimated": "~3.10.1",
-    "react-native-gesture-handler": "~2.16.1"
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0"
+    "@babel/core": "^7.24.0",
+    "@testing-library/react-hooks": "^8.0.1",
+    "@testing-library/react-native": "^12.9.0",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "jest-expo": "^51.0.4",
+    "react-test-renderer": "^18.2.0"
   },
   "private": true
 }

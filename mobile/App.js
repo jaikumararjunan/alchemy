@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DashboardScreen from './src/screens/DashboardScreen';
 import PositionsScreen from './src/screens/PositionsScreen';
 import IntelligenceScreen from './src/screens/IntelligenceScreen';
+import ForecastScreen from './src/screens/ForecastScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme';
 
@@ -22,7 +23,8 @@ export default function App() {
             const icons = {
               Dashboard: focused ? 'home' : 'home-outline',
               Positions: focused ? 'analytics' : 'analytics-outline',
-              Intelligence: focused ? 'brain' : 'bulb-outline',
+              Intelligence: focused ? 'bulb' : 'bulb-outline',
+              Forecast: focused ? 'trending-up' : 'trending-up-outline',
               Settings: focused ? 'settings' : 'settings-outline',
             };
             return <Ionicons name={icons[route.name] || 'home-outline'} size={size} color={color} />;
@@ -56,6 +58,11 @@ export default function App() {
           name="Intelligence"
           component={IntelligenceScreen}
           options={{ headerTitle: 'Emotion Intelligence' }}
+        />
+        <Tab.Screen
+          name="Forecast"
+          component={ForecastScreen}
+          options={{ headerTitle: 'Market Forecast & Technicals' }}
         />
         <Tab.Screen
           name="Settings"
