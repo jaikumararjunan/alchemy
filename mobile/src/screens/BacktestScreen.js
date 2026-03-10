@@ -21,8 +21,11 @@ export default function BacktestScreen() {
     candle_count: '500',
   });
   const [running, setRunning] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [result, setResult] = useState(null);
+  const [optResult, setOptResult] = useState(null);
   const [tab, setTab] = useState('metrics'); // 'metrics' | 'trades' | 'equity'
+  const [sortMetric, setSortMetric] = useState('sharpe_ratio');
 
   useFocusEffect(
     useCallback(() => {
@@ -63,6 +66,27 @@ export default function BacktestScreen() {
       Alert.alert('Backtest Error', e.message);
     } finally {
       setRunning(false);
+    }
+  };
+
+  const runOptimize = async () => {
+    setOptimizing(true);
+    setOptResult(null);
+    try {
+      const body = {
+        symbol: form.symbol,
+        timeframe: form.timeframe,
+        initial_balance: parseFloat(form.initial_balance) || 10000,
+        sort_metric: sortMetric,
+        candle_count: parseInt(form.candle_count) || 500,
+        quick: true,
+      };
+      const data = await api.post('/api/backtest/optimize', body);
+      setOptResult(data);
+    } catch (e) {
+      Alert.alert('Optimizer Error', e.message);
+    } finally {
+      setOptimizing(false);
     }
   };
 
@@ -163,17 +187,32 @@ export default function BacktestScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.runBtn, running && styles.runBtnDisabled]}
-          onPress={runBacktest}
-          disabled={running}
-        >
-          {running
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.runBtnText}>Run Backtest</Text>
-          }
-        </TouchableOpacity>
+        <View style={styles.row}>
+          <TouchableOpacity
+            style={[styles.runBtn, { flex: 1 }, running && styles.runBtnDisabled]}
+            onPress={runBacktest}
+            disabled={running || optimizing}
+          >
+            {running
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.runBtnText}>Run Backtest</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optimizeBtn, optimizing && styles.runBtnDisabled]}
+            onPress={runOptimize}
+            disabled={running || optimizing}
+          >
+            {optimizing
+              ? <ActivityIndicator color="#7c7cff" />
+              : <Text style={styles.optimizeBtnText}>Optimize</Text>
+            }
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* ── Optimizer Results ────────────────────────────── */}
+      {optResult && <OptimizerResults opt={optResult} />}
 
       {/* ── Results ─────────────────────────────────────── */}
       {result && (
@@ -329,6 +368,80 @@ function EquityTab({ curve, initial }) {
   );
 }
 
+/* ── Optimizer Results ───────────────────────────────── */
+const SORT_METRICS = [
+  { key: 'sharpe_ratio',    label: 'Sharpe' },
+  { key: 'total_return_pct', label: 'Return' },
+  { key: 'profit_factor',   label: 'PF' },
+  { key: 'sortino_ratio',   label: 'Sortino' },
+  { key: 'calmar_ratio',    label: 'Calmar' },
+];
+
+function OptimizerResults({ opt }) {
+  const best = opt.best_params;
+  const bm   = opt.best_metrics;
+  const retColor = (bm.total_return_pct || 0) >= 0 ? '#00c853' : '#ff5252';
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>
+        Optimizer Results · {opt.valid_combinations}/{opt.total_combinations} valid
+      </Text>
+
+      {/* Best params highlight */}
+      <View style={styles.bestBox}>
+        <Text style={styles.bestTitle}>Best Params ({opt.sort_metric.replace(/_/g, ' ')})</Text>
+        <View style={styles.row}>
+          <OptChip label={`SL ${best.stop_loss_pct}%`} />
+          <OptChip label={`TP ${best.take_profit_pct}%`} />
+          <OptChip label={`${best.leverage}x`} />
+          <OptChip label={`${best.position_size_pct}% pos`} />
+        </View>
+        <View style={[styles.row, { marginTop: 8 }]}>
+          <OptStat label="Return"  value={`${(bm.total_return_pct||0) > 0 ? '+' : ''}${(bm.total_return_pct||0).toFixed(2)}%`} color={retColor} />
+          <OptStat label="Sharpe"  value={(bm.sharpe_ratio||0).toFixed(2)} color={(bm.sharpe_ratio||0) >= 1 ? '#00c853' : '#ffd740'} />
+          <OptStat label="MaxDD"   value={`${(bm.max_drawdown_pct||0).toFixed(1)}%`} color="#ff5252" />
+          <OptStat label="WinRate" value={`${(bm.win_rate_pct||0).toFixed(0)}%`} color={(bm.win_rate_pct||0) >= 50 ? '#00c853' : '#ff5252'} />
+        </View>
+      </View>
+
+      {/* Top 10 ranked combos */}
+      {opt.results.slice(0, 10).map((r, i) => (
+        <View key={i} style={styles.optRow}>
+          <Text style={styles.optRank}>#{i + 1}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.optParams}>
+              SL {r.params.stop_loss_pct}% · TP {r.params.take_profit_pct}% · {r.params.leverage}x lev
+            </Text>
+            <Text style={styles.optMeta}>
+              {(r.total_return_pct||0) >= 0 ? '+' : ''}{(r.total_return_pct||0).toFixed(2)}% ret
+              {' '}| Sharpe {(r.sharpe_ratio||0).toFixed(2)}
+              {' '}| DD {(r.max_drawdown_pct||0).toFixed(1)}%
+              {' '}| {r.total_trades||0}T
+            </Text>
+          </View>
+          <Text style={[styles.optScore, { color: '#7c7cff' }]}>
+            {(r[opt.sort_metric]||0).toFixed(3)}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function OptChip({ label }) {
+  return <View style={styles.optChip}><Text style={styles.optChipText}>{label}</Text></View>;
+}
+
+function OptStat({ label, value, color }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <Text style={{ color: '#888', fontSize: 10 }}>{label}</Text>
+      <Text style={{ color: color || '#e0e0ff', fontSize: 13, fontWeight: '700' }}>{value}</Text>
+    </View>
+  );
+}
+
 /* ── Styles ─────────────────────────────────────────── */
 const styles = StyleSheet.create({
   container:      { flex: 1, backgroundColor: '#0a0a1a', padding: 16 },
@@ -355,6 +468,26 @@ const styles = StyleSheet.create({
   },
   runBtnDisabled: { opacity: 0.5 },
   runBtnText:     { color: '#fff', fontSize: 16, fontWeight: '700' },
+  optimizeBtn: {
+    borderWidth: 1.5, borderColor: '#7c7cff', borderRadius: 10,
+    paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center', marginTop: 16,
+  },
+  optimizeBtnText: { color: '#7c7cff', fontSize: 14, fontWeight: '700' },
+
+  bestBox: { backgroundColor: '#0d0d25', borderRadius: 10, padding: 12, marginBottom: 10 },
+  bestTitle: { color: '#7c7cff', fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  optChip: {
+    backgroundColor: '#1e1e3a', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6,
+  },
+  optChipText: { color: '#e0e0ff', fontSize: 11, fontWeight: '600' },
+  optRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1e1e3a',
+  },
+  optRank: { color: '#555', fontSize: 11, width: 24 },
+  optParams: { color: '#e0e0ff', fontSize: 12, fontWeight: '600' },
+  optMeta:   { color: '#888', fontSize: 10, marginTop: 1 },
+  optScore:  { fontSize: 13, fontWeight: '700', minWidth: 44, textAlign: 'right' },
 
   summaryCard: {
     backgroundColor: '#1a1a2e', borderRadius: 10, padding: 12, marginBottom: 8,

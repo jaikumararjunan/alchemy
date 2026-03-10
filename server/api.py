@@ -835,6 +835,70 @@ async def backtest_run(req: BacktestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class OptimizeRequest(BaseModel):
+    symbol: str = "BTCUSD"
+    timeframe: str = "1h"
+    initial_balance: float = 10000.0
+    sort_metric: str = "sharpe_ratio"
+    candle_count: int = 500
+    warmup_bars: int = 50
+    min_trades: int = 3
+    quick: bool = True   # use QUICK_GRID (≤20 combos); False = full DEFAULT_GRID
+
+
+@app.post("/api/backtest/optimize")
+async def backtest_optimize(req: OptimizeRequest):
+    """
+    Grid-search over SL/TP/leverage parameter space.
+    Returns top-50 ranked combinations with full performance metrics.
+    """
+    try:
+        from src.backtest.optimizer import StrategyOptimizer, QUICK_GRID, DEFAULT_GRID
+
+        candles = []
+        if config.trading.dry_run:
+            import random, math
+            base = 67000.0
+            price = base
+            for i in range(req.candle_count):
+                trend = 30.0 * math.sin(i / 40) + i * 1.2
+                noise = random.gauss(0, 120)
+                price = max(100.0, base + trend + noise)
+                h = price + random.uniform(40, 200)
+                l = price - random.uniform(40, 200)
+                candles.append({"close": price, "open": price + random.gauss(0, 60),
+                                 "high": h, "low": l, "volume": random.uniform(80, 600)})
+        else:
+            try:
+                candles = app_state.exchange.get_candles(
+                    req.symbol, resolution=req.timeframe, count=req.candle_count
+                )
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"Failed to fetch candles: {e}")
+
+        if len(candles) < req.warmup_bars + 10:
+            raise HTTPException(status_code=400, detail="Not enough candles for optimization")
+
+        grid = QUICK_GRID if req.quick else DEFAULT_GRID
+        optimizer = StrategyOptimizer(config)
+        result = optimizer.run(
+            candles=candles,
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            initial_balance=req.initial_balance,
+            grid=grid,
+            sort_metric=req.sort_metric,
+            warmup_bars=req.warmup_bars,
+            min_trades=req.min_trades,
+        )
+        return result.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Optimize error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/backtest/defaults")
 async def backtest_defaults():
     """Return default backtest parameters from config."""
