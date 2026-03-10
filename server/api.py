@@ -20,6 +20,7 @@ from src.intelligence import EmotionEngine, GeopoliticalAnalyzer, NewsFetcher
 from src.strategy import TradingStrategy
 from src.risk import RiskManager
 from src.autonomous import AIOrchestrator, PortfolioManager
+from src.storage import Database, TradeStore, DecisionStore
 from src.utils.logger import get_logger
 
 logger = get_logger("alchemy.server")
@@ -76,6 +77,10 @@ class AppState:
         self.last_broadcast: dict = {}
         self.bot_running: bool = False
         self.bot_task: Optional[asyncio.Task] = None
+        # Persistence
+        self.db = Database(getattr(config, "db_path", "alchemy.db"))
+        self.trade_store    = TradeStore(self.db)
+        self.decision_store = DecisionStore(self.db)
 
     def _broadcast_state(self, data: dict):
         self.last_broadcast = data
@@ -1009,6 +1014,50 @@ async def _run_single_cycle():
             pass
         app_state.portfolio.update_equity(balance)
 
+        # Persist decision
+        try:
+            if result and isinstance(result, dict):
+                action     = result.get("action", "HOLD")
+                signal     = result.get("signal", {}) or {}
+                app_state.decision_store.record_decision(
+                    symbol=config.trading.symbol,
+                    action=action,
+                    cycle=app_state.orchestrator.state.cycle_count,
+                    confidence=signal.get("confidence"),
+                    reasoning=result.get("reasoning"),
+                    emotion_score=result.get("emotion_score"),
+                    geo_risk=result.get("geo_risk"),
+                    forecast_score=signal.get("forecast_score"),
+                    market_regime=signal.get("market_regime"),
+                    adx=signal.get("adx"),
+                    signal_score=signal.get("score"),
+                    dry_run=config.trading.dry_run,
+                )
+                # Snapshot equity every cycle
+                app_state.decision_store.snapshot_equity(
+                    balance=balance,
+                    open_positions=len(result.get("positions", [])),
+                    cycle=app_state.orchestrator.state.cycle_count,
+                    dry_run=config.trading.dry_run,
+                )
+                # Persist any new trades from cycle
+                for t in result.get("new_trades", []):
+                    app_state.trade_store.record(
+                        symbol=t.get("symbol", config.trading.symbol),
+                        side=t.get("side", "buy"),
+                        size_usd=t.get("size_usd", 0),
+                        leverage=t.get("leverage", 1),
+                        entry_price=t.get("entry_price"),
+                        exit_price=t.get("exit_price"),
+                        pnl_usd=t.get("pnl_usd"),
+                        pnl_pct=t.get("pnl_pct"),
+                        fee_usd=t.get("fee_usd", 0),
+                        exit_reason=t.get("exit_reason"),
+                        dry_run=config.trading.dry_run,
+                    )
+        except Exception as pe:
+            logger.debug(f"Persistence error (non-critical): {pe}")
+
         # Broadcast updated state
         broadcast_data = {
             "type": "cycle_complete",
@@ -1022,6 +1071,51 @@ async def _run_single_cycle():
 
     except Exception as e:
         logger.error(f"Bot cycle error: {e}", exc_info=True)
+
+@app.get("/api/history/trades")
+async def history_trades(limit: int = 50, symbol: Optional[str] = None):
+    """Persisted trade history from SQLite."""
+    try:
+        trades = app_state.trade_store.get_recent(limit=limit, symbol=symbol)
+        stats  = app_state.trade_store.get_stats()
+        return {
+            "trades": trades,
+            "stats": stats,
+            "total": app_state.trade_store.count(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history/decisions")
+async def history_decisions(limit: int = 50, symbol: Optional[str] = None):
+    """Persisted AI decision history from SQLite."""
+    try:
+        decisions = app_state.decision_store.get_recent_decisions(limit=limit, symbol=symbol)
+        counts    = app_state.decision_store.get_decision_counts()
+        return {
+            "decisions": decisions,
+            "action_counts": counts,
+            "total": app_state.decision_store.count_decisions(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/history/equity")
+async def history_equity(limit: int = 200):
+    """Persisted equity curve from SQLite (most recent first)."""
+    try:
+        snapshots = app_state.decision_store.get_equity_history(limit=limit)
+        latest    = app_state.decision_store.get_latest_equity()
+        return {
+            "snapshots": snapshots,
+            "latest": latest,
+            "total": app_state.decision_store.count_snapshots(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Serve dashboard static files
 try:
