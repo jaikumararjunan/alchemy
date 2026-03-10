@@ -47,6 +47,14 @@ class AlchemyAPI {
   trainModels() { return this.post('/api/ml/train', {}); }
   analyzeSentiment(headlines) { return this.post('/api/ml/sentiment', { headlines }); }
 
+  // Derivatives endpoints
+  getDerivativesSignal(symbol = 'BTCUSD')       { return this.get(`/api/derivatives/signal?symbol=${symbol}`); }
+  getDerivativesFunding(symbol = 'BTCUSD')      { return this.get(`/api/derivatives/funding?symbol=${symbol}`); }
+  getDerivativesBasis(symbol = 'BTCUSD')        { return this.get(`/api/derivatives/basis?symbol=${symbol}`); }
+  getDerivativesOI(symbol = 'BTCUSD')           { return this.get(`/api/derivatives/oi?symbol=${symbol}`); }
+  getDerivativesLiquidations(symbol = 'BTCUSD') { return this.get(`/api/derivatives/liquidations?symbol=${symbol}`); }
+  getDerivativesOptions(symbol = 'BTCUSD')      { return this.get(`/api/derivatives/options?symbol=${symbol}`); }
+
   botControl(action, intervalMinutes) {
     return this.post('/api/bot/control', { action, interval_minutes: intervalMinutes });
   }

@@ -9,6 +9,7 @@ import PositionsScreen from './src/screens/PositionsScreen';
 import IntelligenceScreen from './src/screens/IntelligenceScreen';
 import ForecastScreen from './src/screens/ForecastScreen';
 import MLScreen from './src/screens/MLScreen';
+import DerivativesScreen from './src/screens/DerivativesScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme';
 
@@ -27,6 +28,7 @@ export default function App() {
               Intelligence: focused ? 'bulb' : 'bulb-outline',
               Forecast: focused ? 'trending-up' : 'trending-up-outline',
               'ML/AI': focused ? 'hardware-chip' : 'hardware-chip-outline',
+              Derivatives: focused ? 'bar-chart' : 'bar-chart-outline',
               Settings: focused ? 'settings' : 'settings-outline',
             };
             return <Ionicons name={icons[route.name] || 'home-outline'} size={size} color={color} />;
@@ -70,6 +72,11 @@ export default function App() {
           name="ML/AI"
           component={MLScreen}
           options={{ headerTitle: 'ML / AI Analysis Engine' }}
+        />
+        <Tab.Screen
+          name="Derivatives"
+          component={DerivativesScreen}
+          options={{ headerTitle: 'Derivatives Intelligence' }}
         />
         <Tab.Screen
           name="Settings"
