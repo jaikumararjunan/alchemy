@@ -10,6 +10,7 @@ import IntelligenceScreen from './src/screens/IntelligenceScreen';
 import ForecastScreen from './src/screens/ForecastScreen';
 import MLScreen from './src/screens/MLScreen';
 import DerivativesScreen from './src/screens/DerivativesScreen';
+import ScannerScreen from './src/screens/ScannerScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme';
 
@@ -29,6 +30,7 @@ export default function App() {
               Forecast: focused ? 'trending-up' : 'trending-up-outline',
               'ML/AI': focused ? 'hardware-chip' : 'hardware-chip-outline',
               Derivatives: focused ? 'bar-chart' : 'bar-chart-outline',
+              Scanner: focused ? 'search' : 'search-outline',
               Settings: focused ? 'settings' : 'settings-outline',
             };
             return <Ionicons name={icons[route.name] || 'home-outline'} size={size} color={color} />;
@@ -77,6 +79,11 @@ export default function App() {
           name="Derivatives"
           component={DerivativesScreen}
           options={{ headerTitle: 'Derivatives Intelligence' }}
+        />
+        <Tab.Screen
+          name="Scanner"
+          component={ScannerScreen}
+          options={{ headerTitle: 'Contract Scanner · All Markets' }}
         />
         <Tab.Screen
           name="Settings"

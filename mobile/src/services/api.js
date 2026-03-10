@@ -55,6 +55,14 @@ class AlchemyAPI {
   getDerivativesLiquidations(symbol = 'BTCUSD') { return this.get(`/api/derivatives/liquidations?symbol=${symbol}`); }
   getDerivativesOptions(symbol = 'BTCUSD')      { return this.get(`/api/derivatives/options?symbol=${symbol}`); }
 
+  // Contract Scanner
+  scanContracts(symbols) {
+    const q = symbols ? `?symbols=${encodeURIComponent(symbols.join(','))}` : '';
+    return this.get(`/api/scanner/scan${q}`);
+  }
+  getScannerContracts() { return this.get('/api/scanner/contracts'); }
+  getScannerTop(n = 5)  { return this.get(`/api/scanner/top?n=${n}`); }
+
   botControl(action, intervalMinutes) {
     return this.post('/api/bot/control', { action, interval_minutes: intervalMinutes });
   }

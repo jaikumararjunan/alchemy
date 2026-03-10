@@ -69,6 +69,19 @@ class TradingConfig:
     maker_fee_rate: float = field(
         default_factory=lambda: float(os.getenv("MAKER_FEE_RATE", "0.0002"))
     )
+    # ── Multi-contract scanning ────────────────────────────────────────────────
+    watch_list: List[str] = field(default_factory=lambda: [
+        s.strip() for s in os.getenv(
+            "WATCH_LIST",
+            "BTCUSD,ETHUSD,SOLUSD,BNBUSD,XRPUSD,AVAXUSD,DOGEUSD,MATICUSD,LINKUSD,DOTUSD"
+        ).split(",") if s.strip()
+    ])
+    top_contracts_to_trade: int = field(
+        default_factory=lambda: int(os.getenv("TOP_CONTRACTS_TO_TRADE", "3"))
+    )
+    scan_all_contracts: bool = field(
+        default_factory=lambda: os.getenv("SCAN_ALL_CONTRACTS", "false").lower() == "true"
+    )
 
 
 @dataclass
