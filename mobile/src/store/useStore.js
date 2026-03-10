@@ -90,6 +90,10 @@ export const useStore = create((set, get) => ({
     set({ sentimentHistory: next });
   },
 
+  // ML / AI Analysis
+  mlAnalysis: null,
+  setMlAnalysis: (mlAnalysis) => set({ mlAnalysis }),
+
   // Config
   config: { dry_run: true, symbol: 'BTCUSD', interval_minutes: 30, leverage: 5 },
   setConfig: (config) => set({ config }),

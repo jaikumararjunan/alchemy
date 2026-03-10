@@ -382,6 +382,128 @@ async def get_forecast(symbol: str = "BTCUSD"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/ml/analyze")
+async def ml_analyze(symbol: str = "BTCUSD"):
+    """Run full ML pipeline: price prediction, anomaly detection, sentiment, signal."""
+    try:
+        from src.ml.model_trainer import MLEngine
+
+        candles = []
+        current_price = 0.0
+
+        if config.trading.dry_run:
+            import random, math
+            base = 67000.0
+            for i in range(200):
+                trend = 20.0 * math.sin(i / 15) + i * 2.5
+                noise = random.gauss(0, 90)
+                c = base + trend + noise
+                candles.append({
+                    "close": c, "open": c - random.uniform(-60, 60),
+                    "high": c + random.uniform(40, 130),
+                    "low":  c - random.uniform(40, 130),
+                    "volume": random.uniform(100, 500),
+                })
+            current_price = candles[-1]["close"]
+        else:
+            try:
+                raw = app_state.exchange.get_candles(symbol, resolution="1h", count=200)
+                candles = raw
+                ticker = app_state.exchange.get_ticker(symbol)
+                current_price = ticker.mark_price
+            except Exception:
+                return {"error": "Failed to fetch candle data", "symbol": symbol}
+
+        if not candles or current_price == 0.0:
+            return {"error": "No candle data available", "symbol": symbol}
+
+        # Fetch recent headlines for sentiment
+        try:
+            articles = app_state.news_fetcher.fetch()
+            headlines = [a.title for a in articles[:20] if a.title]
+        except Exception:
+            headlines = []
+
+        ml_engine = MLEngine()
+        analysis = ml_engine.analyze(candles, current_price, headlines)
+        result = analysis.to_dict()
+        result["symbol"] = symbol
+        result["timestamp"] = datetime.now(timezone.utc).isoformat()
+        return result
+    except Exception as e:
+        logger.error(f"ML analyze error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ml/train")
+async def ml_train(background_tasks: BackgroundTasks):
+    """Trigger ML model retraining in background."""
+    try:
+        from src.ml.model_trainer import MLEngine
+
+        async def _do_train():
+            candles = []
+            if config.trading.dry_run:
+                import random, math
+                base = 67000.0
+                for i in range(300):
+                    trend = 20.0 * math.sin(i / 15) + i * 2.0
+                    noise = random.gauss(0, 100)
+                    c = base + trend + noise
+                    candles.append({
+                        "close": c, "open": c - random.uniform(-70, 70),
+                        "high": c + random.uniform(50, 150),
+                        "low":  c - random.uniform(50, 150),
+                        "volume": random.uniform(120, 600),
+                    })
+            else:
+                try:
+                    candles = app_state.exchange.get_candles(
+                        config.trading.symbol, resolution="1h", count=300
+                    )
+                except Exception:
+                    return
+            ml_engine = MLEngine()
+            ml_engine.train_now(candles)
+
+        background_tasks.add_task(_do_train)
+        return {"status": "training_started", "message": "ML models training in background"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ml/status")
+async def ml_status():
+    """Return current ML model status."""
+    try:
+        from src.ml.model_trainer import MLEngine
+        ml_engine = MLEngine()
+        return ml_engine.get_model_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SentimentRequest(BaseModel):
+    headlines: list[str]
+
+
+@app.post("/api/ml/sentiment")
+async def ml_sentiment(req: SentimentRequest):
+    """Analyze sentiment of provided headlines."""
+    try:
+        from src.ml.sentiment_analyzer import SentimentAnalyzer
+        analyzer = SentimentAnalyzer()
+        results = analyzer.analyze_batch(req.headlines)
+        agg = analyzer.aggregate(results)
+        return {
+            "aggregate": agg,
+            "individual": [r.to_dict() for r in results],
+            "count": len(results),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/trade")
 async def manual_trade(req: TradeRequest):
     """Manually place a trade (bypasses autonomous AI)."""
