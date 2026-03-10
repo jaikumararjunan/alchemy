@@ -12,6 +12,7 @@ import MLScreen from './src/screens/MLScreen';
 import DerivativesScreen from './src/screens/DerivativesScreen';
 import ScannerScreen from './src/screens/ScannerScreen';
 import BacktestScreen from './src/screens/BacktestScreen';
+import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { colors } from './src/theme';
 
@@ -33,6 +34,7 @@ export default function App() {
               Derivatives: focused ? 'bar-chart' : 'bar-chart-outline',
               Scanner: focused ? 'search' : 'search-outline',
               Backtest: focused ? 'time' : 'time-outline',
+              History:  focused ? 'library' : 'library-outline',
               Settings: focused ? 'settings' : 'settings-outline',
             };
             return <Ionicons name={icons[route.name] || 'home-outline'} size={size} color={color} />;
@@ -91,6 +93,11 @@ export default function App() {
           name="Backtest"
           component={BacktestScreen}
           options={{ headerTitle: 'Strategy Backtester' }}
+        />
+        <Tab.Screen
+          name="History"
+          component={HistoryScreen}
+          options={{ headerTitle: 'Trade & Decision History' }}
         />
         <Tab.Screen
           name="Settings"
