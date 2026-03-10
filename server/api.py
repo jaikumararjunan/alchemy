@@ -768,6 +768,92 @@ async def derivatives_signal(symbol: str = "BTCUSD"):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BacktestRequest(BaseModel):
+    symbol: str = "BTCUSD"
+    timeframe: str = "1h"
+    initial_balance: float = 10000.0
+    position_size_usd: Optional[float] = None
+    stop_loss_pct: float = 2.0
+    take_profit_pct: float = 4.5
+    leverage: int = 5
+    warmup_bars: int = 50
+    candle_count: int = 500
+
+
+@app.post("/api/backtest/run")
+async def backtest_run(req: BacktestRequest):
+    """
+    Run a backtest on synthetic (dry-run) or live historical candles.
+    Returns full trade log, equity curve, and performance metrics.
+    """
+    try:
+        from src.backtest.backtester import BacktestEngine
+
+        # Build candles
+        if config.trading.dry_run:
+            import random, math
+            candles = []
+            base = 67000.0
+            price = base
+            for i in range(req.candle_count):
+                trend = 30.0 * math.sin(i / 40) + i * 1.2
+                noise = random.gauss(0, 120)
+                price = max(100.0, base + trend + noise)
+                h = price + random.uniform(40, 200)
+                l = price - random.uniform(40, 200)
+                o = price + random.gauss(0, 60)
+                v = random.uniform(80, 600)
+                candles.append({"close": price, "open": o, "high": h, "low": l, "volume": v})
+        else:
+            try:
+                candles = app_state.exchange.get_candles(
+                    req.symbol, resolution=req.timeframe, count=req.candle_count
+                )
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"Failed to fetch candles: {e}")
+
+        if len(candles) < req.warmup_bars + 10:
+            raise HTTPException(status_code=400, detail="Not enough candles for backtest")
+
+        engine = BacktestEngine(config)
+        result = engine.run(
+            candles=candles,
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            initial_balance=req.initial_balance,
+            position_size_usd=req.position_size_usd,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            leverage=req.leverage,
+            warmup_bars=req.warmup_bars,
+        )
+        return result.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Backtest error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/backtest/defaults")
+async def backtest_defaults():
+    """Return default backtest parameters from config."""
+    tc = config.trading
+    return {
+        "symbol": tc.symbol,
+        "timeframe": "1h",
+        "initial_balance": 10000.0,
+        "position_size_usd": getattr(tc, "position_size_usd", 500.0),
+        "stop_loss_pct": getattr(tc, "stop_loss_pct", 2.0),
+        "take_profit_pct": getattr(tc, "take_profit_pct", 4.5),
+        "leverage": getattr(tc, "leverage", 5),
+        "warmup_bars": 50,
+        "candle_count": 500,
+        "available_timeframes": ["5m", "15m", "1h", "4h", "1d"],
+        "available_symbols": getattr(tc, "watch_list", ["BTCUSD", "ETHUSD", "SOLUSD"]),
+    }
+
+
 @app.post("/api/trade")
 async def manual_trade(req: TradeRequest):
     """Manually place a trade (bypasses autonomous AI)."""
