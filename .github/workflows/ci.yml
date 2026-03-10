@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint & Type Check ────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install ruff mypy
+
+      - name: Run ruff (lint + format check)
+        run: |
+          ruff check .
+          ruff format --check .
+
+  # ── Unit Tests ───────────────────────────────────────────────────────────────
+  test:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
+
+      - name: Run tests
+        env:
+          ANTHROPIC_API_KEY: "test-key"
+          DELTA_API_KEY: "test-key"
+          DELTA_API_SECRET: "test-secret"
+          DRY_RUN: "true"
+        run: |
+          pytest tests/ -v \
+            --cov=src \
+            --cov=server \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -x
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: matrix.python == '3.11'
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  # ── Docker Build ─────────────────────────────────────────────────────────────
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: alchemy:ci-${{ github.sha }}
