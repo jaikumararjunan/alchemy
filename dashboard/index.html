@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALCHEMY - AI Trading Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0a0e1a;--bg2:#111827;--bg3:#1a2235;--border:#1e2d45;--accent:#00d4ff;--accent2:#7c3aed;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
+.header{background:linear-gradient(135deg,#0d1b2a,#1a0a3e);border-bottom:1px solid var(--border);padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{font-size:22px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:3px}
+.header-right{display:flex;align-items:center;gap:16px}
+.status-badge{display:flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.status-live{background:rgba(16,185,129,.15);border:1px solid var(--green);color:var(--green)}
+.status-dry{background:rgba(245,158,11,.15);border:1px solid var(--yellow);color:var(--yellow)}
+.status-dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite}
+.dot-green{background:var(--green)}.dot-yellow{background:var(--yellow)}.dot-red{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.container{max-width:1600px;margin:0 auto;padding:20px 24px}
+.grid{display:grid;gap:16px}
+.g-4{grid-template-columns:repeat(4,1fr)}.g-3{grid-template-columns:repeat(3,1fr)}.g-2{grid-template-columns:repeat(2,1fr)}
+.g-1-2{grid-template-columns:1fr 2fr}.g-2-1{grid-template-columns:2fr 1fr}.g-1-1-1{grid-template-columns:1fr 1fr 1fr}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,212,255,.3),transparent)}
+.card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:12px}
+.kpi{text-align:center}
+.kpi-value{font-size:28px;font-weight:700;line-height:1}
+.kpi-label{font-size:11px;color:var(--text2);margin-top:6px;text-transform:uppercase;letter-spacing:1px}
+.kpi-change{font-size:12px;font-weight:600;margin-top:4px}
+.pos{color:var(--green)}.neg{color:var(--red)}.neu{color:var(--text2)}
+.chart-box{position:relative;height:200px}.chart-box-lg{position:relative;height:280px}.chart-box-sm{position:relative;height:140px}
+.emotion-bar{height:8px;border-radius:4px;background:linear-gradient(90deg,#ef4444 0%,#f59e0b 30%,#64748b 50%,#10b981 70%,#00d4ff 100%);position:relative;margin:12px 0}
+.emotion-needle{width:3px;height:16px;background:#fff;border-radius:2px;position:absolute;top:-4px;transform:translateX(-50%);transition:left .5s ease;box-shadow:0 0 8px rgba(255,255,255,.5)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px 12px;color:var(--text3);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid rgba(30,45,69,.5);white-space:nowrap}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+.badge-buy{background:rgba(16,185,129,.15);color:var(--green)}.badge-sell{background:rgba(239,68,68,.15);color:var(--red)}
+.badge-hold{background:rgba(100,116,139,.15);color:var(--text2)}.badge-open{background:rgba(0,212,255,.1);color:var(--accent)}
+.badge-closed{background:rgba(100,116,139,.1);color:var(--text2)}
+.decision-feed{max-height:360px;overflow-y:auto}
+.decision-item{padding:10px 12px;border-left:3px solid var(--border);margin-bottom:8px;background:rgba(255,255,255,.02);border-radius:0 6px 6px 0}
+.geo-events{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto}
+.geo-event{display:flex;gap:10px;align-items:flex-start;padding:8px;background:rgba(255,255,255,.02);border-radius:6px}
+.geo-severity{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:3px}
+.sev-critical{background:var(--red)}.sev-high{background:var(--yellow)}.sev-medium{background:var(--accent)}.sev-low{background:var(--green)}
+.emo-bars{display:flex;flex-direction:column;gap:6px}
+.emo-row{display:flex;align-items:center;gap:8px;font-size:11px}
+.emo-name{width:80px;color:var(--text2)}
+.emo-bar-track{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.emo-bar-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.news-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto}
+.news-item{padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.02);cursor:pointer}
+.indicators-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.indicator-box{background:var(--bg3);border-radius:6px;padding:8px;text-align:center}
+.ind-name{font-size:10px;color:var(--text3);margin-bottom:4px}.ind-value{font-size:16px;font-weight:700}.ind-signal{font-size:9px;margin-top:2px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .2s}
+.btn-start{background:var(--green);color:#000}.btn-stop{background:var(--red);color:#fff}
+.btn-cycle{background:var(--accent2);color:#fff}.btn-dry{background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid var(--yellow)}
+.btn:hover{transform:translateY(-1px);filter:brightness(1.1)}
+.ticker{font-size:32px;font-weight:700;font-variant-numeric:tabular-nums}
+.ticker-change{font-size:14px;font-weight:600;padding:3px 8px;border-radius:4px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+@media(max-width:1200px){.g-4{grid-template-columns:repeat(2,1fr)}.g-3{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:768px){.g-4,.g-3,.g-2,.g-1-2,.g-2-1,.g-1-1-1{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="logo">ALCHEMY</div>
+    <div style="font-size:11px;color:var(--text3)">Autonomous AI Crypto Trading</div>
+  </div>
+  <div class="header-right">
+    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)">
+      <span class="status-dot dot-yellow" id="conn-dot"></span>
+      <span id="conn-label">Connecting...</span>
+    </div>
+    <div class="status-badge status-dry" id="mode-badge">
+      <span class="status-dot dot-yellow"></span>
+      <span id="mode-text">DRY RUN</span>
+    </div>
+    <div style="font-size:12px;color:var(--text2)" id="header-time"></div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="controls">
+    <button class="btn btn-start" onclick="botControl('start')">▶ Start Bot</button>
+    <button class="btn btn-stop" onclick="botControl('stop')">■ Stop</button>
+    <button class="btn btn-cycle" onclick="botControl('cycle')">⟳ Run Cycle</button>
+    <button class="btn btn-dry" onclick="toggleDryRun()" id="btn-dry">Paper Trading ON</button>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <label style="font-size:12px;color:var(--text2)">Symbol:</label>
+      <select id="sym-select" onchange="changeSymbol()" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px;font-size:12px">
+        <option>BTCUSD</option><option>ETHUSD</option><option>SOLUSD</option><option>BNBUSD</option>
+      </select>
+      <label style="font-size:12px;color:var(--text2)">Interval (min):</label>
+      <input id="interval-in" type="number" value="30" min="5" max="480" style="width:60px;background:var(--bg3);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:6px;font-size:12px">
+    </div>
+  </div>
+
+  <!-- KPI Row -->
+  <div class="grid g-4" style="margin-bottom:16px">
+    <div class="card kpi" style="box-shadow:0 0 20px rgba(0,212,255,.1)">
+      <div class="card-title">Portfolio Value</div>
+      <div class="kpi-value" id="kpi-equity">$0.00</div>
+      <div class="kpi-change" id="kpi-equity-chg">-</div>
+    </div>
+    <div class="card kpi">
+      <div class="card-title">Daily P&amp;L</div>
+      <div class="kpi-value" id="kpi-daily">$0.00</div>
+      <div class="kpi-change" id="kpi-daily-pct">-</div>
+    </div>
+    <div class="card kpi">
+      <div class="card-title">Win Rate</div>
+      <div class="kpi-value" id="kpi-winrate">0%</div>
+      <div class="kpi-change neu" id="kpi-trades">0 trades</div>
+    </div>
+    <div class="card kpi">
+      <div class="card-title">Max Drawdown</div>
+      <div class="kpi-value neg" id="kpi-dd">0.00%</div>
+      <div class="kpi-change neu" id="kpi-pf">Profit Factor: 0.00</div>
+    </div>
+  </div>
+
+  <!-- Market + Emotion + Bot State -->
+  <div class="grid g-3" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Live Market</div>
+      <div class="ticker" id="live-price">$--</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <span class="ticker-change" id="price-change">-</span>
+        <span style="font-size:12px;color:var(--text3)" id="vol-24h">Vol: -</span>
+      </div>
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div style="font-size:10px;color:var(--text3)">Bid</div><div style="font-size:14px;color:var(--green)" id="mkt-bid">-</div></div>
+        <div><div style="font-size:10px;color:var(--text3)">Ask</div><div style="font-size:14px;color:var(--red)" id="mkt-ask">-</div></div>
+        <div><div style="font-size:10px;color:var(--text3)">Open Interest</div><div style="font-size:13px" id="mkt-oi">-</div></div>
+        <div><div style="font-size:10px;color:var(--text3)">Spread</div><div style="font-size:13px" id="mkt-spread">-</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Claude Emotion Intelligence</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <div><div style="font-size:22px;font-weight:700" id="emo-dominant">--</div><div style="font-size:11px;color:var(--text3)">Dominant Emotion</div></div>
+        <div style="text-align:right"><div style="font-size:20px;font-weight:700" id="emo-score">0.000</div><div style="font-size:11px;color:var(--text3)">Sentiment Score</div></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);display:flex;justify-content:space-between;margin-bottom:2px"><span>BEARISH</span><span>NEUTRAL</span><span>BULLISH</span></div>
+      <div class="emotion-bar"><div class="emotion-needle" id="emo-needle" style="left:50%"></div></div>
+      <div class="emo-bars">
+        <div class="emo-row"><span class="emo-name">Fear</span><div class="emo-bar-track"><div class="emo-bar-fill" id="emo-fear" style="width:0%;background:#ef4444"></div></div></div>
+        <div class="emo-row"><span class="emo-name">Greed</span><div class="emo-bar-track"><div class="emo-bar-fill" id="emo-greed" style="width:0%;background:#10b981"></div></div></div>
+        <div class="emo-row"><span class="emo-name">Panic</span><div class="emo-bar-track"><div class="emo-bar-fill" id="emo-panic" style="width:0%;background:#dc2626"></div></div></div>
+        <div class="emo-row"><span class="emo-name">Optimism</span><div class="emo-bar-track"><div class="emo-bar-fill" id="emo-optimism" style="width:0%;background:#00d4ff"></div></div></div>
+        <div class="emo-row"><span class="emo-name">Uncertainty</span><div class="emo-bar-track"><div class="emo-bar-fill" id="emo-uncertainty" style="width:0%;background:#f59e0b"></div></div></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap">
+        <div style="font-size:11px"><span style="color:var(--text3)">Geo Risk: </span><span id="geo-risk" style="font-weight:600">-</span></div>
+        <div style="font-size:11px"><span style="color:var(--text3)">Bias: </span><span id="trade-bias" style="font-weight:600">-</span></div>
+        <div style="font-size:11px"><span style="color:var(--text3)">Confidence: </span><span id="emo-conf">-</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Autonomous AI State</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <div class="indicator-box"><div class="ind-name">AI Mode</div><div class="ind-value" id="ai-mode" style="font-size:14px">--</div></div>
+        <div class="indicator-box"><div class="ind-name">Cycles Run</div><div class="ind-value" id="cycle-count">0</div></div>
+        <div class="indicator-box"><div class="ind-name">Total Trades</div><div class="ind-value" id="total-trades">0</div></div>
+        <div class="indicator-box"><div class="ind-name">Open Positions</div><div class="ind-value" id="open-pos">0</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Last AI Action:</div>
+      <div style="font-size:12px;font-weight:600" id="last-action">-</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px" id="last-action-time">-</div>
+      <div style="margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;font-size:11px;color:var(--text2);line-height:1.5;max-height:70px;overflow-y:auto" id="ai-status-msg">Waiting for first cycle...</div>
+    </div>
+  </div>
+
+  <!-- Equity Chart + Technicals -->
+  <div class="grid g-2-1" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Equity Curve &amp; Drawdown</div>
+      <div class="chart-box-lg"><canvas id="equity-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Technical Indicators</div>
+      <div class="indicators-grid">
+        <div class="indicator-box"><div class="ind-name">RSI (14)</div><div class="ind-value" id="t-rsi">-</div><div class="ind-signal" id="t-rsi-sig">-</div></div>
+        <div class="indicator-box"><div class="ind-name">MACD</div><div class="ind-value" id="t-macd">-</div><div class="ind-signal" id="t-macd-sig">-</div></div>
+        <div class="indicator-box"><div class="ind-name">Trend</div><div class="ind-value" id="t-trend" style="font-size:12px">-</div><div class="ind-signal" id="t-trend-sig">-</div></div>
+        <div class="indicator-box"><div class="ind-name">SMA 20</div><div class="ind-value" id="t-sma20" style="font-size:13px">-</div><div class="ind-signal" id="t-sma20-sig">-</div></div>
+        <div class="indicator-box"><div class="ind-name">BB Width</div><div class="ind-value" id="t-bbw">-</div><div class="ind-signal" id="t-bbw-sig">-</div></div>
+        <div class="indicator-box"><div class="ind-name">Vol Ratio</div><div class="ind-value" id="t-vol">-</div><div class="ind-signal" id="t-vol-sig">-</div></div>
+        <div class="indicator-box"><div class="ind-name">EMA 12</div><div class="ind-value" id="t-ema12" style="font-size:13px">-</div><div class="ind-signal">-</div></div>
+        <div class="indicator-box"><div class="ind-name">EMA 26</div><div class="ind-value" id="t-ema26" style="font-size:13px">-</div><div class="ind-signal">-</div></div>
+        <div class="indicator-box"><div class="ind-name">ROC (10)</div><div class="ind-value" id="t-roc">-</div><div class="ind-signal" id="t-roc-sig">-</div></div>
+      </div>
+      <div style="margin-top:12px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Bollinger Band Position</div>
+        <div style="height:8px;background:var(--bg3);border-radius:4px;position:relative">
+          <div id="bb-needle" style="width:3px;height:16px;background:#fff;position:absolute;top:-4px;border-radius:2px;left:50%;transform:translateX(-50%);transition:left .5s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:2px">
+          <span id="bb-lower">Lower</span><span>Mid</span><span id="bb-upper">Upper</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Geo + AI Reasoning + Sentiment Chart -->
+  <div class="grid g-1-1-1" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Geopolitical Events</div>
+      <div style="display:flex;gap:12px;margin-bottom:12px">
+        <div style="text-align:center"><div style="font-size:22px;font-weight:700" id="geo-score">0.000</div><div style="font-size:10px;color:var(--text3)">Geo Impact</div></div>
+        <div style="flex:1">
+          <div style="font-size:11px;margin-bottom:4px">Bullish: <span class="pos" id="geo-bull">0.000</span></div>
+          <div style="font-size:11px">Bearish: <span class="neg" id="geo-bear">0.000</span></div>
+          <div style="font-size:11px;margin-top:4px">Events: <span style="font-weight:600" id="geo-count">0</span></div>
+        </div>
+      </div>
+      <div class="geo-events" id="geo-events-list"><div style="color:var(--text3);font-size:12px">Detecting events...</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Claude AI Reasoning</div>
+      <div id="ai-reasoning" style="font-size:12px;color:var(--text2);line-height:1.7;font-style:italic;background:var(--bg3);padding:10px;border-radius:6px;margin-bottom:10px;min-height:80px">Waiting for AI analysis...</div>
+      <div class="card-title">Key Events Detected</div>
+      <div id="key-events" style="display:flex;flex-direction:column;gap:4px"><div style="font-size:11px;color:var(--text3)">No events yet...</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Sentiment History</div>
+      <div class="chart-box"><canvas id="sentiment-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- AI Decisions + Trade Table -->
+  <div class="grid g-1-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">AI Decision Feed</div>
+      <div class="decision-feed" id="decision-feed"><div style="color:var(--text3);font-size:12px;padding:20px;text-align:center">Waiting for AI decisions...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Trade History</div>
+      <div style="overflow-x:auto">
+        <table><thead><tr>
+          <th>ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
+          <th>Size</th><th>P&amp;L</th><th>Status</th><th>Conf</th><th>Time</th>
+        </tr></thead><tbody id="trade-table"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- News + PnL Chart -->
+  <div class="grid g-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Geopolitical News Feed (Live)</div>
+      <div class="news-list" id="news-list"><div style="color:var(--text3);font-size:12px;padding:10px">Loading news...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Performance P&amp;L Chart</div>
+      <div class="chart-box"><canvas id="pnl-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const co={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:true,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:10}}}}};
+
+const equityChart=new Chart(document.getElementById('equity-chart').getContext('2d'),{
+  type:'line',data:{labels:[],datasets:[
+    {label:'Equity',data:[],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.05)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
+    {label:'DD',data:[],borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.05)',fill:true,tension:.4,pointRadius:0,borderWidth:1.5,yAxisID:'dd'}
+  ]},
+  options:{...co,scales:{x:{display:true,ticks:{color:'#64748b',font:{size:9},maxTicksLimit:6},grid:{color:'rgba(255,255,255,.02)'}},y:{display:true,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9},callback:v=>'$'+v.toLocaleString()}},dd:{display:true,position:'right',grid:{drawOnChartArea:false},ticks:{color:'#ef4444',font:{size:9},callback:v=>v+'%'}}}}
+});
+
+const sentChart=new Chart(document.getElementById('sentiment-chart').getContext('2d'),{
+  type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.08)',fill:true,tension:.5,pointRadius:3,borderWidth:2}]},
+  options:{...co,scales:{x:{display:true,ticks:{color:'#64748b',font:{size:9},maxTicksLimit:5}},y:{display:true,min:-1,max:1,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}}}}
+});
+
+const pnlChart=new Chart(document.getElementById('pnl-chart').getContext('2d'),{
+  type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:[],borderRadius:4}]},
+  options:{...co,scales:{x:{display:true,ticks:{color:'#64748b',font:{size:9}}},y:{display:true,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}}}}
+});
+
+let ws;
+function connectWS(){
+  ws=new WebSocket('ws://'+window.location.host+'/ws');
+  ws.onopen=()=>{document.getElementById('conn-dot').className='status-dot dot-green';document.getElementById('conn-label').textContent='Connected';};
+  ws.onclose=()=>{document.getElementById('conn-dot').className='status-dot dot-red';document.getElementById('conn-label').textContent='Disconnected';setTimeout(connectWS,3000);};
+  ws.onmessage=e=>{try{processData(JSON.parse(e.data));}catch(err){}};
+}
+
+function processData(d){
+  if(d.type==='cycle_complete'){
+    if(d.portfolio)updatePortfolio(d.portfolio);
+    if(d.equity_curve)updateEquityChart(d.equity_curve);
+    if(d.trade_log)updateTradeTable(d.trade_log);
+  }
+  const cd=d.cached_data||d;
+  if(cd.market)updateMarket(cd.market);
+  if(cd.emotion)updateEmotion(cd.emotion);
+  if(cd.geo)updateGeo(cd.geo);
+  if(cd.technicals)updateTechnicals(cd.technicals);
+  if(cd.bot_state)updateBotState(cd.bot_state);
+  if(cd.recent_decisions)updateDecisions(cd.recent_decisions);
+  if(cd.top_articles)updateNews(cd.top_articles);
+}
+
+function fmt(v,d=2){return v.toLocaleString('en',{minimumFractionDigits:d,maximumFractionDigits:d});}
+function fmtP(v){return (v>=0?'+':'')+fmt(v);}
+function $id(id){return document.getElementById(id);}
+
+function updateMarket(m){
+  const p=m.mark_price||m.last_price||0;
+  $id('live-price').textContent='$'+fmt(p);
+  const chg=m.change_24h_pct||0;
+  const ce=$id('price-change');
+  ce.textContent=(chg>=0?'+':'')+chg.toFixed(2)+'%';
+  ce.style.cssText='font-size:14px;font-weight:600;padding:3px 8px;border-radius:4px;background:'+(chg>=0?'rgba(16,185,129,.15)':'rgba(239,68,68,.15)')+';color:'+(chg>=0?'#10b981':'#ef4444');
+  $id('vol-24h').textContent='Vol: '+(m.volume_24h||0).toLocaleString();
+  if(m.bid)$id('mkt-bid').textContent='$'+fmt(m.bid);
+  if(m.ask)$id('mkt-ask').textContent='$'+fmt(m.ask);
+  if(m.open_interest)$id('mkt-oi').textContent='$'+m.open_interest.toLocaleString();
+  if(m.spread_pct)$id('mkt-spread').textContent=m.spread_pct+'%';
+}
+
+function updateEmotion(e){
+  const score=e.sentiment_score||e.crypto_sentiment||0;
+  const emo=e.dominant_emotion||'neutral';
+  $id('emo-dominant').textContent=emo.toUpperCase();
+  $id('emo-score').textContent=fmtP(score,3);
+  $id('emo-score').style.color=score>0?'#10b981':score<0?'#ef4444':'#94a3b8';
+  $id('emo-needle').style.left=((score+1)/2*100).toFixed(1)+'%';
+  const conf=e.confidence||0;
+  $id('emo-conf').textContent=(conf*100).toFixed(0)+'%';
+  const riskColors={low:'#10b981',medium:'#f59e0b',high:'#ef4444',critical:'#dc2626'};
+  const risk=e.geopolitical_risk||'low';
+  $id('geo-risk').textContent=risk.toUpperCase();
+  $id('geo-risk').style.color=riskColors[risk]||'#94a3b8';
+  const biasColors={strong_buy:'#10b981',buy:'#34d399',neutral:'#94a3b8',sell:'#f87171',strong_sell:'#ef4444'};
+  const bias=e.trading_bias||'neutral';
+  $id('trade-bias').textContent=bias.replace(/_/g,' ').toUpperCase();
+  $id('trade-bias').style.color=biasColors[bias]||'#94a3b8';
+  const emo_data=e.emotions_breakdown||e.emotions||{};
+  ['fear','greed','panic','optimism','uncertainty'].forEach(k=>{
+    const el=$id('emo-'+k);
+    if(el)el.style.width=((emo_data[k]||0)*100).toFixed(0)+'%';
+  });
+  if(e.reasoning)$id('ai-reasoning').textContent=e.reasoning;
+  if(e.key_events&&e.key_events.length){
+    $id('key-events').innerHTML=e.key_events.slice(0,5).map(ev=>`<div style="font-size:11px;padding:3px 6px;background:rgba(0,212,255,.05);border-radius:4px">• ${ev}</div>`).join('');
+  }
+  sentChart.data.labels.push(new Date().toLocaleTimeString());
+  sentChart.data.datasets[0].data.push(score);
+  sentChart.data.datasets[0].borderColor=score>=0?'#10b981':'#ef4444';
+  sentChart.data.datasets[0].backgroundColor=score>=0?'rgba(16,185,129,.08)':'rgba(239,68,68,.08)';
+  if(sentChart.data.labels.length>30){sentChart.data.labels.shift();sentChart.data.datasets[0].data.shift();}
+  sentChart.update('none');
+}
+
+function updateGeo(g){
+  const score=g.total_impact||0;
+  $id('geo-score').textContent=fmtP(score,3);
+  $id('geo-score').style.color=score>0?'#10b981':score<0?'#ef4444':'#94a3b8';
+  $id('geo-bull').textContent=(g.bullish_pressure||0).toFixed(3);
+  $id('geo-bear').textContent=(g.bearish_pressure||0).toFixed(3);
+  $id('geo-count').textContent=g.event_count||0;
+  const evts=g.dominant_events||[];
+  if(evts.length){
+    $id('geo-events-list').innerHTML=evts.map(ev=>{
+      const imp=ev.impact||0;
+      const sc=Math.abs(imp)>=0.7?'sev-critical':Math.abs(imp)>=0.5?'sev-high':Math.abs(imp)>=0.3?'sev-medium':'sev-low';
+      return `<div class="geo-event"><div class="geo-severity ${sc}"></div><div><div style="font-size:11px;font-weight:600">${ev.description||''}</div><div style="font-size:10px;color:${imp>0?'#10b981':'#ef4444'}">${imp>=0?'+':''}${imp.toFixed(2)} | ${ev.region||'Global'}</div></div></div>`;
+    }).join('');
+  }
+}
+
+function updateTechnicals(t){
+  const rsi=t.rsi||0;
+  $id('t-rsi').textContent=rsi.toFixed(1);
+  $id('t-rsi').style.color=rsi<30?'#10b981':rsi>70?'#ef4444':'#e2e8f0';
+  $id('t-rsi-sig').textContent=rsi<30?'OVERSOLD':rsi>70?'OVERBOUGHT':'NEUTRAL';
+  const macd=t.macd||0;
+  $id('t-macd').textContent=fmtP(macd,4);
+  $id('t-macd').style.color=macd>0?'#10b981':'#ef4444';
+  $id('t-macd-sig').textContent=macd>0?'BULLISH':'BEARISH';
+  $id('t-macd-sig').style.color=macd>0?'#10b981':'#ef4444';
+  const trend=t.trend||'sideways';
+  $id('t-trend').textContent=trend.replace(/_/g,' ');
+  $id('t-trend').style.color={strong_uptrend:'#10b981',uptrend:'#34d399',sideways:'#94a3b8',downtrend:'#f87171',strong_downtrend:'#ef4444'}[trend]||'#94a3b8';
+  $id('t-trend-sig').textContent=trend.includes('up')?'▲':trend.includes('down')?'▼':'→';
+  if(t.sma20)$id('t-sma20').textContent='$'+t.sma20.toLocaleString('en',{maximumFractionDigits:0});
+  if(t.bb_width_pct)$id('t-bbw').textContent=t.bb_width_pct+'%';
+  const vr=t.volume_ratio||1;
+  $id('t-vol').textContent=vr.toFixed(2)+'x';
+  $id('t-vol').style.color=vr>1.5?'#00d4ff':vr>1.2?'#f59e0b':'#94a3b8';
+  $id('t-vol-sig').textContent=vr>1.5?'HIGH':vr<0.7?'LOW':'NORMAL';
+  if(t.ema12)$id('t-ema12').textContent='$'+t.ema12.toLocaleString('en',{maximumFractionDigits:0});
+  if(t.ema26)$id('t-ema26').textContent='$'+t.ema26.toLocaleString('en',{maximumFractionDigits:0});
+  if(t.roc_10!=null){$id('t-roc').textContent=fmtP(t.roc_10,2)+'%';$id('t-roc').style.color=t.roc_10>0?'#10b981':'#ef4444';}
+  $id('bb-needle').style.left=((t.bb_position||0.5)*100)+'%';
+  if(t.bb_lower)$id('bb-lower').textContent='$'+t.bb_lower.toLocaleString('en',{maximumFractionDigits:0});
+  if(t.bb_upper)$id('bb-upper').textContent='$'+t.bb_upper.toLocaleString('en',{maximumFractionDigits:0});
+}
+
+function updateBotState(s){
+  $id('ai-mode').textContent=(s.mode||'--').toUpperCase();
+  $id('ai-mode').style.color={monitoring:'#00d4ff',aggressive:'#ef4444',conservative:'#f59e0b',halt:'#ef4444'}[s.mode]||'#94a3b8';
+  $id('cycle-count').textContent=s.cycle||0;
+  $id('total-trades').textContent=s.total_trades||0;
+  if(s.last_action)$id('last-action').textContent=s.last_action;
+  if(s.last_action_time)$id('last-action-time').textContent=new Date(s.last_action_time).toLocaleTimeString();
+  if(s.status)$id('ai-status-msg').textContent=s.status;
+}
+
+function updatePortfolio(p){
+  const eq=p.equity||0;
+  $id('kpi-equity').textContent='$'+fmt(eq);
+  const pct=p.total_pnl_pct||0;
+  $id('kpi-equity-chg').textContent=fmtP(pct,2)+'% all time';
+  $id('kpi-equity-chg').className='kpi-change '+(pct>=0?'pos':'neg');
+  const dp=p.daily_pnl||0;
+  $id('kpi-daily').textContent=(dp>=0?'$':'-$')+Math.abs(dp).toFixed(2);
+  $id('kpi-daily').style.color=dp>=0?'#10b981':'#ef4444';
+  const wr=p.win_rate||0;
+  $id('kpi-winrate').textContent=wr.toFixed(1)+'%';
+  $id('kpi-winrate').style.color=wr>=50?'#10b981':'#ef4444';
+  $id('kpi-trades').textContent=(p.total_trades||0)+' trades';
+  $id('kpi-dd').textContent=(p.max_drawdown_pct||0).toFixed(2)+'%';
+  $id('kpi-pf').textContent='Profit Factor: '+(p.profit_factor||0).toFixed(2);
+  $id('open-pos').textContent=p.open_positions||0;
+  // update PnL bar chart from trade history
+}
+
+function updateEquityChart(curve){
+  if(!curve||!curve.length)return;
+  equityChart.data.labels=curve.map(p=>new Date(p.t).toLocaleTimeString());
+  equityChart.data.datasets[0].data=curve.map(p=>p.eq);
+  equityChart.data.datasets[1].data=curve.map(p=>-p.dd);
+  equityChart.update('none');
+}
+
+function updateDecisions(decisions){
+  if(!decisions||!decisions.length)return;
+  $id('decision-feed').innerHTML=decisions.slice(0,15).map(d=>{
+    const isPos=(d.action||'').toLowerCase().includes('buy');
+    const isNeg=(d.action||'').toLowerCase().includes('sell');
+    const color=isPos?'#10b981':isNeg?'#ef4444':'#94a3b8';
+    return `<div class="decision-item" style="border-left-color:${color}">
+      <div style="font-size:10px;color:var(--text3)">${d.time?new Date(d.time).toLocaleTimeString():''}</div>
+      <div style="font-size:12px;font-weight:600;color:${color};margin:2px 0">${d.action||'Hold'}</div>
+      ${d.price?`<div style="font-size:11px;color:#94a3b8">@ $${d.price.toLocaleString()} | SL: $${(d.stop_loss||0).toLocaleString()} | TP: $${(d.take_profit||0).toLocaleString()}</div>`:''}
+      <div style="font-size:11px;color:var(--text2)">${d.reasoning||''}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateTradeTable(trades){
+  if(!trades||!trades.length)return;
+  $id('trade-table').innerHTML=trades.slice(0,20).map(t=>{
+    const pnl=t.status==='open'?t.upnl:t.pnl;
+    const pc=pnl>0?'#10b981':pnl<0?'#ef4444':'#94a3b8';
+    return `<tr>
+      <td style="color:#64748b">${t.id}</td><td><strong>${t.symbol}</strong></td>
+      <td><span class="badge badge-${t.side}">${(t.side||'').toUpperCase()}</span></td>
+      <td>$${(t.entry||0).toLocaleString('en',{maximumFractionDigits:2})}</td>
+      <td>${t.exit?'$'+t.exit.toLocaleString('en',{maximumFractionDigits:2}):'-'}</td>
+      <td>${t.contracts||0}</td>
+      <td style="color:${pc}"><strong>${pnl>=0?'+$':'-$'}${Math.abs(pnl||0).toFixed(2)}</strong></td>
+      <td><span class="badge badge-${t.status}">${(t.status||'').toUpperCase()}</span></td>
+      <td>${((t.confidence||0)*100).toFixed(0)}%</td>
+      <td style="color:#64748b">${t.entry_time?new Date(t.entry_time).toLocaleTimeString():'-'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateNews(articles){
+  if(!articles||!articles.length)return;
+  $id('news-list').innerHTML=articles.slice(0,12).map(a=>{
+    const sc=a.score||0;
+    const c=sc>=0.7?'#10b981':sc>=0.4?'#f59e0b':'#64748b';
+    return `<div class="news-item"><div style="display:flex;justify-content:space-between"><span style="font-size:10px;color:var(--text3)">${a.source||''}</span><span style="font-size:10px;color:${c}">★ ${sc.toFixed(2)}</span></div><div style="font-size:12px;font-weight:500;line-height:1.4;margin:2px 0">${a.title||''}</div><div style="font-size:10px;color:#475569">${a.published||''}</div></div>`;
+  }).join('');
+}
+
+async function botControl(action){
+  const interval=parseInt($id('interval-in').value)||30;
+  const res=await fetch('/api/bot/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,interval_minutes:interval})});
+  const data=await res.json();
+  if(data.status==='started'||data.status==='already_running'){$id('mode-badge').className='status-badge status-live';}
+  else if(data.status==='stopped'){$id('mode-badge').className='status-badge status-dry';}
+}
+
+async function toggleDryRun(){
+  const res=await fetch('/api/config');const cfg=await res.json();
+  const nv=!cfg.dry_run;
+  await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:nv})});
+  $id('btn-dry').textContent=nv?'Paper Trading ON':'LIVE TRADING';
+  $id('mode-text').textContent=nv?'DRY RUN':'LIVE';
+}
+
+async function changeSymbol(){
+  const sym=$id('sym-select').value;
+  await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})});
+}
+
+async function pollData(){
+  try{
+    const [port,emo,news,dec]=await Promise.all([
+      fetch('/api/portfolio').then(r=>r.json()),
+      fetch('/api/emotion').then(r=>r.json()),
+      fetch('/api/news').then(r=>r.json()),
+      fetch('/api/decisions').then(r=>r.json()),
+    ]);
+    if(port.stats)updatePortfolio(port.stats);
+    if(port.equity_curve)updateEquityChart(port.equity_curve);
+    if(port.trades)updateTradeTable(port.trades);
+    if(emo.emotion)updateEmotion(emo.emotion);
+    if(emo.geopolitical)updateGeo(emo.geopolitical);
+    if(news.articles)updateNews(news.articles);
+    if(dec.decisions)updateDecisions(dec.decisions);
+  }catch(e){}
+}
+
+setInterval(()=>$id('header-time').textContent=new Date().toUTCString().slice(17,25)+' UTC',1000);
+connectWS();
+pollData();
+setInterval(pollData,30000);
+fetch('/api/config').then(r=>r.json()).then(cfg=>{
+  $id('sym-select').value=cfg.symbol||'BTCUSD';
+  $id('interval-in').value=cfg.interval_minutes||30;
+  $id('btn-dry').textContent=cfg.dry_run?'Paper Trading ON':'LIVE TRADING';
+  $id('mode-text').textContent=cfg.dry_run?'DRY RUN':'LIVE';
+  $id('mode-badge').className=cfg.dry_run?'status-badge status-dry':'status-badge status-live';
+});
+</script>
+</body>
+</html>
