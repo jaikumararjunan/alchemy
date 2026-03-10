@@ -55,6 +55,17 @@ class AlchemyAPI {
   getDerivativesLiquidations(symbol = 'BTCUSD') { return this.get(`/api/derivatives/liquidations?symbol=${symbol}`); }
   getDerivativesOptions(symbol = 'BTCUSD')      { return this.get(`/api/derivatives/options?symbol=${symbol}`); }
 
+  // History (SQLite persistence)
+  getHistoryTrades(limit = 50, symbol = null) {
+    const q = symbol ? `?limit=${limit}&symbol=${symbol}` : `?limit=${limit}`;
+    return this.get(`/api/history/trades${q}`);
+  }
+  getHistoryDecisions(limit = 50, symbol = null) {
+    const q = symbol ? `?limit=${limit}&symbol=${symbol}` : `?limit=${limit}`;
+    return this.get(`/api/history/decisions${q}`);
+  }
+  getHistoryEquity(limit = 200) { return this.get(`/api/history/equity?limit=${limit}`); }
+
   // Contract Scanner
   scanContracts(symbols) {
     const q = symbols ? `?symbols=${encodeURIComponent(symbols.join(','))}` : '';
