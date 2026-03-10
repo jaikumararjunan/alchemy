@@ -1,0 +1,185 @@
+version: "3.9"
+
+# ── Production compose ───────────────────────────────────────────────────────
+# Includes: Alchemy bot, Nginx reverse proxy, Prometheus, Grafana, Loki
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml logs -f alchemy
+#
+# Prerequisites:
+#   - .env file with API keys
+#   - deploy/nginx.conf present
+#   - SSL certs in ./ssl/ (or use certbot service below)
+
+services:
+
+  # ── Trading Bot ─────────────────────────────────────────────────────────────
+  alchemy:
+    build:
+      context: .
+      target: runtime
+      cache_from:
+        - alchemy:latest
+    image: alchemy:latest
+    container_name: alchemy
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      - DRY_RUN=${DRY_RUN:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - alchemy_logs:/app/logs
+    command: >
+      python run_server.py
+        --host 0.0.0.0
+        --port 8000
+        --start-bot
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+    networks:
+      - alchemy_internal
+      - alchemy_public
+
+  # ── Nginx Reverse Proxy ──────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: alchemy_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/ssl/alchemy:ro
+      - nginx_cache:/var/cache/nginx
+      - certbot_webroot:/var/www/certbot:ro
+    depends_on:
+      alchemy:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - alchemy_public
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Certbot (one-shot SSL renewal) ───────────────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    container_name: alchemy_certbot
+    volumes:
+      - ./ssl:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+    restart: unless-stopped
+    networks:
+      - alchemy_public
+
+  # ── Prometheus Metrics ───────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: alchemy_prometheus
+    expose:
+      - "9090"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+    networks:
+      - alchemy_internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Grafana Dashboard ────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: alchemy_grafana
+    expose:
+      - "3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - alchemy_internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Loki Log Aggregation ─────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: alchemy_loki
+    expose:
+      - "3100"
+    volumes:
+      - loki_data:/loki
+      - ./deploy/loki.yml:/etc/loki/config.yml:ro
+    command: -config.file=/etc/loki/config.yml
+    restart: unless-stopped
+    networks:
+      - alchemy_internal
+
+  # ── Promtail (log shipper) ───────────────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: alchemy_promtail
+    volumes:
+      - alchemy_logs:/app/logs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./deploy/promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+    networks:
+      - alchemy_internal
+
+networks:
+  alchemy_internal:
+    driver: bridge
+    internal: true
+  alchemy_public:
+    driver: bridge
+
+volumes:
+  alchemy_logs:
+  nginx_cache:
+  certbot_webroot:
+  prometheus_data:
+  grafana_data:
+  loki_data:

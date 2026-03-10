@@ -1,0 +1,38 @@
+version: "3.9"
+
+# ── Development compose ──────────────────────────────────────────────────────
+# Usage: docker compose up
+# Hot-reload enabled via volume mount + --reload flag
+
+services:
+  alchemy:
+    build:
+      context: .
+      target: runtime
+    image: alchemy:dev
+    container_name: alchemy_dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DRY_RUN=${DRY_RUN:-true}
+    volumes:
+      - .:/app                          # mount source for hot-reload
+      - alchemy_logs:/app/logs
+    command: >
+      python run_server.py
+        --host 0.0.0.0
+        --port 8000
+        --dry-run
+        --reload
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  alchemy_logs:
