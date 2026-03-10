@@ -121,10 +121,11 @@ class TradingStrategy:
     """
 
     # Weighting for combined score
-    _W_EMOTION  = 0.35
-    _W_GEO      = 0.20
-    _W_TECH     = 0.25
-    _W_FORECAST = 0.20
+    _W_EMOTION     = 0.30
+    _W_GEO         = 0.15
+    _W_TECH        = 0.25
+    _W_FORECAST    = 0.15
+    _W_DERIVATIVES = 0.15
 
     def __init__(self, config):
         self.config = config
@@ -153,6 +154,7 @@ class TradingStrategy:
         current_price: float,
         has_open_position: bool = False,
         open_position_side: Optional[str] = None,
+        derivatives_score: float = 0.0,
     ) -> TradeSignal:
         """Generate a trade signal by combining all available signals."""
 
@@ -160,17 +162,19 @@ class TradingStrategy:
         tech = self._calculate_technical(candles, current_price)
 
         # 2. Individual signal scores (−1 → +1 each)
-        emotion_signal  = self._score_emotion(emotion_score)
-        geo_signal      = self._score_geo(geo_impact)
-        tech_signal     = self._score_technical(tech)
-        forecast_signal = tech.forecast_score          # already −1 → +1
+        emotion_signal     = self._score_emotion(emotion_score)
+        geo_signal         = self._score_geo(geo_impact)
+        tech_signal        = self._score_technical(tech)
+        forecast_signal    = tech.forecast_score          # already −1 → +1
+        deriv_signal       = max(-1.0, min(1.0, derivatives_score))
 
         # 3. Weighted combination
         combined_score = (
-            emotion_signal  * self._W_EMOTION  +
-            geo_signal      * self._W_GEO      +
-            tech_signal     * self._W_TECH     +
-            forecast_signal * self._W_FORECAST
+            emotion_signal  * self._W_EMOTION     +
+            geo_signal      * self._W_GEO         +
+            tech_signal     * self._W_TECH        +
+            forecast_signal * self._W_FORECAST    +
+            deriv_signal    * self._W_DERIVATIVES
         )
 
         # 4. Regime-aware threshold adjustment

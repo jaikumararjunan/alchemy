@@ -504,6 +504,206 @@ async def ml_sentiment(req: SentimentRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/derivatives/funding")
+async def derivatives_funding(symbol: str = "BTCUSD"):
+    """Funding rate analysis for perpetual futures."""
+    try:
+        from src.derivatives.funding_rate import FundingRateMonitor
+        monitor = FundingRateMonitor()
+        if config.trading.dry_run:
+            import random
+            rate = random.gauss(0.0001, 0.0008)
+        else:
+            try:
+                resp = app_state.exchange._request(
+                    "GET", f"/v2/tickers/{symbol}", auth=False
+                )
+                rate = float(resp.get("result", {}).get("funding_rate", 0.0001))
+            except Exception:
+                rate = 0.0001
+        result = monitor.analyze(rate)
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/derivatives/basis")
+async def derivatives_basis(symbol: str = "BTCUSD"):
+    """Spot-perp basis analysis."""
+    try:
+        from src.derivatives.basis_tracker import BasisTracker
+        tracker = BasisTracker()
+        if config.trading.dry_run:
+            import random
+            perp  = 67000 + random.uniform(-500, 500)
+            spot  = perp  * (1 + random.gauss(0.0, 0.0015))
+        else:
+            try:
+                ticker = app_state.exchange.get_ticker(symbol)
+                perp   = ticker.mark_price
+                spot   = perp * 0.9997   # approximate if no spot feed
+            except Exception:
+                perp = spot = 67000.0
+        result = tracker.analyze(spot, perp)
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/derivatives/oi")
+async def derivatives_oi(symbol: str = "BTCUSD"):
+    """Open interest analysis."""
+    try:
+        from src.derivatives.open_interest import OpenInterestAnalyzer
+        analyzer = OpenInterestAnalyzer()
+        if config.trading.dry_run:
+            import random
+            oi    = random.uniform(400_000_000, 800_000_000)
+            price = 67000 + random.uniform(-1000, 1000)
+        else:
+            try:
+                ticker = app_state.exchange.get_ticker(symbol)
+                oi     = ticker.open_interest
+                price  = ticker.mark_price
+            except Exception:
+                oi = 500_000_000; price = 67000.0
+        result = analyzer.analyze(oi, price)
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/derivatives/liquidations")
+async def derivatives_liquidations(symbol: str = "BTCUSD"):
+    """Estimated liquidation level map around current price."""
+    try:
+        from src.derivatives.liquidation_tracker import LiquidationTracker
+        tracker = LiquidationTracker()
+        if config.trading.dry_run:
+            import random
+            price = 67000 + random.uniform(-1000, 1000)
+        else:
+            try:
+                ticker = app_state.exchange.get_ticker(symbol)
+                price  = ticker.mark_price
+            except Exception:
+                price = 67000.0
+        result = tracker.compute_map(price)
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/derivatives/options")
+async def derivatives_options(symbol: str = "BTCUSD"):
+    """Options chain Greeks and chain summary (illustrative in dry-run mode)."""
+    try:
+        from src.derivatives.options_analyzer import OptionsAnalyzer
+        analyzer = OptionsAnalyzer()
+        if config.trading.dry_run:
+            import random, math
+            spot = 67000 + random.uniform(-500, 500)
+            # Construct a synthetic mini chain
+            chain = []
+            for strike_offset in [-5000, -3000, -1000, 0, 1000, 3000, 5000]:
+                strike = round(spot + strike_offset, -2)  # round to nearest 100
+                iv = 0.75 + random.gauss(0, 0.1) + abs(strike_offset) / spot * 2
+                iv = max(0.3, min(2.5, iv))
+                for otype in ("call", "put"):
+                    dte = random.choice([7, 14, 30])
+                    g   = analyzer.price_option(otype, spot, strike, dte, iv)
+                    mp  = g.theoretical_price * random.uniform(0.95, 1.05)
+                    chain.append({
+                        "type": otype, "strike": strike,
+                        "days_to_expiry": dte,
+                        "market_price": round(mp, 2),
+                        "oi": random.randint(10, 500),
+                        "iv": iv,
+                    })
+        else:
+            # On live: fetch real options products from Delta Exchange
+            try:
+                products = app_state.exchange.get_products()
+                ticker_main = app_state.exchange.get_ticker(symbol)
+                spot = ticker_main.mark_price
+                chain = []
+                underlying = symbol.replace("USD", "")
+                for p in products:
+                    if (p.get("contract_type") in ("put_options", "call_options") and
+                            p.get("underlying_asset", {}).get("symbol", "").startswith(underlying)):
+                        sym = p.get("symbol", "")
+                        try:
+                            t = app_state.exchange.get_ticker(sym)
+                            dte = max(1, (p.get("settlement_time", 0) - __import__("time").time()) // 86400)
+                            chain.append({
+                                "type": "call" if "call" in p.get("contract_type", "") else "put",
+                                "strike": float(p.get("strike_price", spot)),
+                                "days_to_expiry": int(dte),
+                                "market_price": t.mark_price,
+                                "oi": t.open_interest,
+                            })
+                        except Exception:
+                            pass
+            except Exception:
+                chain = []
+                spot = 67000.0
+
+        # Greeks for ATM call (representative)
+        import random
+        spot_val = spot if not config.trading.dry_run else (67000 + random.uniform(-500, 500))
+        atm_greeks = analyzer.price_option("call", spot_val, spot_val, 7, 0.80)
+        summary = analyzer.analyze_chain(spot_val, chain) if chain else None
+
+        return {
+            "symbol": symbol,
+            "spot": round(spot_val, 2),
+            "atm_call_greeks": atm_greeks.to_dict(),
+            "chain_summary": summary.to_dict() if summary else None,
+            "chain_count": len(chain),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/derivatives/signal")
+async def derivatives_signal(symbol: str = "BTCUSD"):
+    """Aggregate derivative market signal."""
+    try:
+        from src.derivatives.derivatives_signal import DerivativesSignalEngine
+        import random
+        engine = DerivativesSignalEngine()
+
+        if config.trading.dry_run:
+            price    = 67000 + random.uniform(-1000, 1000)
+            funding  = random.gauss(0.0001, 0.0006)
+            spot     = price * (1 + random.gauss(0, 0.001))
+            oi       = random.uniform(400e6, 900e6)
+        else:
+            try:
+                ticker  = app_state.exchange.get_ticker(symbol)
+                price   = ticker.mark_price
+                oi      = ticker.open_interest
+                resp    = app_state.exchange._request("GET", f"/v2/tickers/{symbol}", auth=False)
+                funding = float(resp.get("result", {}).get("funding_rate", 0.0001))
+                spot    = price * 0.9997
+            except Exception:
+                price = 67000.0; funding = 0.0001; spot = price * 0.9997; oi = 500e6
+
+        result = engine.analyze(
+            current_price=price,
+            funding_rate=funding,
+            spot_price=spot,
+            open_interest=oi,
+        )
+        d = result.to_dict()
+        d["symbol"] = symbol
+        d["timestamp"] = datetime.now(timezone.utc).isoformat()
+        return d
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/trade")
 async def manual_trade(req: TradeRequest):
     """Manually place a trade (bypasses autonomous AI)."""
