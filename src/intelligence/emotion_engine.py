@@ -222,10 +222,16 @@ Write the briefing in clear, professional language suitable for a trading dashbo
     def _format_articles(articles: List[Dict]) -> str:
         lines = []
         for i, article in enumerate(articles, 1):
-            title = article.get("title", "No title")
-            summary = article.get("summary", article.get("description", "No summary"))
-            source = article.get("source", "Unknown")
-            published = article.get("published_at", "Unknown time")
+            if hasattr(article, "title"):
+                title = article.title
+                summary = article.summary
+                source = article.source
+                published = article.published_at
+            else:
+                title = article.get("title", "No title")
+                summary = article.get("summary", article.get("description", "No summary"))
+                source = article.get("source", "Unknown")
+                published = article.get("published_at", "Unknown time")
             lines.append(f"[{i}] SOURCE: {source} | {published}\n    TITLE: {title}\n    SUMMARY: {summary}\n")
         return "\n".join(lines)
 
