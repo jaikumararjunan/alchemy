@@ -31,7 +31,8 @@ COPY --chown=alchemy:alchemy . .
 # Runtime system deps only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && chown -R alchemy:alchemy /app
 
 # Make sure scripts in .local are usable
 ENV PATH=/app/.local/bin:$PATH
