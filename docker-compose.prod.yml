@@ -132,6 +132,7 @@ services:
     restart: unless-stopped
     networks:
       - alchemy_internal
+      - alchemy_public
     logging:
       driver: "json-file"
       options:
