@@ -22,7 +22,8 @@ RUN groupadd -r alchemy && useradd -r -g alchemy -d /app -s /sbin/nologin alchem
 WORKDIR /app
 
 # Copy only installed packages from builder
-COPY --from=builder /root/.local /home/alchemy/.local
+# User home is /app, so Python user-site resolves to /app/.local
+COPY --from=builder /root/.local /app/.local
 
 # Copy application source
 COPY --chown=alchemy:alchemy . .
@@ -33,7 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Make sure scripts in .local are usable
-ENV PATH=/home/alchemy/.local/bin:$PATH
+ENV PATH=/app/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
