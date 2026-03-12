@@ -121,8 +121,9 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_ROOT_URL=http://213.199.38.90/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_DOMAIN=213.199.38.90
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
