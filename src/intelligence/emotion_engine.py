@@ -5,6 +5,7 @@ Analyzes geopolitical news for market-moving emotions and sentiment.
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 import json
+import re
 
 import anthropic
 
@@ -151,6 +152,9 @@ class EmotionEngine:
             )
 
             response_text = message.content[0].text.strip()
+            # Strip markdown code fences Claude occasionally adds (```json ... ```)
+            response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
+            response_text = re.sub(r'\s*```$', '', response_text).strip()
             data = json.loads(response_text)
 
             score = EmotionScore(
