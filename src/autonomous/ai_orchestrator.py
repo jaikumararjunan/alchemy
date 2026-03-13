@@ -360,13 +360,18 @@ class AIOrchestrator:
                                                      start=end_time - resolution * 100,
                                                      end=end_time)
                 ob = self.exchange.get_orderbook(symbol, depth=5)
+                ob_bids = ob.get("buy", [])
+                ob_asks = ob.get("sell", [])
+                bid = float(ob_bids[0]["limit_price"]) if ob_bids else ticker.bid
+                ask = float(ob_asks[0]["limit_price"]) if ob_asks else ticker.ask
+                spread_pct = round((ask - bid) / ticker.mark_price * 100, 4) if ticker.mark_price else 0.0
                 data = {
                     "symbol": symbol,
                     "mark_price": ticker.mark_price,
                     "last_price": ticker.last_price,
-                    "bid": ticker.bid,
-                    "ask": ticker.ask,
-                    "spread_pct": round((ticker.ask - ticker.bid) / ticker.mark_price * 100, 4),
+                    "bid": bid,
+                    "ask": ask,
+                    "spread_pct": spread_pct,
                     "volume_24h": ticker.volume_24h,
                     "change_24h_pct": ticker.change_24h_pct,
                     "open_interest": ticker.open_interest,
@@ -378,16 +383,24 @@ class AIOrchestrator:
                 return data
             else:
                 import random
+                base_price = 85000.0
+                mp = base_price + random.uniform(-3000, 3000)
+                bid = round(mp - random.uniform(5, 20), 1)
+                ask = round(mp + random.uniform(5, 20), 1)
                 mock = {
-                    "symbol": symbol, "mark_price": 67000 + random.uniform(-2000, 2000),
-                    "last_price": 67000, "bid": 66990, "ask": 67010, "spread_pct": 0.03,
-                    "volume_24h": 28000, "change_24h_pct": random.uniform(-5, 5),
-                    "open_interest": 1200000000, "timeframe": inp.get("timeframe", "1h"),
+                    "symbol": symbol, "mark_price": round(mp, 2),
+                    "last_price": round(mp + random.uniform(-50, 50), 2),
+                    "bid": bid, "ask": ask,
+                    "spread_pct": round((ask - bid) / mp * 100, 4),
+                    "volume_24h": round(random.uniform(800_000_000, 1_200_000_000), 0),
+                    "change_24h_pct": random.uniform(-5, 5),
+                    "open_interest": round(random.uniform(8_000_000_000, 12_000_000_000), 0),
+                    "timeframe": inp.get("timeframe", "1h"),
                     "candles_count": 100,
                 }
                 self._cached_data["market"] = mock
                 self._cached_data["candles"] = [
-                    {"close": 67000 + random.uniform(-3000, 3000), "volume": random.uniform(100, 800)}
+                    {"close": base_price + random.uniform(-5000, 5000), "volume": random.uniform(100, 800)}
                     for _ in range(100)
                 ]
                 return mock

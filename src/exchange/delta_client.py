@@ -131,13 +131,15 @@ class DeltaExchangeClient:
         """Get current ticker for a symbol."""
         resp = self._request("GET", f"/v2/tickers/{symbol}", auth=False)
         data = resp.get("result", {})
+        # Delta Exchange ticker uses turnover_24h for USD volume (volume = contract count)
+        # bid/ask are not in the ticker response; callers needing them should use get_orderbook()
         return Ticker(
             symbol=symbol,
             mark_price=float(data.get("mark_price", 0)),
             last_price=float(data.get("close", 0)),
-            bid=float(data.get("bid", 0)),
-            ask=float(data.get("ask", 0)),
-            volume_24h=float(data.get("volume", 0)),
+            bid=float(data.get("best_bid_price", data.get("bid", 0))),
+            ask=float(data.get("best_ask_price", data.get("ask", 0))),
+            volume_24h=float(data.get("turnover_24h", data.get("volume", 0))),
             change_24h_pct=float(data.get("price_change_24h_pcnt", 0)),
             open_interest=float(data.get("open_interest", 0)),
         )
