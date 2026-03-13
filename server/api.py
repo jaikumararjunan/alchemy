@@ -222,10 +222,12 @@ async def get_market(symbol: str):
     try:
         if config.trading.dry_run:
             import random
+            mp = 85000 + random.uniform(-3000, 3000)
             return {
-                "symbol": symbol, "mark_price": 67000 + random.uniform(-1000, 1000),
-                "change_24h_pct": random.uniform(-5, 5),
-                "volume_24h": 28000, "dry_run": True
+                "symbol": symbol, "mark_price": round(mp, 2),
+                "change_24h_pct": round(random.uniform(-5, 5), 2),
+                "volume_24h": round(random.uniform(800_000_000, 1_200_000_000), 0),
+                "dry_run": True
             }
         ticker = app_state.exchange.get_ticker(symbol)
         return {
@@ -319,7 +321,7 @@ async def get_forecast(symbol: str = "BTCUSD"):
 
         if config.trading.dry_run:
             import random, math
-            base = 67000.0
+            base = 85000.0
             for i in range(100):
                 trend = 15.0 * math.sin(i / 10) + i * 3
                 noise = random.gauss(0, 80)
@@ -462,7 +464,7 @@ async def ml_analyze(symbol: str = "BTCUSD"):
 
         if config.trading.dry_run:
             import random, math
-            base = 67000.0
+            base = 85000.0
             for i in range(200):
                 trend = 20.0 * math.sin(i / 15) + i * 2.5
                 noise = random.gauss(0, 90)
@@ -514,7 +516,7 @@ async def ml_train(background_tasks: BackgroundTasks):
             candles = []
             if config.trading.dry_run:
                 import random, math
-                base = 67000.0
+                base = 85000.0
                 for i in range(300):
                     trend = 20.0 * math.sin(i / 15) + i * 2.0
                     noise = random.gauss(0, 100)
@@ -604,7 +606,7 @@ async def derivatives_basis(symbol: str = "BTCUSD"):
         tracker = BasisTracker()
         if config.trading.dry_run:
             import random
-            perp  = 67000 + random.uniform(-500, 500)
+            perp  = 85000 + random.uniform(-500, 500)
             spot  = perp  * (1 + random.gauss(0.0, 0.0015))
         else:
             try:
@@ -612,7 +614,7 @@ async def derivatives_basis(symbol: str = "BTCUSD"):
                 perp   = ticker.mark_price
                 spot   = perp * 0.9997   # approximate if no spot feed
             except Exception:
-                perp = spot = 67000.0
+                perp = spot = 85000.0
         result = tracker.analyze(spot, perp)
         return result.to_dict()
     except Exception as e:
@@ -628,14 +630,14 @@ async def derivatives_oi(symbol: str = "BTCUSD"):
         if config.trading.dry_run:
             import random
             oi    = random.uniform(400_000_000, 800_000_000)
-            price = 67000 + random.uniform(-1000, 1000)
+            price = 85000 + random.uniform(-1000, 1000)
         else:
             try:
                 ticker = app_state.exchange.get_ticker(symbol)
                 oi     = ticker.open_interest
                 price  = ticker.mark_price
             except Exception:
-                oi = 500_000_000; price = 67000.0
+                oi = 500_000_000; price = 85000.0
         result = analyzer.analyze(oi, price)
         return result.to_dict()
     except Exception as e:
@@ -650,13 +652,13 @@ async def derivatives_liquidations(symbol: str = "BTCUSD"):
         tracker = LiquidationTracker()
         if config.trading.dry_run:
             import random
-            price = 67000 + random.uniform(-1000, 1000)
+            price = 85000 + random.uniform(-1000, 1000)
         else:
             try:
                 ticker = app_state.exchange.get_ticker(symbol)
                 price  = ticker.mark_price
             except Exception:
-                price = 67000.0
+                price = 85000.0
         result = tracker.compute_map(price)
         return result.to_dict()
     except Exception as e:
@@ -671,7 +673,7 @@ async def derivatives_options(symbol: str = "BTCUSD"):
         analyzer = OptionsAnalyzer()
         if config.trading.dry_run:
             import random, math
-            spot = 67000 + random.uniform(-500, 500)
+            spot = 85000 + random.uniform(-500, 500)
             # Construct a synthetic mini chain
             chain = []
             for strike_offset in [-5000, -3000, -1000, 0, 1000, 3000, 5000]:
@@ -715,11 +717,11 @@ async def derivatives_options(symbol: str = "BTCUSD"):
                             pass
             except Exception:
                 chain = []
-                spot = 67000.0
+                spot = 85000.0
 
         # Greeks for ATM call (representative)
         import random
-        spot_val = spot if not config.trading.dry_run else (67000 + random.uniform(-500, 500))
+        spot_val = spot if not config.trading.dry_run else (85000 + random.uniform(-500, 500))
         atm_greeks = analyzer.price_option("call", spot_val, spot_val, 7, 0.80)
         summary = analyzer.analyze_chain(spot_val, chain) if chain else None
 
@@ -744,7 +746,7 @@ async def derivatives_signal(symbol: str = "BTCUSD"):
         engine = DerivativesSignalEngine()
 
         if config.trading.dry_run:
-            price    = 67000 + random.uniform(-1000, 1000)
+            price    = 85000 + random.uniform(-1000, 1000)
             funding  = random.gauss(0.0001, 0.0006)
             spot     = price * (1 + random.gauss(0, 0.001))
             oi       = random.uniform(400e6, 900e6)
@@ -757,7 +759,7 @@ async def derivatives_signal(symbol: str = "BTCUSD"):
                 funding = float(resp.get("result", {}).get("funding_rate", 0.0001))
                 spot    = price * 0.9997
             except Exception:
-                price = 67000.0; funding = 0.0001; spot = price * 0.9997; oi = 500e6
+                price = 85000.0; funding = 0.0001; spot = price * 0.9997; oi = 500e6
 
         result = engine.analyze(
             current_price=price,
@@ -798,7 +800,7 @@ async def backtest_run(req: BacktestRequest):
         if config.trading.dry_run:
             import random, math
             candles = []
-            base = 67000.0
+            base = 85000.0
             price = base
             for i in range(req.candle_count):
                 trend = 30.0 * math.sin(i / 40) + i * 1.2
@@ -863,7 +865,7 @@ async def backtest_optimize(req: OptimizeRequest):
         candles = []
         if config.trading.dry_run:
             import random, math
-            base = 67000.0
+            base = 85000.0
             price = base
             for i in range(req.candle_count):
                 trend = 30.0 * math.sin(i / 40) + i * 1.2
