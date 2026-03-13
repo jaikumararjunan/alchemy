@@ -2,6 +2,7 @@
 Emotion Intelligence Engine powered by Claude AI.
 Analyzes geopolitical news for market-moving emotions and sentiment.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 import json
@@ -17,6 +18,7 @@ logger = get_logger(__name__)
 @dataclass
 class EmotionScore:
     """Emotion analysis result for a batch of news articles."""
+
     # Primary sentiment: -1.0 (extreme fear/bearish) to +1.0 (extreme optimism/bullish)
     sentiment_score: float = 0.0
 
@@ -36,7 +38,9 @@ class EmotionScore:
     key_events: List[str] = field(default_factory=list)
 
     # Recommended trading bias
-    trading_bias: str = "neutral"  # "strong_buy", "buy", "neutral", "sell", "strong_sell"
+    trading_bias: str = (
+        "neutral"  # "strong_buy", "buy", "neutral", "sell", "strong_sell"
+    )
 
     # Reasoning from Claude
     reasoning: str = ""
@@ -134,27 +138,31 @@ class EmotionEngine:
         """
         if not articles:
             logger.warning("No articles provided for emotion analysis")
-            return EmotionScore(dominant_emotion="neutral", reasoning="No news data available")
+            return EmotionScore(
+                dominant_emotion="neutral", reasoning="No news data available"
+            )
 
         # Format articles for Claude
         formatted = self._format_articles(articles[:30])  # Cap at 30 articles
 
         prompt = ANALYSIS_PROMPT.format(articles=formatted)
 
-        logger.info(f"Analyzing {len(articles)} articles with Claude emotion intelligence...")
+        logger.info(
+            f"Analyzing {len(articles)} articles with Claude emotion intelligence..."
+        )
 
         try:
             message = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
 
             response_text = message.content[0].text.strip()
             # Strip markdown code fences Claude occasionally adds (```json ... ```)
-            response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
-            response_text = re.sub(r'\s*```$', '', response_text).strip()
+            response_text = re.sub(r"^```(?:json)?\s*", "", response_text)
+            response_text = re.sub(r"\s*```$", "", response_text).strip()
             data = json.loads(response_text)
 
             score = EmotionScore(
@@ -167,7 +175,9 @@ class EmotionEngine:
                 trading_bias=data.get("trading_bias", "neutral"),
                 reasoning=data.get("reasoning", ""),
                 impact_horizon=data.get("impact_horizon", "short_term"),
-                crypto_specific_sentiment=float(data.get("crypto_specific_sentiment", 0.0)),
+                crypto_specific_sentiment=float(
+                    data.get("crypto_specific_sentiment", 0.0)
+                ),
             )
 
             self._last_analysis = score
@@ -180,7 +190,10 @@ class EmotionEngine:
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Claude response as JSON: {e}")
-            return EmotionScore(dominant_emotion="neutral", reasoning="Analysis failed - JSON parse error")
+            return EmotionScore(
+                dominant_emotion="neutral",
+                reasoning="Analysis failed - JSON parse error",
+            )
         except anthropic.APIError as e:
             logger.error(f"Anthropic API error: {e}")
             return EmotionScore(dominant_emotion="neutral", reasoning=f"API error: {e}")
@@ -190,7 +203,14 @@ class EmotionEngine:
         Quick analysis of a single breaking news event.
         Used for real-time alerts on high-impact events.
         """
-        article = [{"title": "Breaking News", "summary": event_text, "source": "alert", "published_at": "now"}]
+        article = [
+            {
+                "title": "Breaking News",
+                "summary": event_text,
+                "source": "alert",
+                "published_at": "now",
+            }
+        ]
         return self.analyze(article)
 
     def get_market_narrative(self, score: EmotionScore) -> str:
@@ -206,7 +226,7 @@ Emotion Data:
 - Dominant Emotion: {score.dominant_emotion}
 - Geopolitical Risk: {score.geopolitical_risk}
 - Trading Bias: {score.trading_bias}
-- Key Events: {', '.join(score.key_events[:3])}
+- Key Events: {", ".join(score.key_events[:3])}
 - Reasoning: {score.reasoning}
 
 Write the briefing in clear, professional language suitable for a trading dashboard."""
@@ -215,7 +235,7 @@ Write the briefing in clear, professional language suitable for a trading dashbo
             message = self.client.messages.create(
                 model=self.model,
                 max_tokens=256,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
             return message.content[0].text.strip()
         except Exception as e:
@@ -233,10 +253,14 @@ Write the briefing in clear, professional language suitable for a trading dashbo
                 published = article.published_at
             else:
                 title = article.get("title", "No title")
-                summary = article.get("summary", article.get("description", "No summary"))
+                summary = article.get(
+                    "summary", article.get("description", "No summary")
+                )
                 source = article.get("source", "Unknown")
                 published = article.get("published_at", "Unknown time")
-            lines.append(f"[{i}] SOURCE: {source} | {published}\n    TITLE: {title}\n    SUMMARY: {summary}\n")
+            lines.append(
+                f"[{i}] SOURCE: {source} | {published}\n    TITLE: {title}\n    SUMMARY: {summary}\n"
+            )
         return "\n".join(lines)
 
     @property

@@ -9,10 +9,10 @@ Single-file SQLite database for persisting:
 Thread-safe via check_same_thread=False + a module-level lock.
 The database file is created automatically on first use.
 """
+
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Optional
 
 from src.utils.logger import get_logger
 
@@ -83,7 +83,9 @@ class Database:
     """SQLite connection wrapper with automatic schema creation."""
 
     def __init__(self, db_path: str = "alchemy.db"):
-        self.db_path = db_path if db_path == ":memory:" else str(Path(db_path).resolve())
+        self.db_path = (
+            db_path if db_path == ":memory:" else str(Path(db_path).resolve())
+        )
         self._local = threading.local()
         self._init_schema()
         logger.info(f"Database ready: {self.db_path}")
@@ -109,21 +111,21 @@ class Database:
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with _LOCK:
             conn = self._connect()
-            cur  = conn.execute(sql, params)
+            cur = conn.execute(sql, params)
             conn.commit()
             return cur
 
     def fetchall(self, sql: str, params: tuple = ()):
         with _LOCK:
             conn = self._connect()
-            cur  = conn.execute(sql, params)
+            cur = conn.execute(sql, params)
             return [dict(row) for row in cur.fetchall()]
 
     def fetchone(self, sql: str, params: tuple = ()):
         with _LOCK:
             conn = self._connect()
-            cur  = conn.execute(sql, params)
-            row  = cur.fetchone()
+            cur = conn.execute(sql, params)
+            row = cur.fetchone()
             return dict(row) if row else None
 
     def close(self):

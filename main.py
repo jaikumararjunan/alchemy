@@ -5,8 +5,8 @@ Trades on Delta Exchange using geopolitical sentiment analysis via Claude AI.
 Usage:
     python main.py [--dry-run] [--symbol BTCUSD] [--interval 30]
 """
+
 import argparse
-import sys
 import time
 import signal
 from datetime import datetime, timezone
@@ -15,9 +15,6 @@ from typing import Optional
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.layout import Layout
-from rich.live import Live
-from rich.text import Text
 from rich import box
 
 from config import config, AppConfig
@@ -35,7 +32,9 @@ _running = True
 
 def signal_handler(sig, frame):
     global _running
-    console.print("\n[yellow]Shutdown signal received. Stopping bot gracefully...[/yellow]")
+    console.print(
+        "\n[yellow]Shutdown signal received. Stopping bot gracefully...[/yellow]"
+    )
     _running = False
 
 
@@ -82,13 +81,19 @@ class AlchemyBot:
         self._last_emotion = None
         self._last_geo = None
 
-        mode = "[bold red]LIVE[/bold red]" if not self.dry_run else "[bold green]DRY RUN[/bold green]"
-        console.print(Panel(
-            f"[bold cyan]ALCHEMY[/bold cyan] - Crypto Trading with Emotion Intelligence\n"
-            f"Symbol: [bold]{self.symbol}[/bold] | Mode: {mode} | "
-            f"Model: [cyan]{cfg.anthropic.model}[/cyan]",
-            border_style="cyan"
-        ))
+        mode = (
+            "[bold red]LIVE[/bold red]"
+            if not self.dry_run
+            else "[bold green]DRY RUN[/bold green]"
+        )
+        console.print(
+            Panel(
+                f"[bold cyan]ALCHEMY[/bold cyan] - Crypto Trading with Emotion Intelligence\n"
+                f"Symbol: [bold]{self.symbol}[/bold] | Mode: {mode} | "
+                f"Model: [cyan]{cfg.anthropic.model}[/cyan]",
+                border_style="cyan",
+            )
+        )
 
     def startup(self):
         """Initialize exchange connection and look up product ID."""
@@ -97,10 +102,16 @@ class AlchemyBot:
             if not self.dry_run:
                 self.product_id = self.exchange.get_product_id(self.symbol)
                 if not self.product_id:
-                    raise ValueError(f"Product {self.symbol} not found on Delta Exchange")
-                logger.info(f"Connected to Delta Exchange. Product ID for {self.symbol}: {self.product_id}")
+                    raise ValueError(
+                        f"Product {self.symbol} not found on Delta Exchange"
+                    )
+                logger.info(
+                    f"Connected to Delta Exchange. Product ID for {self.symbol}: {self.product_id}"
+                )
                 if self.config.trading.leverage > 1:
-                    self.exchange.set_leverage(self.product_id, self.config.trading.leverage)
+                    self.exchange.set_leverage(
+                        self.product_id, self.config.trading.leverage
+                    )
                     logger.info(f"Leverage set to {self.config.trading.leverage}x")
             else:
                 logger.info("DRY RUN mode - skipping exchange connection")
@@ -114,7 +125,9 @@ class AlchemyBot:
         """Main trading loop."""
         self.startup()
 
-        console.print(f"\n[green]Bot started. Analysis interval: {self.interval // 60} minutes[/green]")
+        console.print(
+            f"\n[green]Bot started. Analysis interval: {self.interval // 60} minutes[/green]"
+        )
         console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
         while _running:
@@ -221,19 +234,26 @@ class AlchemyBot:
                 # Get 1-hour candles, last 100
                 end_time = int(time.time())
                 start_time = end_time - (100 * 3600)
-                candles = self.exchange.get_candles(self.symbol, resolution=3600,
-                                                     start=start_time, end=end_time)
+                candles = self.exchange.get_candles(
+                    self.symbol, resolution=3600, start=start_time, end=end_time
+                )
                 return {"price": price, "candles": candles}
             else:
                 # Dry run: use mock data
                 import random
+
                 base_price = 65000.0
                 mock_candles = [
-                    {"close": base_price + random.uniform(-2000, 2000),
-                     "volume": random.uniform(100, 500)}
+                    {
+                        "close": base_price + random.uniform(-2000, 2000),
+                        "volume": random.uniform(100, 500),
+                    }
                     for _ in range(60)
                 ]
-                return {"price": base_price + random.uniform(-500, 500), "candles": mock_candles}
+                return {
+                    "price": base_price + random.uniform(-500, 500),
+                    "candles": mock_candles,
+                }
         except Exception as e:
             logger.warning(f"Failed to get market data: {e}")
             return {"price": 65000.0, "candles": []}
@@ -259,7 +279,9 @@ class AlchemyBot:
             logger.warning(f"Failed to get balance: {e}")
             return 10000.0
 
-    def _execute_trade(self, signal, risk_metrics, current_price: float, balance: float):
+    def _execute_trade(
+        self, signal, risk_metrics, current_price: float, balance: float
+    ):
         """Execute a trade on Delta Exchange or simulate it."""
         position_size = self.risk_manager.calculate_position_size(
             signal=signal,
@@ -281,11 +303,14 @@ class AlchemyBot:
         )
 
         if self.dry_run:
-            console.print("[bold yellow][DRY RUN] Trade simulated - no real order placed[/bold yellow]")
+            console.print(
+                "[bold yellow][DRY RUN] Trade simulated - no real order placed[/bold yellow]"
+            )
             return
 
         try:
             from src.exchange.delta_client import Order
+
             if signal.action in ("buy", "sell"):
                 order = Order(
                     symbol=self.symbol,
@@ -298,18 +323,30 @@ class AlchemyBot:
 
             elif signal.action == "close_long":
                 result = self.exchange.close_position(self.product_id, self.symbol)
-                console.print(f"[green]Long position closed: {result.get('id', 'N/A')}[/green]")
+                console.print(
+                    f"[green]Long position closed: {result.get('id', 'N/A')}[/green]"
+                )
 
             elif signal.action == "close_short":
                 result = self.exchange.close_position(self.product_id, self.symbol)
-                console.print(f"[green]Short position closed: {result.get('id', 'N/A')}[/green]")
+                console.print(
+                    f"[green]Short position closed: {result.get('id', 'N/A')}[/green]"
+                )
 
         except Exception as e:
             logger.error(f"Order execution failed: {e}")
             console.print(f"[red]Order failed: {e}[/red]")
 
-    def _display_dashboard(self, emotion_score, geo_impact, geo_events,
-                           signal, risk_metrics, price, articles):
+    def _display_dashboard(
+        self,
+        emotion_score,
+        geo_impact,
+        geo_events,
+        signal,
+        risk_metrics,
+        price,
+        articles,
+    ):
         """Display a rich dashboard of current bot state."""
         console.print()
 
@@ -318,73 +355,148 @@ class AlchemyBot:
         emotion_table = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
         emotion_table.add_column("Key", style="dim")
         emotion_table.add_column("Value", style="bold")
-        emotion_table.add_row("Dominant Emotion", f"[{emotion_color}]{emotion_score.dominant_emotion.upper()}[/{emotion_color}]")
-        emotion_table.add_row("Sentiment Score", f"[{emotion_color}]{emotion_score.sentiment_score:+.3f}[/{emotion_color}]")
-        emotion_table.add_row("Crypto Sentiment", f"{emotion_score.crypto_specific_sentiment:+.3f}")
+        emotion_table.add_row(
+            "Dominant Emotion",
+            f"[{emotion_color}]{emotion_score.dominant_emotion.upper()}[/{emotion_color}]",
+        )
+        emotion_table.add_row(
+            "Sentiment Score",
+            f"[{emotion_color}]{emotion_score.sentiment_score:+.3f}[/{emotion_color}]",
+        )
+        emotion_table.add_row(
+            "Crypto Sentiment", f"{emotion_score.crypto_specific_sentiment:+.3f}"
+        )
         emotion_table.add_row("Confidence", f"{emotion_score.confidence:.0%}")
-        emotion_table.add_row("Geo Risk", f"[{'red' if emotion_score.geopolitical_risk in ('high','critical') else 'yellow'}]{emotion_score.geopolitical_risk.upper()}[/{'red' if emotion_score.geopolitical_risk in ('high','critical') else 'yellow'}]")
-        emotion_table.add_row("Trading Bias", f"[bold]{emotion_score.trading_bias.upper()}[/bold]")
-        console.print(Panel(emotion_table, title="[cyan]Claude Emotion Intelligence[/cyan]", border_style="cyan"))
+        emotion_table.add_row(
+            "Geo Risk",
+            f"[{'red' if emotion_score.geopolitical_risk in ('high', 'critical') else 'yellow'}]{emotion_score.geopolitical_risk.upper()}[/{'red' if emotion_score.geopolitical_risk in ('high', 'critical') else 'yellow'}]",
+        )
+        emotion_table.add_row(
+            "Trading Bias", f"[bold]{emotion_score.trading_bias.upper()}[/bold]"
+        )
+        console.print(
+            Panel(
+                emotion_table,
+                title="[cyan]Claude Emotion Intelligence[/cyan]",
+                border_style="cyan",
+            )
+        )
 
         # Key Events
         if emotion_score.key_events:
             events_text = "\n".join(f"  • {e}" for e in emotion_score.key_events[:5])
-            console.print(Panel(events_text, title="[cyan]Key Geopolitical Events[/cyan]", border_style="dim"))
+            console.print(
+                Panel(
+                    events_text,
+                    title="[cyan]Key Geopolitical Events[/cyan]",
+                    border_style="dim",
+                )
+            )
 
         # Claude Reasoning
         if emotion_score.reasoning:
-            console.print(Panel(
-                f"[italic]{emotion_score.reasoning}[/italic]",
-                title="[cyan]Claude AI Reasoning[/cyan]",
-                border_style="dim"
-            ))
+            console.print(
+                Panel(
+                    f"[italic]{emotion_score.reasoning}[/italic]",
+                    title="[cyan]Claude AI Reasoning[/cyan]",
+                    border_style="dim",
+                )
+            )
 
         # Geopolitical Impact
-        geo_color = {"neutral": "white", "bullish": "green", "strongly_bullish": "green",
-                     "bearish": "red", "strongly_bearish": "red"}.get(geo_impact.get("net_sentiment", ""), "white")
+        geo_color = {
+            "neutral": "white",
+            "bullish": "green",
+            "strongly_bullish": "green",
+            "bearish": "red",
+            "strongly_bearish": "red",
+        }.get(geo_impact.get("net_sentiment", ""), "white")
         geo_table = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
         geo_table.add_column("Key", style="dim")
         geo_table.add_column("Value", style="bold")
-        geo_table.add_row("Net Sentiment", f"[{geo_color}]{geo_impact.get('net_sentiment', 'neutral').upper()}[/{geo_color}]")
+        geo_table.add_row(
+            "Net Sentiment",
+            f"[{geo_color}]{geo_impact.get('net_sentiment', 'neutral').upper()}[/{geo_color}]",
+        )
         geo_table.add_row("Total Impact", f"{geo_impact.get('total_impact', 0):+.3f}")
         geo_table.add_row("Risk Level", geo_impact.get("risk_level", "low").upper())
         geo_table.add_row("Events Detected", str(geo_impact.get("event_count", 0)))
-        geo_table.add_row("Bullish Pressure", f"{geo_impact.get('bullish_pressure', 0):.3f}")
-        geo_table.add_row("Bearish Pressure", f"{geo_impact.get('bearish_pressure', 0):.3f}")
-        console.print(Panel(geo_table, title="[magenta]Geopolitical Impact[/magenta]", border_style="magenta"))
+        geo_table.add_row(
+            "Bullish Pressure", f"{geo_impact.get('bullish_pressure', 0):.3f}"
+        )
+        geo_table.add_row(
+            "Bearish Pressure", f"{geo_impact.get('bearish_pressure', 0):.3f}"
+        )
+        console.print(
+            Panel(
+                geo_table,
+                title="[magenta]Geopolitical Impact[/magenta]",
+                border_style="magenta",
+            )
+        )
 
         # Trade Signal
-        sig_color = "green" if signal.action in ("buy", "close_short") else \
-                    "red" if signal.action in ("sell", "close_long") else "yellow"
+        sig_color = (
+            "green"
+            if signal.action in ("buy", "close_short")
+            else "red"
+            if signal.action in ("sell", "close_long")
+            else "yellow"
+        )
         sig_table = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
         sig_table.add_column("Key", style="dim")
         sig_table.add_column("Value", style="bold")
-        sig_table.add_row("Action", f"[{sig_color}]{signal.action.upper()}[/{sig_color}]")
+        sig_table.add_row(
+            "Action", f"[{sig_color}]{signal.action.upper()}[/{sig_color}]"
+        )
         sig_table.add_row("Current Price", f"${price:,.2f}")
         sig_table.add_row("Stop Loss", f"${signal.stop_loss:,.2f}")
         sig_table.add_row("Take Profit", f"${signal.take_profit:,.2f}")
         sig_table.add_row("Confidence", f"{signal.confidence:.0%}")
         sig_table.add_row("Risk:Reward", f"{signal.risk_reward_ratio:.2f}:1")
         sig_table.add_row("Size Multiplier", f"{signal.position_size_multiplier:.0%}")
-        sig_table.add_row("Valid Signal", "[green]YES[/green]" if signal.is_valid else "[red]NO[/red]")
+        sig_table.add_row(
+            "Valid Signal", "[green]YES[/green]" if signal.is_valid else "[red]NO[/red]"
+        )
         if signal.signal_sources:
             sig_table.add_row("Sources", ", ".join(signal.signal_sources))
-        console.print(Panel(sig_table, title="[bold]Trade Signal[/bold]", border_style=sig_color))
+        console.print(
+            Panel(sig_table, title="[bold]Trade Signal[/bold]", border_style=sig_color)
+        )
 
         # Risk Metrics
-        risk_color = {"green": "green", "yellow": "yellow", "red": "red", "halt": "bold red"}
+        risk_color = {
+            "green": "green",
+            "yellow": "yellow",
+            "red": "red",
+            "halt": "bold red",
+        }
         r_color = risk_color.get(risk_metrics.risk_level, "white")
         risk_table = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
         risk_table.add_column("Key", style="dim")
         risk_table.add_column("Value", style="bold")
-        risk_table.add_row("Risk Level", f"[{r_color}]{risk_metrics.risk_level.upper()}[/{r_color}]")
+        risk_table.add_row(
+            "Risk Level", f"[{r_color}]{risk_metrics.risk_level.upper()}[/{r_color}]"
+        )
         risk_table.add_row("Balance", f"${risk_metrics.account_balance:,.2f}")
-        risk_table.add_row("Daily PnL", f"${risk_metrics.daily_pnl:+.2f} ({risk_metrics.daily_pnl_pct:+.2f}%)")
+        risk_table.add_row(
+            "Daily PnL",
+            f"${risk_metrics.daily_pnl:+.2f} ({risk_metrics.daily_pnl_pct:+.2f}%)",
+        )
         risk_table.add_row("Max Drawdown", f"{risk_metrics.max_drawdown_pct:.2f}%")
-        risk_table.add_row("Can Trade", "[green]YES[/green]" if risk_metrics.can_trade else "[red]NO[/red]")
+        risk_table.add_row(
+            "Can Trade",
+            "[green]YES[/green]" if risk_metrics.can_trade else "[red]NO[/red]",
+        )
         if risk_metrics.rejection_reason:
             risk_table.add_row("Reason", f"[dim]{risk_metrics.rejection_reason}[/dim]")
-        console.print(Panel(risk_table, title="[yellow]Risk Management[/yellow]", border_style="yellow"))
+        console.print(
+            Panel(
+                risk_table,
+                title="[yellow]Risk Management[/yellow]",
+                border_style="yellow",
+            )
+        )
 
         # Recent news headlines
         if articles:
@@ -393,21 +505,37 @@ class AlchemyBot:
             news_table.add_column("Score", width=6)
             news_table.add_column("Headline")
             for a in articles[:5]:
-                score_color = "green" if a.relevance_score >= 0.6 else "yellow" if a.relevance_score >= 0.3 else "dim"
+                score_color = (
+                    "green"
+                    if a.relevance_score >= 0.6
+                    else "yellow"
+                    if a.relevance_score >= 0.3
+                    else "dim"
+                )
                 news_table.add_row(
                     a.source[:15],
                     f"[{score_color}]{a.relevance_score:.2f}[/{score_color}]",
                     a.title[:80],
                 )
-            console.print(Panel(news_table, title="[dim]Top News Articles[/dim]", border_style="dim"))
+            console.print(
+                Panel(
+                    news_table, title="[dim]Top News Articles[/dim]", border_style="dim"
+                )
+            )
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Alchemy - Crypto Trading with Emotion Intelligence")
-    parser.add_argument("--dry-run", action="store_true", help="Paper trading mode (no real orders)")
+    parser = argparse.ArgumentParser(
+        description="Alchemy - Crypto Trading with Emotion Intelligence"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Paper trading mode (no real orders)"
+    )
     parser.add_argument("--live", action="store_true", help="Enable live trading")
     parser.add_argument("--symbol", default=None, help="Trading symbol (e.g. BTCUSD)")
-    parser.add_argument("--interval", type=int, default=None, help="Analysis interval in minutes")
+    parser.add_argument(
+        "--interval", type=int, default=None, help="Analysis interval in minutes"
+    )
     return parser.parse_args()
 
 

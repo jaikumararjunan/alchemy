@@ -3,8 +3,9 @@ Decision Store
 ==============
 CRUD operations for AI decisions and equity snapshots.
 """
+
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 
 from src.storage.database import Database
 from src.utils.logger import get_logger
@@ -43,14 +44,28 @@ class DecisionStore:
                 emotion_score, geo_risk, forecast_score, market_regime,
                 adx, signal_score, dry_run)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (ts, symbol, cycle, action, confidence, reasoning,
-             emotion_score, geo_risk, forecast_score, market_regime,
-             adx, signal_score, int(dry_run)),
+            (
+                ts,
+                symbol,
+                cycle,
+                action,
+                confidence,
+                reasoning,
+                emotion_score,
+                geo_risk,
+                forecast_score,
+                market_regime,
+                adx,
+                signal_score,
+                int(dry_run),
+            ),
         )
         logger.debug(f"Decision recorded: {action} {symbol} cycle={cycle}")
         return cur.lastrowid
 
-    def get_recent_decisions(self, limit: int = 50, symbol: Optional[str] = None) -> List[Dict]:
+    def get_recent_decisions(
+        self, limit: int = 50, symbol: Optional[str] = None
+    ) -> List[Dict]:
         if symbol:
             return self.db.fetchall(
                 "SELECT * FROM decisions WHERE symbol=? ORDER BY ts DESC LIMIT ?",

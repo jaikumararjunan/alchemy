@@ -5,24 +5,26 @@ Delta Exchange charges funding every 8 hours on perpetual contracts.
 Positive funding = longs pay shorts (market is long-biased → potentially bearish signal).
 Negative funding = shorts pay longs (market is short-biased → potentially bullish signal).
 """
-import math
+
 from dataclasses import dataclass
-from typing import List, Optional
 from collections import deque
 
 
 @dataclass
 class FundingRateData:
     """Current and historical funding rate analysis."""
-    current_rate: float          # 8-hour rate (e.g. 0.0001 = 0.01%)
-    annualized_rate_pct: float   # current_rate * 3 * 365 * 100
-    rate_label: str              # "extreme_positive" | "high_positive" | "neutral" | "high_negative" | "extreme_negative"
-    signal: str                  # "bearish" | "slightly_bearish" | "neutral" | "slightly_bullish" | "bullish"
-    signal_strength: float       # 0.0 – 1.0
-    sentiment_score: float       # -1.0 (bearish) to +1.0 (bullish)
-    avg_rate_7d: float           # 7-day average 8h rate
-    trend: str                   # "rising" | "falling" | "stable"
-    cumulative_7d_pct: float     # cumulative funding paid over 7d (= avg_rate * 21 payments)
+
+    current_rate: float  # 8-hour rate (e.g. 0.0001 = 0.01%)
+    annualized_rate_pct: float  # current_rate * 3 * 365 * 100
+    rate_label: str  # "extreme_positive" | "high_positive" | "neutral" | "high_negative" | "extreme_negative"
+    signal: str  # "bearish" | "slightly_bearish" | "neutral" | "slightly_bullish" | "bullish"
+    signal_strength: float  # 0.0 – 1.0
+    sentiment_score: float  # -1.0 (bearish) to +1.0 (bullish)
+    avg_rate_7d: float  # 7-day average 8h rate
+    trend: str  # "rising" | "falling" | "stable"
+    cumulative_7d_pct: (
+        float  # cumulative funding paid over 7d (= avg_rate * 21 payments)
+    )
     interpretation: str
 
     def to_dict(self) -> dict:
@@ -49,11 +51,11 @@ class FundingRateMonitor:
     """
 
     # 8-hour thresholds
-    _EXTREME_POS  = 0.0010   # > 0.10% per 8h  = 109% annualized
-    _HIGH_POS     = 0.0003   # > 0.03% per 8h  = 32.8% annualized
-    _NEUTRAL_BAND = 0.0001   # ±0.01% per 8h   — near baseline
-    _HIGH_NEG     = -0.0003
-    _EXTREME_NEG  = -0.0010
+    _EXTREME_POS = 0.0010  # > 0.10% per 8h  = 109% annualized
+    _HIGH_POS = 0.0003  # > 0.03% per 8h  = 32.8% annualized
+    _NEUTRAL_BAND = 0.0001  # ±0.01% per 8h   — near baseline
+    _HIGH_NEG = -0.0003
+    _EXTREME_NEG = -0.0010
 
     def __init__(self, history_size: int = 21):  # 21 = 7 days × 3 payments/day
         self._history: deque = deque(maxlen=history_size)
@@ -84,7 +86,7 @@ class FundingRateMonitor:
         # Contrarian sentiment score
         # Positive funding → shorts favoured → bearish bias
         norm = max(self._EXTREME_POS, abs(current_rate))
-        raw_score = -current_rate / norm          # flip sign: positive funding → negative score
+        raw_score = -current_rate / norm  # flip sign: positive funding → negative score
         sentiment_score = max(-1.0, min(1.0, raw_score))
 
         # Signal
@@ -107,7 +109,7 @@ class FundingRateMonitor:
         # Trend
         if len(history_list) >= 3:
             recent = sum(history_list[-3:]) / 3
-            older  = sum(history_list[:3]) / 3 if len(history_list) >= 6 else avg_7d
+            older = sum(history_list[:3]) / 3 if len(history_list) >= 6 else avg_7d
             if recent > older * 1.1:
                 trend = "rising"
             elif recent < older * 0.9:
@@ -120,19 +122,29 @@ class FundingRateMonitor:
         # Interpretation
         rate_pct = current_rate * 100
         if label == "extreme_positive":
-            interp = (f"Funding extremely high (+{rate_pct:.3f}%/8h). "
-                      "Market heavily long — contrarian BEARISH. High squeeze risk.")
+            interp = (
+                f"Funding extremely high (+{rate_pct:.3f}%/8h). "
+                "Market heavily long — contrarian BEARISH. High squeeze risk."
+            )
         elif label == "high_positive":
-            interp = (f"Funding elevated (+{rate_pct:.3f}%/8h). "
-                      "Longs paying premium — slightly bearish lean.")
+            interp = (
+                f"Funding elevated (+{rate_pct:.3f}%/8h). "
+                "Longs paying premium — slightly bearish lean."
+            )
         elif label == "extreme_negative":
-            interp = (f"Funding extremely negative ({rate_pct:.3f}%/8h). "
-                      "Market heavily short — contrarian BULLISH. Short squeeze risk.")
+            interp = (
+                f"Funding extremely negative ({rate_pct:.3f}%/8h). "
+                "Market heavily short — contrarian BULLISH. Short squeeze risk."
+            )
         elif label == "high_negative":
-            interp = (f"Funding negative ({rate_pct:.3f}%/8h). "
-                      "Shorts paying premium — slightly bullish lean.")
+            interp = (
+                f"Funding negative ({rate_pct:.3f}%/8h). "
+                "Shorts paying premium — slightly bullish lean."
+            )
         else:
-            interp = f"Funding near neutral ({rate_pct:.4f}%/8h). No strong funding signal."
+            interp = (
+                f"Funding near neutral ({rate_pct:.4f}%/8h). No strong funding signal."
+            )
 
         return FundingRateData(
             current_rate=current_rate,

@@ -9,21 +9,23 @@ For Delta Exchange perps:
 For calendar futures:
   annualized_basis = (futures - spot) / spot / days_to_expiry * 365
 """
+
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional
 from collections import deque
 
 
 @dataclass
 class BasisData:
     """Spot-perp and spot-futures basis metrics."""
+
     spot_price: float
     perp_price: float
-    basis_usd: float              # perp - spot
-    basis_pct: float              # (perp - spot) / spot × 100
-    basis_label: str              # "strong_contango" | "contango" | "fair_value" | "backwardation" | "strong_backwardation"
-    signal: str                   # "bearish" | "slightly_bearish" | "neutral" | "slightly_bullish" | "bullish"
-    sentiment_score: float        # -1.0 to +1.0
+    basis_usd: float  # perp - spot
+    basis_pct: float  # (perp - spot) / spot × 100
+    basis_label: str  # "strong_contango" | "contango" | "fair_value" | "backwardation" | "strong_backwardation"
+    signal: str  # "bearish" | "slightly_bearish" | "neutral" | "slightly_bullish" | "bullish"
+    sentiment_score: float  # -1.0 to +1.0
 
     futures_price: Optional[float]
     futures_days: Optional[int]
@@ -31,7 +33,7 @@ class BasisData:
 
     # Rolling stats
     avg_basis_pct_1h: float
-    basis_trend: str              # "widening" | "narrowing" | "stable"
+    basis_trend: str  # "widening" | "narrowing" | "stable"
     interpretation: str
 
     def to_dict(self) -> dict:
@@ -43,9 +45,13 @@ class BasisData:
             "basis_label": self.basis_label,
             "signal": self.signal,
             "sentiment_score": round(self.sentiment_score, 4),
-            "futures_price": round(self.futures_price, 2) if self.futures_price else None,
+            "futures_price": round(self.futures_price, 2)
+            if self.futures_price
+            else None,
             "futures_days": self.futures_days,
-            "annualized_basis_pct": round(self.annualized_basis_pct, 2) if self.annualized_basis_pct else None,
+            "annualized_basis_pct": round(self.annualized_basis_pct, 2)
+            if self.annualized_basis_pct
+            else None,
             "avg_basis_pct_1h": round(self.avg_basis_pct_1h, 4),
             "basis_trend": self.basis_trend,
             "interpretation": self.interpretation,
@@ -59,11 +65,11 @@ class BasisTracker:
     """
 
     # Thresholds (as % of spot)
-    _STRONG_CONTANGO    =  0.30   # > +0.30%
-    _CONTANGO           =  0.10   # > +0.10%
-    _FAIR_VALUE_BAND    =  0.05   # ±0.05%
-    _BACKWARDATION      = -0.10   # < -0.10%
-    _STRONG_BACK        = -0.30   # < -0.30%
+    _STRONG_CONTANGO = 0.30  # > +0.30%
+    _CONTANGO = 0.10  # > +0.10%
+    _FAIR_VALUE_BAND = 0.05  # ±0.05%
+    _BACKWARDATION = -0.10  # < -0.10%
+    _STRONG_BACK = -0.30  # < -0.30%
 
     def __init__(self, history_size: int = 60):  # 60 × 1-min readings = 1 hour
         self._history: deque = deque(maxlen=history_size)
@@ -88,7 +94,7 @@ class BasisTracker:
         # Trend
         if len(history_list) >= 4:
             recent = sum(history_list[-2:]) / 2
-            older  = sum(history_list[-4:-2]) / 2
+            older = sum(history_list[-4:-2]) / 2
             if recent > older + 0.02:
                 trend = "widening"
             elif recent < older - 0.02:
@@ -134,17 +140,23 @@ class BasisTracker:
 
         # Interpretation
         if label == "strong_contango":
-            interp = (f"Strong contango (+{basis_pct:.3f}%). Perp premium extreme. "
-                      "Market over-extended long — bearish mean-reversion signal.")
+            interp = (
+                f"Strong contango (+{basis_pct:.3f}%). Perp premium extreme. "
+                "Market over-extended long — bearish mean-reversion signal."
+            )
         elif label == "contango":
-            interp = (f"Contango (+{basis_pct:.3f}%). Longs at a small premium. Slight bearish lean.")
+            interp = f"Contango (+{basis_pct:.3f}%). Longs at a small premium. Slight bearish lean."
         elif label == "strong_backwardation":
-            interp = (f"Strong backwardation ({basis_pct:.3f}%). Perp at deep discount. "
-                      "Market over-extended short — bullish mean-reversion signal.")
+            interp = (
+                f"Strong backwardation ({basis_pct:.3f}%). Perp at deep discount. "
+                "Market over-extended short — bullish mean-reversion signal."
+            )
         elif label == "backwardation":
-            interp = (f"Backwardation ({basis_pct:.3f}%). Shorts paying to hold. Slight bullish lean.")
+            interp = f"Backwardation ({basis_pct:.3f}%). Shorts paying to hold. Slight bullish lean."
         else:
-            interp = f"Basis near fair value ({basis_pct:.3f}%). No strong basis signal."
+            interp = (
+                f"Basis near fair value ({basis_pct:.3f}%). No strong basis signal."
+            )
 
         return BasisData(
             spot_price=spot_price,

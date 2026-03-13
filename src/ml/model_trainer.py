@@ -13,15 +13,16 @@ Orchestrates the full ML training pipeline:
 Also provides a single MLEngine.analyze() entry point used by
 the server API and AI orchestrator.
 """
+
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import numpy as np
 
 from src.ml.feature_engineer import FeatureEngineer, FeatureVector
 from src.ml.price_predictor import PricePredictor, PredictionResult
-from src.ml.sentiment_analyzer import SentimentAnalyzer, SentimentAnalysis
+from src.ml.sentiment_analyzer import SentimentAnalyzer
 from src.ml.anomaly_detector import AnomalyDetector, AnomalyReport
 from src.ml.signal_classifier import SignalClassifier, SignalDecision
 from src.utils.logger import get_logger
@@ -32,6 +33,7 @@ logger = get_logger(__name__)
 @dataclass
 class MLAnalysis:
     """Full ML analysis result for one trading cycle."""
+
     # Sub-results
     prediction: PredictionResult
     signal: SignalDecision
@@ -47,7 +49,7 @@ class MLAnalysis:
 
     # Composite ML signal (-1 → +1)
     ml_composite_score: float = 0.0
-    ml_action_suggestion: str = "HOLD"   # "BUY" | "SELL" | "HOLD"
+    ml_action_suggestion: str = "HOLD"  # "BUY" | "SELL" | "HOLD"
 
     def to_dict(self) -> Dict:
         return {
@@ -59,10 +61,7 @@ class MLAnalysis:
             "trained_samples": self.trained_samples,
             "ml_composite_score": round(self.ml_composite_score, 4),
             "ml_action_suggestion": self.ml_action_suggestion,
-            "features": (
-                self.feature_vector.to_dict()
-                if self.feature_vector else {}
-            ),
+            "features": (self.feature_vector.to_dict() if self.feature_vector else {}),
         }
 
 
@@ -82,13 +81,13 @@ class MLEngine:
         min_candles_for_train: int = 200,
     ):
         self.retrain_interval = retrain_interval_min * 60
-        self.min_candles      = min_candles_for_train
+        self.min_candles = min_candles_for_train
 
-        self.feature_eng  = FeatureEngineer()
-        self.predictor    = PricePredictor()
-        self.analyzer     = SentimentAnalyzer()
-        self.anomaly_det  = AnomalyDetector()
-        self.classifier   = SignalClassifier()
+        self.feature_eng = FeatureEngineer()
+        self.predictor = PricePredictor()
+        self.analyzer = SentimentAnalyzer()
+        self.anomaly_det = AnomalyDetector()
+        self.classifier = SignalClassifier()
 
         self._candle_history: List[Dict] = []
         self._sentiment_history: List[Dict] = []
@@ -97,7 +96,8 @@ class MLEngine:
 
         logger.info(
             "MLEngine ready (retrain every %d min, min_candles=%d)",
-            retrain_interval_min, min_candles_for_train,
+            retrain_interval_min,
+            min_candles_for_train,
         )
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -146,10 +146,16 @@ class MLEngine:
             prediction = self.predictor.predict(fv)
         else:
             from src.ml.price_predictor import PredictionResult
+
             prediction = PredictionResult(
-                direction="flat", direction_int=0,
-                prob_up=0.333, prob_down=0.333, prob_flat=0.334,
-                confidence=0.0, model_agreement=0.0, is_trained=False,
+                direction="flat",
+                direction_int=0,
+                prob_up=0.333,
+                prob_down=0.333,
+                prob_flat=0.334,
+                confidence=0.0,
+                model_agreement=0.0,
+                is_trained=False,
                 note="Insufficient candle history",
             )
 
@@ -163,11 +169,17 @@ class MLEngine:
             )
         else:
             from src.ml.signal_classifier import SignalDecision
+
             signal = SignalDecision(
-                signal="HOLD", confidence=0.0,
-                prob_buy=0.333, prob_sell=0.333, prob_hold=0.334,
-                ml_score=0.0, anomaly_risk=anomaly_report.risk_score,
-                is_trained=False, features_used=0,
+                signal="HOLD",
+                confidence=0.0,
+                prob_buy=0.333,
+                prob_sell=0.333,
+                prob_hold=0.334,
+                ml_score=0.0,
+                anomaly_risk=anomaly_report.risk_score,
+                is_trained=False,
+                features_used=0,
                 note="No feature vector available",
             )
 
@@ -180,8 +192,13 @@ class MLEngine:
         # Composite ML score
         composite = self._composite_score(prediction, signal, anomaly_report)
 
-        action = "BUY" if composite >= 0.25 else ("SELL" if composite <= -0.25 else "HOLD")
-        if anomaly_report.overall_risk in ("critical",) or anomaly_report.regime_change_detected:
+        action = (
+            "BUY" if composite >= 0.25 else ("SELL" if composite <= -0.25 else "HOLD")
+        )
+        if (
+            anomaly_report.overall_risk in ("critical",)
+            or anomaly_report.regime_change_detected
+        ):
             action = "HOLD"
 
         return MLAnalysis(
@@ -229,7 +246,7 @@ class MLEngine:
                 emotion_history or self._sentiment_history
             )
 
-        self._trained_n    = len(X)
+        self._trained_n = len(X)
         self._last_retrain = time.time()
 
         elapsed = time.time() - t0
@@ -248,7 +265,7 @@ class MLEngine:
     def analyze_headlines(self, texts: List[str]) -> Dict:
         """Analyze a batch of news headlines and return aggregated sentiment."""
         results = self.analyzer.analyze_batch(texts)
-        agg     = self.analyzer.aggregate(results)
+        agg = self.analyzer.aggregate(results)
         return {
             "aggregate": agg,
             "individual": [r.to_dict() for r in results[:20]],
@@ -297,7 +314,7 @@ class MLEngine:
         pred_score = prediction.prob_up - prediction.prob_down
 
         # Signal contribution
-        sig_score  = signal.ml_score    # already directional
+        sig_score = signal.ml_score  # already directional
 
         # Anomaly dampener
         dampener = 1.0 - anomaly_report.risk_score * 0.5

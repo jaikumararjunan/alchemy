@@ -19,6 +19,7 @@ Anomaly types:
   - REGIME_CHANGE  : CUSUM detects structural break (trending ↔ ranging)
   - CORR_BREAKDOWN : price-volume correlation breakdown
 """
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
@@ -32,14 +33,16 @@ logger = get_logger(__name__)
 
 @dataclass
 class Anomaly:
-    anomaly_type: str         # see module docstring
-    severity: str             # "low" | "medium" | "high" | "critical"
+    anomaly_type: str  # see module docstring
+    severity: str  # "low" | "medium" | "high" | "critical"
     z_score: float
     value: float
     baseline_mean: float
     baseline_std: float
     description: str
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     trading_implication: str = ""
 
     def to_dict(self) -> Dict:
@@ -59,8 +62,8 @@ class Anomaly:
 @dataclass
 class AnomalyReport:
     anomalies: List[Anomaly] = field(default_factory=list)
-    overall_risk: str = "normal"          # "normal"|"elevated"|"high"|"critical"
-    risk_score: float = 0.0               # 0.0 – 1.0
+    overall_risk: str = "normal"  # "normal"|"elevated"|"high"|"critical"
+    risk_score: float = 0.0  # 0.0 – 1.0
     regime_change_detected: bool = False
     cusum_stat: float = 0.0
     summary: str = ""
@@ -99,11 +102,11 @@ class AnomalyDetector:
         cusum_target: float = 0.5,
         cusum_limit: float = 4.0,
     ):
-        self.window        = window
-        self.z_threshold   = z_threshold
-        self.iqr_factor    = iqr_factor
-        self.cusum_target  = cusum_target
-        self.cusum_limit   = cusum_limit
+        self.window = window
+        self.z_threshold = z_threshold
+        self.iqr_factor = iqr_factor
+        self.cusum_target = cusum_target
+        self.cusum_limit = cusum_limit
 
         # Rolling histories
         self._price_returns: List[float] = []
@@ -112,10 +115,12 @@ class AnomalyDetector:
         self._sentiment_scores: List[float] = []
 
         # CUSUM state
-        self._cusum_pos = 0.0    # detects upward shifts
-        self._cusum_neg = 0.0    # detects downward shifts
+        self._cusum_pos = 0.0  # detects upward shifts
+        self._cusum_neg = 0.0  # detects downward shifts
 
-        logger.info("AnomalyDetector initialised (window=%d, z=%.1f)", window, z_threshold)
+        logger.info(
+            "AnomalyDetector initialised (window=%d, z=%.1f)", window, z_threshold
+        )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -132,9 +137,7 @@ class AnomalyDetector:
         if len(candles) < 20:
             return AnomalyReport(summary="Insufficient data")
 
-        closes  = np.array([float(c.get("close",  c.get("c", 0))) for c in candles])
-        highs   = np.array([float(c.get("high",   c.get("h", 0))) for c in candles])
-        lows    = np.array([float(c.get("low",    c.get("l", 0))) for c in candles])
+        closes = np.array([float(c.get("close", c.get("c", 0))) for c in candles])
         volumes = np.array([float(c.get("volume", c.get("v", 0))) for c in candles])
 
         # Compute current period metrics
@@ -149,10 +152,10 @@ class AnomalyDetector:
             self._sentiment_scores.append(sentiment_score)
 
         # Trim to window
-        self._price_returns  = self._price_returns[-self.window:]
-        self._volumes        = self._volumes[-self.window:]
-        self._atrs           = self._atrs[-self.window:]
-        self._sentiment_scores = self._sentiment_scores[-self.window:]
+        self._price_returns = self._price_returns[-self.window :]
+        self._volumes = self._volumes[-self.window :]
+        self._atrs = self._atrs[-self.window :]
+        self._sentiment_scores = self._sentiment_scores[-self.window :]
 
         anomalies: List[Anomaly] = []
 
@@ -162,7 +165,7 @@ class AnomalyDetector:
                 series=self._price_returns,
                 current=ret,
                 anom_type="PRICE_SPIKE",
-                label=f"Return {ret*100:+.2f}%",
+                label=f"Return {ret * 100:+.2f}%",
                 implication="Possible momentum entry or stop-hunt; widen SL",
             )
             if a:
@@ -186,7 +189,7 @@ class AnomalyDetector:
                 series=self._atrs,
                 current=atr,
                 anom_type="VOLATILITY_JUMP",
-                label=f"ATR expansion {atr/closes[-1]*100:.3f}%",
+                label=f"ATR expansion {atr / closes[-1] * 100:.3f}%",
                 implication="Widen stops; reduce position size; possible regime change",
             )
             if a:
@@ -233,7 +236,11 @@ class AnomalyDetector:
 
         logger.debug(
             "AnomalyDetector: %d anomalies | risk=%s (%.2f) | cusum=%.2f | regime_change=%s",
-            len(anomalies), overall, risk_score, cusum_stat, regime_change
+            len(anomalies),
+            overall,
+            risk_score,
+            cusum_stat,
+            regime_change,
         )
 
         return AnomalyReport(
@@ -247,24 +254,26 @@ class AnomalyDetector:
 
     def get_rolling_stats(self) -> Dict:
         """Return current rolling baseline statistics."""
+
         def _stats(arr):
             if len(arr) < 3:
                 return {"mean": 0, "std": 0, "min": 0, "max": 0, "n": len(arr)}
             a = np.array(arr)
             return {
                 "mean": round(float(np.mean(a)), 6),
-                "std":  round(float(np.std(a, ddof=1)), 6),
-                "min":  round(float(np.min(a)), 6),
-                "max":  round(float(np.max(a)), 6),
-                "n":    len(arr),
+                "std": round(float(np.std(a, ddof=1)), 6),
+                "min": round(float(np.min(a)), 6),
+                "max": round(float(np.max(a)), 6),
+                "n": len(arr),
             }
+
         return {
             "price_returns": _stats(self._price_returns),
-            "volumes":       _stats(self._volumes),
-            "atrs":          _stats(self._atrs),
-            "sentiment":     _stats(self._sentiment_scores),
-            "cusum_pos":     round(self._cusum_pos, 4),
-            "cusum_neg":     round(self._cusum_neg, 4),
+            "volumes": _stats(self._volumes),
+            "atrs": _stats(self._atrs),
+            "sentiment": _stats(self._sentiment_scores),
+            "cusum_pos": round(self._cusum_pos, 4),
+            "cusum_neg": round(self._cusum_neg, 4),
         }
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -277,11 +286,11 @@ class AnomalyDetector:
         label: str,
         implication: str,
     ) -> Optional[Anomaly]:
-        arr  = np.array(series[:-1])     # exclude current from baseline
+        arr = np.array(series[:-1])  # exclude current from baseline
         if len(arr) < 5:
             return None
         mean = float(np.mean(arr))
-        std  = float(np.std(arr, ddof=1))
+        std = float(np.std(arr, ddof=1))
         if std < 1e-10:
             return None
 
@@ -292,7 +301,9 @@ class AnomalyDetector:
         # Also check IQR
         q1, q3 = np.percentile(arr, 25), np.percentile(arr, 75)
         iqr = q3 - q1
-        iqr_anomaly = current < q1 - self.iqr_factor * iqr or current > q3 + self.iqr_factor * iqr
+        iqr_anomaly = (
+            current < q1 - self.iqr_factor * iqr or current > q3 + self.iqr_factor * iqr
+        )
 
         if abs(z) >= 4.0 or (abs(z) >= self.z_threshold and iqr_anomaly):
             severity = "critical" if abs(z) >= 5 else "high"
@@ -321,7 +332,7 @@ class AnomalyDetector:
             return 0.0, False
 
         baseline = np.array(self._price_returns[:-1])
-        mu   = float(np.mean(baseline))
+        mu = float(np.mean(baseline))
         sigma = float(np.std(baseline, ddof=1))
         if sigma < 1e-10:
             return 0.0, False
@@ -334,7 +345,11 @@ class AnomalyDetector:
         detected = combined > self.cusum_limit
 
         if detected:
-            logger.info("CUSUM regime change detected: stat=%.2f (limit=%.1f)", combined, self.cusum_limit)
+            logger.info(
+                "CUSUM regime change detected: stat=%.2f (limit=%.1f)",
+                combined,
+                self.cusum_limit,
+            )
             # Reset after detection
             self._cusum_pos = 0.0
             self._cusum_neg = 0.0
@@ -342,12 +357,14 @@ class AnomalyDetector:
         return combined, detected
 
     @staticmethod
-    def _correlation_check(closes: np.ndarray, volumes: np.ndarray) -> Optional[Anomaly]:
+    def _correlation_check(
+        closes: np.ndarray, volumes: np.ndarray
+    ) -> Optional[Anomaly]:
         """Detect price-volume correlation breakdown (divergence signal)."""
         if len(closes) < 15:
             return None
         price_rets = np.diff(closes)
-        vol_chg    = np.diff(volumes)
+        vol_chg = np.diff(volumes)
         if len(price_rets) < 10:
             return None
         corr = float(np.corrcoef(price_rets, vol_chg)[0, 1])

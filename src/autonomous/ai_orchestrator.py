@@ -3,11 +3,11 @@ Fully Autonomous AI Trading Orchestrator.
 Uses Claude with tool_use to autonomously make trading decisions,
 manage positions, adapt strategy, and self-monitor performance.
 """
+
 import json
 import time
-import asyncio
 from datetime import datetime, timezone
-from typing import Any, Optional, Callable
+from typing import Optional, Callable
 from dataclasses import dataclass, field
 
 import anthropic
@@ -117,8 +117,17 @@ class AIOrchestrator:
     fully autonomous trading decisions. Acts as the "brain" of Alchemy.
     """
 
-    def __init__(self, config, exchange, emotion_engine, geo_analyzer,
-                 news_fetcher, strategy, risk_manager, state_broadcaster: Optional[Callable] = None):
+    def __init__(
+        self,
+        config,
+        exchange,
+        emotion_engine,
+        geo_analyzer,
+        news_fetcher,
+        strategy,
+        risk_manager,
+        state_broadcaster: Optional[Callable] = None,
+    ):
         self.config = config
         self.exchange = exchange
         self.emotion_engine = emotion_engine
@@ -149,17 +158,23 @@ class AIOrchestrator:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Trading symbol e.g. BTCUSD"},
-                        "timeframe": {"type": "string", "enum": ["1m", "5m", "15m", "1h", "4h", "1d"],
-                                      "description": "Candle timeframe"}
+                        "symbol": {
+                            "type": "string",
+                            "description": "Trading symbol e.g. BTCUSD",
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": ["1m", "5m", "15m", "1h", "4h", "1d"],
+                            "description": "Candle timeframe",
+                        },
                     },
-                    "required": ["symbol"]
-                }
+                    "required": ["symbol"],
+                },
             },
             {
                 "name": "get_portfolio_state",
                 "description": "Get account balance, open positions, P&L, and margin usage",
-                "input_schema": {"type": "object", "properties": {}}
+                "input_schema": {"type": "object", "properties": {}},
             },
             {
                 "name": "analyze_news_sentiment",
@@ -167,9 +182,12 @@ class AIOrchestrator:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "force_refresh": {"type": "boolean", "description": "Force fresh news fetch"}
-                    }
-                }
+                        "force_refresh": {
+                            "type": "boolean",
+                            "description": "Force fresh news fetch",
+                        }
+                    },
+                },
             },
             {
                 "name": "get_technical_indicators",
@@ -178,10 +196,13 @@ class AIOrchestrator:
                     "type": "object",
                     "properties": {
                         "symbol": {"type": "string"},
-                        "timeframe": {"type": "string", "enum": ["1m", "5m", "15m", "1h", "4h"]}
+                        "timeframe": {
+                            "type": "string",
+                            "enum": ["1m", "5m", "15m", "1h", "4h"],
+                        },
                     },
-                    "required": ["symbol"]
-                }
+                    "required": ["symbol"],
+                },
             },
             {
                 "name": "place_trade",
@@ -192,14 +213,36 @@ class AIOrchestrator:
                         "symbol": {"type": "string"},
                         "side": {"type": "string", "enum": ["buy", "sell"]},
                         "order_type": {"type": "string", "enum": ["market", "limit"]},
-                        "size_usd": {"type": "number", "description": "Position size in USD"},
-                        "stop_loss_pct": {"type": "number", "description": "Stop loss percentage"},
-                        "take_profit_pct": {"type": "number", "description": "Take profit percentage"},
-                        "leverage": {"type": "integer", "description": "Leverage multiplier"},
-                        "reasoning": {"type": "string", "description": "Explain your trading decision"}
+                        "size_usd": {
+                            "type": "number",
+                            "description": "Position size in USD",
+                        },
+                        "stop_loss_pct": {
+                            "type": "number",
+                            "description": "Stop loss percentage",
+                        },
+                        "take_profit_pct": {
+                            "type": "number",
+                            "description": "Take profit percentage",
+                        },
+                        "leverage": {
+                            "type": "integer",
+                            "description": "Leverage multiplier",
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Explain your trading decision",
+                        },
                     },
-                    "required": ["symbol", "side", "size_usd", "stop_loss_pct", "take_profit_pct", "reasoning"]
-                }
+                    "required": [
+                        "symbol",
+                        "side",
+                        "size_usd",
+                        "stop_loss_pct",
+                        "take_profit_pct",
+                        "reasoning",
+                    ],
+                },
             },
             {
                 "name": "close_position",
@@ -208,10 +251,13 @@ class AIOrchestrator:
                     "type": "object",
                     "properties": {
                         "symbol": {"type": "string"},
-                        "reason": {"type": "string", "description": "Reason for closing"}
+                        "reason": {
+                            "type": "string",
+                            "description": "Reason for closing",
+                        },
                     },
-                    "required": ["symbol", "reason"]
-                }
+                    "required": ["symbol", "reason"],
+                },
             },
             {
                 "name": "update_stop_loss",
@@ -220,11 +266,14 @@ class AIOrchestrator:
                     "type": "object",
                     "properties": {
                         "symbol": {"type": "string"},
-                        "new_stop_loss": {"type": "number", "description": "New stop loss price"},
-                        "reason": {"type": "string"}
+                        "new_stop_loss": {
+                            "type": "number",
+                            "description": "New stop loss price",
+                        },
+                        "reason": {"type": "string"},
                     },
-                    "required": ["symbol", "new_stop_loss", "reason"]
-                }
+                    "required": ["symbol", "new_stop_loss", "reason"],
+                },
             },
             {
                 "name": "set_trading_mode",
@@ -232,12 +281,20 @@ class AIOrchestrator:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "mode": {"type": "string", "enum": ["aggressive", "conservative", "monitoring", "halt"],
-                                 "description": "Trading mode"},
-                        "reason": {"type": "string"}
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "aggressive",
+                                "conservative",
+                                "monitoring",
+                                "halt",
+                            ],
+                            "description": "Trading mode",
+                        },
+                        "reason": {"type": "string"},
                     },
-                    "required": ["mode", "reason"]
-                }
+                    "required": ["mode", "reason"],
+                },
             },
             {
                 "name": "get_market_forecast",
@@ -251,12 +308,17 @@ class AIOrchestrator:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "symbol":    {"type": "string", "description": "Trading symbol e.g. BTCUSD"},
-                        "timeframe": {"type": "string",
-                                      "enum": ["1m", "5m", "15m", "1h", "4h", "1d"],
-                                      "description": "Candle timeframe for analysis (default: 1h)"}
-                    }
-                }
+                        "symbol": {
+                            "type": "string",
+                            "description": "Trading symbol e.g. BTCUSD",
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "enum": ["1m", "5m", "15m", "1h", "4h", "1d"],
+                            "description": "Candle timeframe for analysis (default: 1h)",
+                        },
+                    },
+                },
             },
             {
                 "name": "get_trade_history",
@@ -264,9 +326,12 @@ class AIOrchestrator:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "limit": {"type": "integer", "description": "Number of recent trades to retrieve"}
-                    }
-                }
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of recent trades to retrieve",
+                        }
+                    },
+                },
             },
             {
                 "name": "scan_all_contracts",
@@ -284,14 +349,14 @@ class AIOrchestrator:
                         "symbols": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Optional subset of symbols to scan. Omit to scan the full watch-list."
+                            "description": "Optional subset of symbols to scan. Omit to scan the full watch-list.",
                         },
                         "top_n": {
                             "type": "integer",
-                            "description": "Number of top opportunities to return (default 5)"
-                        }
-                    }
-                }
+                            "description": "Number of top opportunities to return (default 5)",
+                        },
+                    },
+                },
             },
             {
                 "name": "get_derivatives_data",
@@ -303,11 +368,14 @@ class AIOrchestrator:
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "symbol": {"type": "string", "description": "Trading symbol e.g. BTCUSD"}
+                        "symbol": {
+                            "type": "string",
+                            "description": "Trading symbol e.g. BTCUSD",
+                        }
                     },
-                    "required": ["symbol"]
-                }
-            }
+                    "required": ["symbol"],
+                },
+            },
         ]
 
     # ─────────────────────────────────────────
@@ -356,15 +424,22 @@ class AIOrchestrator:
             if not self.config.trading.dry_run:
                 ticker = self.exchange.get_ticker(symbol)
                 end_time = int(time.time())
-                candles = self.exchange.get_candles(symbol, resolution=resolution,
-                                                     start=end_time - resolution * 100,
-                                                     end=end_time)
+                candles = self.exchange.get_candles(
+                    symbol,
+                    resolution=resolution,
+                    start=end_time - resolution * 100,
+                    end=end_time,
+                )
                 ob = self.exchange.get_orderbook(symbol, depth=5)
                 ob_bids = ob.get("buy", [])
                 ob_asks = ob.get("sell", [])
                 bid = float(ob_bids[0]["limit_price"]) if ob_bids else ticker.bid
                 ask = float(ob_asks[0]["limit_price"]) if ob_asks else ticker.ask
-                spread_pct = round((ask - bid) / ticker.mark_price * 100, 4) if ticker.mark_price else 0.0
+                spread_pct = (
+                    round((ask - bid) / ticker.mark_price * 100, 4)
+                    if ticker.mark_price
+                    else 0.0
+                )
                 data = {
                     "symbol": symbol,
                     "mark_price": ticker.mark_price,
@@ -383,24 +458,32 @@ class AIOrchestrator:
                 return data
             else:
                 import random
+
                 base_price = 85000.0
                 mp = base_price + random.uniform(-3000, 3000)
                 bid = round(mp - random.uniform(5, 20), 1)
                 ask = round(mp + random.uniform(5, 20), 1)
                 mock = {
-                    "symbol": symbol, "mark_price": round(mp, 2),
+                    "symbol": symbol,
+                    "mark_price": round(mp, 2),
                     "last_price": round(mp + random.uniform(-50, 50), 2),
-                    "bid": bid, "ask": ask,
+                    "bid": bid,
+                    "ask": ask,
                     "spread_pct": round((ask - bid) / mp * 100, 4),
                     "volume_24h": round(random.uniform(800_000_000, 1_200_000_000), 0),
                     "change_24h_pct": random.uniform(-5, 5),
-                    "open_interest": round(random.uniform(8_000_000_000, 12_000_000_000), 0),
+                    "open_interest": round(
+                        random.uniform(8_000_000_000, 12_000_000_000), 0
+                    ),
                     "timeframe": inp.get("timeframe", "1h"),
                     "candles_count": 100,
                 }
                 self._cached_data["market"] = mock
                 self._cached_data["candles"] = [
-                    {"close": base_price + random.uniform(-5000, 5000), "volume": random.uniform(100, 800)}
+                    {
+                        "close": base_price + random.uniform(-5000, 5000),
+                        "volume": random.uniform(100, 800),
+                    }
                     for _ in range(100)
                 ]
                 return mock
@@ -415,9 +498,13 @@ class AIOrchestrator:
                 open_orders = self.exchange.get_open_orders()
                 pos_data = [
                     {
-                        "symbol": p.symbol, "side": p.side, "size": p.size,
-                        "entry_price": p.entry_price, "liquidation_price": p.liquidation_price,
-                        "unrealized_pnl": p.unrealized_pnl, "realized_pnl": p.realized_pnl,
+                        "symbol": p.symbol,
+                        "side": p.side,
+                        "size": p.size,
+                        "entry_price": p.entry_price,
+                        "liquidation_price": p.liquidation_price,
+                        "unrealized_pnl": p.unrealized_pnl,
+                        "realized_pnl": p.realized_pnl,
                         "leverage": p.leverage,
                     }
                     for p in positions
@@ -435,9 +522,12 @@ class AIOrchestrator:
             else:
                 perf = self.risk_manager.get_performance_summary()
                 return {
-                    "balance_usdt": 10000.0, "available_balance": 9500.0,
-                    "blocked_margin": 500.0, "positions": [],
-                    "open_orders_count": 0, "performance": perf,
+                    "balance_usdt": 10000.0,
+                    "available_balance": 9500.0,
+                    "blocked_margin": 500.0,
+                    "positions": [],
+                    "open_orders_count": 0,
+                    "performance": perf,
                     "trading_mode": self.state.current_mode,
                 }
         except Exception as e:
@@ -470,6 +560,7 @@ class AIOrchestrator:
 
     def _tool_get_technical_indicators(self, inp: dict) -> dict:
         import statistics as stats
+
         candles = self._cached_data.get("candles", [])
         if not candles:
             self._tool_get_market_data(inp)
@@ -489,11 +580,11 @@ class AIOrchestrator:
 
         # MACD
         macd = ema12 - ema26
-        signal_line = macd  # simplified
+        _ = macd  # signal_line placeholder (simplified MACD)
 
         # RSI
-        gains = [max(closes[i] - closes[i-1], 0) for i in range(1, len(closes))]
-        losses = [max(closes[i-1] - closes[i], 0) for i in range(1, len(closes))]
+        gains = [max(closes[i] - closes[i - 1], 0) for i in range(1, len(closes))]
+        losses = [max(closes[i - 1] - closes[i], 0) for i in range(1, len(closes))]
         avg_gain = stats.mean(gains[-14:])
         avg_loss = stats.mean(losses[-14:])
         rsi = 100 - (100 / (1 + avg_gain / avg_loss)) if avg_loss > 0 else 100
@@ -522,19 +613,26 @@ class AIOrchestrator:
             trend = "downtrend"
 
         # Price momentum (10-period ROC)
-        roc10 = (closes[-1] - closes[-10]) / closes[-10] * 100 if len(closes) >= 10 else 0
+        roc10 = (
+            (closes[-1] - closes[-10]) / closes[-10] * 100 if len(closes) >= 10 else 0
+        )
 
         result = {
-            "price": price, "sma20": round(sma20, 2),
+            "price": price,
+            "sma20": round(sma20, 2),
             "sma50": round(sma50, 2) if sma50 else None,
-            "ema12": round(ema12, 2), "ema26": round(ema26, 2),
+            "ema12": round(ema12, 2),
+            "ema26": round(ema26, 2),
             "macd": round(macd, 4),
             "rsi": round(rsi, 2),
-            "bb_upper": round(bb_upper, 2), "bb_lower": round(bb_lower, 2),
-            "bb_mid": round(bb_mid, 2), "bb_width_pct": round(bb_width * 100, 2),
+            "bb_upper": round(bb_upper, 2),
+            "bb_lower": round(bb_lower, 2),
+            "bb_mid": round(bb_mid, 2),
+            "bb_width_pct": round(bb_width * 100, 2),
             "bb_position": round(bb_position, 3),
             "volume_ratio": round(vol_ratio, 2),
-            "trend": trend, "roc_10": round(roc10, 3),
+            "trend": trend,
+            "roc_10": round(roc10, 3),
             "signals": {
                 "rsi_oversold": rsi < 30,
                 "rsi_overbought": rsi > 70,
@@ -544,7 +642,7 @@ class AIOrchestrator:
                 "strong_uptrend": trend == "strong_uptrend",
                 "strong_downtrend": trend == "strong_downtrend",
                 "macd_positive": macd > 0,
-            }
+            },
         }
         self._cached_data["technicals"] = result
         return result
@@ -566,7 +664,7 @@ class AIOrchestrator:
         contracts = max(int(size_usd * leverage), 1)
 
         # Brokerage cost estimate
-        notional_usd   = size_usd * leverage
+        notional_usd = size_usd * leverage
         taker_fee_rate = getattr(self.config.trading, "taker_fee_rate", 0.0005)
         round_trip_fee = round(notional_usd * taker_fee_rate * 2, 4)
         fee_pct_margin = round(taker_fee_rate * 2 * leverage * 100, 4)
@@ -578,8 +676,10 @@ class AIOrchestrator:
         decision = {
             "time": self.state.last_action_time,
             "action": f"{side.upper()} {symbol}",
-            "price": price, "contracts": contracts,
-            "stop_loss": round(stop_loss, 2), "take_profit": round(take_profit, 2),
+            "price": price,
+            "contracts": contracts,
+            "stop_loss": round(stop_loss, 2),
+            "take_profit": round(take_profit, 2),
             "estimated_fee_usd": round_trip_fee,
             "fee_pct_of_margin": fee_pct_margin,
             "reasoning": reasoning[:200],
@@ -588,26 +688,40 @@ class AIOrchestrator:
         self.state.decisions = self.state.decisions[:50]
 
         if self.config.trading.dry_run:
-            logger.info(f"[DRY RUN] Trade: {side} {contracts}x {symbol} @ {price} | fee≈${round_trip_fee:.2f}")
+            logger.info(
+                f"[DRY RUN] Trade: {side} {contracts}x {symbol} @ {price} | fee≈${round_trip_fee:.2f}"
+            )
             return {
-                "status": "dry_run_simulated", "symbol": symbol, "side": side,
-                "contracts": contracts, "price": price,
-                "stop_loss": round(stop_loss, 2), "take_profit": round(take_profit, 2),
-                "size_usd": size_usd, "leverage": leverage,
+                "status": "dry_run_simulated",
+                "symbol": symbol,
+                "side": side,
+                "contracts": contracts,
+                "price": price,
+                "stop_loss": round(stop_loss, 2),
+                "take_profit": round(take_profit, 2),
+                "size_usd": size_usd,
+                "leverage": leverage,
                 "estimated_round_trip_fee_usd": round_trip_fee,
                 "fee_pct_of_margin": fee_pct_margin,
             }
 
         from src.exchange.delta_client import Order
+
         product_id = self.exchange.get_product_id(symbol)
         if not product_id:
             return {"error": f"Product not found: {symbol}"}
         self.exchange.set_leverage(product_id, leverage)
         order = Order(symbol=symbol, side=side, order_type="market", size=contracts)
         result = self.exchange.place_order(order, product_id)
-        return {"status": "executed", "order_id": result.get("id"), "symbol": symbol,
-                "side": side, "contracts": contracts, "stop_loss": round(stop_loss, 2),
-                "take_profit": round(take_profit, 2)}
+        return {
+            "status": "executed",
+            "order_id": result.get("id"),
+            "symbol": symbol,
+            "side": side,
+            "contracts": contracts,
+            "stop_loss": round(stop_loss, 2),
+            "take_profit": round(take_profit, 2),
+        }
 
     def _tool_close_position(self, inp: dict) -> dict:
         symbol = inp["symbol"]
@@ -628,7 +742,7 @@ class AIOrchestrator:
             "symbol": inp["symbol"],
             "new_stop_loss": inp["new_stop_loss"],
             "reason": inp.get("reason", ""),
-            "note": "Trailing stop updated in risk tracking system"
+            "note": "Trailing stop updated in risk tracking system",
         }
 
     def _tool_set_trading_mode(self, inp: dict) -> dict:
@@ -641,64 +755,65 @@ class AIOrchestrator:
     def _tool_get_market_forecast(self, inp: dict) -> dict:
         """Run MarketForecaster on cached candles and return structured result."""
         from src.intelligence.market_forecaster import MarketForecaster
+
         candles = self._cached_data.get("candles", [])
-        market  = self._cached_data.get("market", {})
-        price   = market.get("mark_price", 0.0)
+        market = self._cached_data.get("market", {})
+        price = market.get("mark_price", 0.0)
 
         # If no candles cached yet, fetch them first
         if not candles or price == 0.0:
             self._tool_get_market_data(inp)
             candles = self._cached_data.get("candles", [])
-            market  = self._cached_data.get("market", {})
-            price   = market.get("mark_price", 67000.0)
+            market = self._cached_data.get("market", {})
+            price = market.get("mark_price", 67000.0)
 
         forecaster = MarketForecaster(self.config)
         fc = forecaster.forecast(candles, price)
 
         tc = self.config.trading
-        leverage   = getattr(tc, "leverage", 5)
-        taker_fee  = getattr(tc, "taker_fee_rate", 0.0005)
-        rt_fee_pct = taker_fee * 2 * leverage * 100    # % of margin
+        leverage = getattr(tc, "leverage", 5)
+        taker_fee = getattr(tc, "taker_fee_rate", 0.0005)
+        rt_fee_pct = taker_fee * 2 * leverage * 100  # % of margin
 
         result = {
             # Trend
-            "adx":                  fc.adx,
-            "plus_di":              fc.plus_di,
-            "minus_di":             fc.minus_di,
-            "trend_direction":      fc.trend_direction,
-            "trend_strength":       fc.trend_strength_label,
-            "is_trending":          fc.is_trending,
-            "is_strong_trend":      fc.is_strong_trend,
+            "adx": fc.adx,
+            "plus_di": fc.plus_di,
+            "minus_di": fc.minus_di,
+            "trend_direction": fc.trend_direction,
+            "trend_strength": fc.trend_strength_label,
+            "is_trending": fc.is_trending,
+            "is_strong_trend": fc.is_strong_trend,
             # Regime
-            "market_regime":        fc.market_regime,
-            "regime_confidence":    fc.regime_confidence,
+            "market_regime": fc.market_regime,
+            "regime_confidence": fc.regime_confidence,
             # Price forecast
-            "forecast_price_1":     fc.forecast_price_1,
-            "forecast_price_3":     fc.forecast_price_3,
-            "forecast_price_5":     fc.forecast_price_5,
-            "forecast_bias":        fc.forecast_bias,
-            "forecast_slope_pct":   fc.forecast_slope_pct,
-            "regression_r2":        fc.regression_r2,
+            "forecast_price_1": fc.forecast_price_1,
+            "forecast_price_3": fc.forecast_price_3,
+            "forecast_price_5": fc.forecast_price_5,
+            "forecast_bias": fc.forecast_bias,
+            "forecast_slope_pct": fc.forecast_slope_pct,
+            "regression_r2": fc.regression_r2,
             # VWAP
-            "vwap":                 fc.vwap,
-            "vwap_position":        fc.vwap_position,
-            "vwap_distance_pct":    fc.vwap_distance_pct,
+            "vwap": fc.vwap,
+            "vwap_position": fc.vwap_position,
+            "vwap_distance_pct": fc.vwap_distance_pct,
             # Support / resistance
-            "pivot_point":          fc.pivot_point,
-            "resistance_levels":    fc.resistance_levels,
-            "support_levels":       fc.support_levels,
+            "pivot_point": fc.pivot_point,
+            "resistance_levels": fc.resistance_levels,
+            "support_levels": fc.support_levels,
             # Brokerage
-            "breakeven_move_pct":   fc.breakeven_move_pct,
-            "taker_fee_pct":        taker_fee * 100,
+            "breakeven_move_pct": fc.breakeven_move_pct,
+            "taker_fee_pct": taker_fee * 100,
             "round_trip_fee_pct_of_margin": rt_fee_pct,
-            "leverage":             leverage,
+            "leverage": leverage,
             "fee_note": (
                 f"Round-trip fee = {rt_fee_pct:.2f}% of margin. "
                 f"TP must exceed {fc.breakeven_move_pct:.2f}% from entry to be profitable. "
                 f"Net R:R must be >= 1.5 after deducting fee from both reward and risk."
             ),
             # Composite score
-            "forecast_score":       fc.forecast_score,
+            "forecast_score": fc.forecast_score,
             # Decision hint
             "trading_hint": self._forecast_hint(fc, price),
         }
@@ -710,11 +825,17 @@ class AIOrchestrator:
         """Human-readable one-liner trading guidance from forecast data."""
         hints = []
         if fc.adx >= 35:
-            hints.append(f"Strong {fc.trend_direction} trend (ADX={fc.adx:.1f}) — trade WITH the trend")
+            hints.append(
+                f"Strong {fc.trend_direction} trend (ADX={fc.adx:.1f}) — trade WITH the trend"
+            )
         elif fc.adx >= 25:
-            hints.append(f"Moderate trend (ADX={fc.adx:.1f}) — favour {fc.trend_direction} entries")
+            hints.append(
+                f"Moderate trend (ADX={fc.adx:.1f}) — favour {fc.trend_direction} entries"
+            )
         else:
-            hints.append(f"Ranging market (ADX={fc.adx:.1f}) — use mean-reversion strategy")
+            hints.append(
+                f"Ranging market (ADX={fc.adx:.1f}) — use mean-reversion strategy"
+            )
 
         if fc.regression_r2 > 0.40:
             hints.append(
@@ -740,21 +861,27 @@ class AIOrchestrator:
         limit = inp.get("limit", 10)
         perf = self.risk_manager.get_performance_summary()
         recent = self.state.decisions[:limit]
-        return {"recent_decisions": recent, "performance": perf,
-                "cycle_count": self.state.cycle_count,
-                "total_ai_trades": self.state.total_trades}
+        return {
+            "recent_decisions": recent,
+            "performance": perf,
+            "cycle_count": self.state.cycle_count,
+            "total_ai_trades": self.state.total_trades,
+        }
 
     def _tool_scan_all_contracts(self, inp: dict) -> dict:
         """Scan all watched perpetual contracts and return ranked opportunities."""
         try:
             from src.scanner.contract_scanner import ContractScanner
-            symbols = inp.get("symbols") or getattr(self.config.trading, "watch_list", None)
-            top_n   = inp.get("top_n", 5)
+
+            symbols = inp.get("symbols") or getattr(
+                self.config.trading, "watch_list", None
+            )
+            top_n = inp.get("top_n", 5)
             scanner = ContractScanner(
                 config=self.config,
                 exchange=self.exchange if not self.config.trading.dry_run else None,
             )
-            result  = scanner.scan(symbols)
+            result = scanner.scan(symbols)
             # Store top symbol in cache for subsequent tool calls
             if result.top_opportunities:
                 best = result.top_opportunities[0]
@@ -784,25 +911,33 @@ class AIOrchestrator:
             symbol = inp.get("symbol", self.config.trading.symbol)
             from src.derivatives.derivatives_signal import DerivativesSignalEngine
             import random as _r
+
             engine = DerivativesSignalEngine()
             if self.config.trading.dry_run:
-                price    = self._cached_data.get("market", {}).get("mark_price", 67000.0)
-                funding  = _r.gauss(0.0001, 0.0006)
-                spot     = price * (1 + _r.gauss(0, 0.001))
-                oi       = _r.uniform(400e6, 900e6)
+                price = self._cached_data.get("market", {}).get("mark_price", 67000.0)
+                funding = _r.gauss(0.0001, 0.0006)
+                spot = price * (1 + _r.gauss(0, 0.001))
+                oi = _r.uniform(400e6, 900e6)
             else:
                 try:
-                    ticker  = self.exchange.get_ticker(symbol)
-                    price   = ticker.mark_price
-                    oi      = ticker.open_interest
-                    resp    = self.exchange._request("GET", f"/v2/tickers/{symbol}", auth=False)
+                    ticker = self.exchange.get_ticker(symbol)
+                    price = ticker.mark_price
+                    oi = ticker.open_interest
+                    resp = self.exchange._request(
+                        "GET", f"/v2/tickers/{symbol}", auth=False
+                    )
                     funding = float(resp.get("result", {}).get("funding_rate", 0.0001))
-                    spot    = price * 0.9997
+                    spot = price * 0.9997
                 except Exception:
-                    price = 67000.0; funding = 0.0001; spot = 66980.0; oi = 500e6
+                    price = 67000.0
+                    funding = 0.0001
+                    spot = 66980.0
+                    oi = 500e6
             ds = engine.analyze(
-                current_price=price, funding_rate=funding,
-                spot_price=spot, open_interest=oi,
+                current_price=price,
+                funding_rate=funding,
+                spot_price=spot,
+                open_interest=oi,
             )
             return ds.to_dict()
         except Exception as e:
@@ -833,10 +968,10 @@ class AIOrchestrator:
         logger.info(f"AI Cycle #{self.state.cycle_count} starting...")
 
         # Autonomous prompt - Claude decides what to do
-        tc  = self.config.trading
-        taker_fee   = getattr(tc, "taker_fee_rate", 0.0005)
-        leverage    = getattr(tc, "leverage", 5)
-        rt_fee_pct  = taker_fee * 2 * leverage * 100
+        tc = self.config.trading
+        taker_fee = getattr(tc, "taker_fee_rate", 0.0005)
+        leverage = getattr(tc, "leverage", 5)
+        rt_fee_pct = taker_fee * 2 * leverage * 100
 
         watch = getattr(tc, "watch_list", [tc.symbol])
         top_n = getattr(tc, "top_contracts_to_trade", 3)
@@ -847,7 +982,7 @@ Time    : {datetime.now(timezone.utc).isoformat()}
 Mode    : {self.state.current_mode}
 Dry run : {self.config.trading.dry_run}
 
-WATCH-LIST ({len(watch)} contracts): {', '.join(watch)}
+WATCH-LIST ({len(watch)} contracts): {", ".join(watch)}
 
 BROKERAGE REMINDER (Delta Exchange):
   Taker fee : {taker_fee * 100:.3f}% per side
@@ -905,7 +1040,9 @@ NEVER enter if fee cost exceeds expected profit.
                     if hasattr(block, "text"):
                         final_text = block.text
                         break
-                self.state.status_message = final_text[:300] if final_text else "Cycle complete"
+                self.state.status_message = (
+                    final_text[:300] if final_text else "Cycle complete"
+                )
                 break
 
             if response.stop_reason == "tool_use":
@@ -917,19 +1054,23 @@ NEVER enter if fee cost exceeds expected profit.
                         tool_input = block.input
                         tool_calls_made.append(tool_name)
                         result = self._execute_tool(tool_name, tool_input)
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result,
+                            }
+                        )
 
                 messages.append({"role": "user", "content": tool_results})
             else:
                 break
 
         elapsed = time.time() - cycle_start
-        logger.info(f"AI Cycle #{self.state.cycle_count} complete in {elapsed:.1f}s | "
-                    f"Tools used: {tool_calls_made} | Action: {self.state.last_action}")
+        logger.info(
+            f"AI Cycle #{self.state.cycle_count} complete in {elapsed:.1f}s | "
+            f"Tools used: {tool_calls_made} | Action: {self.state.last_action}"
+        )
 
         result = {
             "cycle": self.state.cycle_count,
@@ -966,7 +1107,9 @@ NEVER enter if fee cost exceeds expected profit.
                 "trading_bias": emotion.trading_bias if emotion else "neutral",
                 "key_events": emotion.key_events[:5] if emotion else [],
                 "reasoning": emotion.reasoning if emotion else "",
-            } if emotion else {},
+            }
+            if emotion
+            else {},
             "geo": geo,
             "technicals": tech,
             "bot_state": {
@@ -979,8 +1122,12 @@ NEVER enter if fee cost exceeds expected profit.
             },
             "recent_decisions": self.state.decisions[:10],
             "top_articles": [
-                {"title": a.title[:100], "source": a.source,
-                 "score": a.relevance_score, "published": a.published_at}
+                {
+                    "title": a.title[:100],
+                    "source": a.source,
+                    "score": a.relevance_score,
+                    "published": a.published_at,
+                }
                 for a in articles[:10]
             ],
         }
