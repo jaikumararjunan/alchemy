@@ -11,13 +11,14 @@ Scoring:
 
 Output: ranked list of ContractScore, top-N chosen for trading.
 """
+
 import math
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
 from src.utils.logger import get_logger
 
@@ -25,20 +26,33 @@ logger = get_logger(__name__)
 
 # Default watch-list of perpetual symbols on Delta Exchange India
 DEFAULT_WATCH_LIST = [
-    "BTCUSD", "ETHUSD", "SOLUSD", "BNBUSD", "XRPUSD",
-    "AVAXUSD", "DOGEUSD", "MATICUSD", "LINKUSD", "DOTUSD",
-    "ADAUSD", "LTCUSD", "ATOMUSD", "NEARUSD", "APTUSD",
+    "BTCUSD",
+    "ETHUSD",
+    "SOLUSD",
+    "BNBUSD",
+    "XRPUSD",
+    "AVAXUSD",
+    "DOGEUSD",
+    "MATICUSD",
+    "LINKUSD",
+    "DOTUSD",
+    "ADAUSD",
+    "LTCUSD",
+    "ATOMUSD",
+    "NEARUSD",
+    "APTUSD",
 ]
 
 
 @dataclass
 class ContractScore:
     """Score and metadata for a single contract scan."""
+
     symbol: str
     rank: int
-    composite_score: float          # -1.0 to +1.0
-    action: str                     # "BUY" | "SELL" | "HOLD"
-    confidence: float               # 0.0 – 1.0
+    composite_score: float  # -1.0 to +1.0
+    action: str  # "BUY" | "SELL" | "HOLD"
+    confidence: float  # 0.0 – 1.0
 
     current_price: float
     change_24h_pct: float
@@ -53,19 +67,19 @@ class ContractScore:
 
     # Technical details
     adx: float
-    market_regime: str              # "trending" | "ranging" | "volatile"
-    trend_direction: str            # "bullish" | "bearish" | "neutral"
+    market_regime: str  # "trending" | "ranging" | "volatile"
+    trend_direction: str  # "bullish" | "bearish" | "neutral"
     forecast_bias: str
     regression_r2: float
     breakeven_move_pct: float
 
     # Risk / opportunity
-    expected_move_pct: float        # abs projected 3-bar move
-    risk_reward_estimate: float     # rough R:R before entry sizing
+    expected_move_pct: float  # abs projected 3-bar move
+    risk_reward_estimate: float  # rough R:R before entry sizing
     scan_time_ms: float
 
     # Allocation suggestion
-    suggested_size_pct: float       # % of available capital to allocate
+    suggested_size_pct: float  # % of available capital to allocate
     reasoning: str
 
     def to_dict(self) -> dict:
@@ -100,13 +114,14 @@ class ContractScore:
 @dataclass
 class ScanResult:
     """Result of a full multi-contract scan."""
+
     ranked_contracts: List[ContractScore]
-    top_opportunities: List[ContractScore]   # filtered: actionable + high confidence
+    top_opportunities: List[ContractScore]  # filtered: actionable + high confidence
     scan_timestamp: str
     total_scanned: int
     total_actionable: int
     scan_duration_seconds: float
-    market_summary: str              # one-line headline
+    market_summary: str  # one-line headline
 
     def to_dict(self) -> dict:
         return {
@@ -126,21 +141,21 @@ class ContractScanner:
     Designed to work in both dry-run (synthetic data) and live modes.
     """
 
-    _W_FORECAST    = 0.50
+    _W_FORECAST = 0.50
     _W_DERIVATIVES = 0.30
-    _W_VOLATILITY  = 0.10
-    _W_VOLUME      = 0.10
+    _W_VOLATILITY = 0.10
+    _W_VOLUME = 0.10
 
     _MIN_CONFIDENCE = 0.45
     _MIN_ADX_FOR_TREND = 20.0
 
     def __init__(self, config, exchange=None, max_workers: int = 6):
-        self.config    = config
-        self.exchange  = exchange
+        self.config = config
+        self.exchange = exchange
         self.max_workers = max_workers
         tc = config.trading
         self.taker_fee = getattr(tc, "taker_fee_rate", 0.0005)
-        self.leverage  = getattr(tc, "leverage", 5)
+        self.leverage = getattr(tc, "leverage", 5)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -170,8 +185,11 @@ class ContractScanner:
             s.rank = i + 1
 
         # Top opportunities: actionable + confidence threshold
-        top = [s for s in scores
-               if s.action in ("BUY", "SELL") and s.confidence >= self._MIN_CONFIDENCE][:5]
+        top = [
+            s
+            for s in scores
+            if s.action in ("BUY", "SELL") and s.confidence >= self._MIN_CONFIDENCE
+        ][:5]
 
         # Capital allocation suggestion across top picks
         self._assign_allocations(top)
@@ -200,13 +218,14 @@ class ContractScanner:
             if not candles or len(candles) < 30:
                 return None
 
-            price  = ticker["mark_price"]
-            vol24  = ticker["volume_24h"]
-            chg24  = ticker["change_24h_pct"]
-            oi     = ticker["open_interest"]
+            price = ticker["mark_price"]
+            vol24 = ticker["volume_24h"]
+            chg24 = ticker["change_24h_pct"]
+            oi = ticker["open_interest"]
 
             # ── Forecast score ───────────────────────────────────────────────
             from src.intelligence.market_forecaster import MarketForecaster
+
             forecaster = MarketForecaster(self.config)
             fc = forecaster.forecast(candles, price)
             forecast_score = fc.forecast_score  # -1 to +1
@@ -215,6 +234,7 @@ class ContractScanner:
             deriv_score = 0.0
             try:
                 from src.derivatives.derivatives_signal import DerivativesSignalEngine
+
                 engine = DerivativesSignalEngine()
                 funding = ticker.get("funding_rate", random.gauss(0.0001, 0.0003))
                 ds = engine.analyze(
@@ -229,8 +249,14 @@ class ContractScanner:
 
             # ── Volatility score (ATR proxy) ─────────────────────────────────
             closes = [float(c.get("close", 0)) for c in candles[-20:]]
-            highs  = [float(c.get("high", closes[i] * 1.002)) for i, c in enumerate(candles[-20:])]
-            lows   = [float(c.get("low",  closes[i] * 0.998)) for i, c in enumerate(candles[-20:])]
+            highs = [
+                float(c.get("high", closes[i] * 1.002))
+                for i, c in enumerate(candles[-20:])
+            ]
+            lows = [
+                float(c.get("low", closes[i] * 0.998))
+                for i, c in enumerate(candles[-20:])
+            ]
             tr_list = [highs[i] - lows[i] for i in range(len(closes))]
             atr = sum(tr_list) / len(tr_list) if tr_list else price * 0.01
             atr_pct = atr / price * 100
@@ -253,10 +279,10 @@ class ContractScanner:
 
             # ── Composite ────────────────────────────────────────────────────
             composite = (
-                forecast_score    * self._W_FORECAST    +
-                deriv_score       * self._W_DERIVATIVES +
-                vol_score         * self._W_VOLATILITY  +
-                vol_score_component * self._W_VOLUME
+                forecast_score * self._W_FORECAST
+                + deriv_score * self._W_DERIVATIVES
+                + vol_score * self._W_VOLATILITY
+                + vol_score_component * self._W_VOLUME
             )
             composite = round(max(-1.0, min(1.0, composite)), 4)
 
@@ -298,17 +324,28 @@ class ContractScanner:
 
             elapsed_ms = (time.time() - t0) * 1000
             return ContractScore(
-                symbol=symbol, rank=0,
-                composite_score=composite, action=action, confidence=confidence,
-                current_price=price, change_24h_pct=chg24, volume_24h=vol24, open_interest=oi,
-                forecast_score=round(forecast_score, 4), derivatives_score=round(deriv_score, 4),
-                volatility_score=round(vol_score, 4), volume_score=round(vol_score_component, 4),
-                adx=fc.adx, market_regime=fc.market_regime, trend_direction=fc.trend_direction,
-                forecast_bias=fc.forecast_bias, regression_r2=fc.regression_r2,
+                symbol=symbol,
+                rank=0,
+                composite_score=composite,
+                action=action,
+                confidence=confidence,
+                current_price=price,
+                change_24h_pct=chg24,
+                volume_24h=vol24,
+                open_interest=oi,
+                forecast_score=round(forecast_score, 4),
+                derivatives_score=round(deriv_score, 4),
+                volatility_score=round(vol_score, 4),
+                volume_score=round(vol_score_component, 4),
+                adx=fc.adx,
+                market_regime=fc.market_regime,
+                trend_direction=fc.trend_direction,
+                forecast_bias=fc.forecast_bias,
+                regression_r2=fc.regression_r2,
                 breakeven_move_pct=fc.breakeven_move_pct,
                 expected_move_pct=round(expected_move, 3),
                 risk_reward_estimate=round(rr_estimate, 2),
-                suggested_size_pct=0.0,   # filled in _assign_allocations
+                suggested_size_pct=0.0,  # filled in _assign_allocations
                 scan_time_ms=elapsed_ms,
                 reasoning=reasoning,
             )
@@ -345,10 +382,21 @@ class ContractScanner:
         """Generate synthetic OHLCV + ticker for dry-run / offline testing."""
         rng = random.Random(hash(symbol) % (2**31))
         base_prices = {
-            "BTCUSD": 67000, "ETHUSD": 3500, "SOLUSD": 185, "BNBUSD": 420,
-            "XRPUSD": 0.62, "AVAXUSD": 38, "DOGEUSD": 0.17, "MATICUSD": 0.95,
-            "LINKUSD": 18, "DOTUSD": 9.5, "ADAUSD": 0.55, "LTCUSD": 95,
-            "ATOMUSD": 10.5, "NEARUSD": 7.2, "APTUSD": 12.0,
+            "BTCUSD": 67000,
+            "ETHUSD": 3500,
+            "SOLUSD": 185,
+            "BNBUSD": 420,
+            "XRPUSD": 0.62,
+            "AVAXUSD": 38,
+            "DOGEUSD": 0.17,
+            "MATICUSD": 0.95,
+            "LINKUSD": 18,
+            "DOTUSD": 9.5,
+            "ADAUSD": 0.55,
+            "LTCUSD": 95,
+            "ATOMUSD": 10.5,
+            "NEARUSD": 7.2,
+            "APTUSD": 12.0,
         }
         base = base_prices.get(symbol, 50.0)
         vol_multi = base_prices.get(symbol, 50.0) / 50.0
@@ -358,11 +406,15 @@ class ContractScanner:
             c = base + trend
             h = c + abs(rng.gauss(0, base * 0.006))
             lo = c - abs(rng.gauss(0, base * 0.006))
-            candles.append({
-                "close": round(c, 6), "open": round(c + rng.gauss(0, base * 0.003), 6),
-                "high": round(h, 6), "low": round(lo, 6),
-                "volume": round(abs(rng.gauss(200, 80)) * vol_multi, 2),
-            })
+            candles.append(
+                {
+                    "close": round(c, 6),
+                    "open": round(c + rng.gauss(0, base * 0.003), 6),
+                    "high": round(h, 6),
+                    "low": round(lo, 6),
+                    "volume": round(abs(rng.gauss(200, 80)) * vol_multi, 2),
+                }
+            )
         ticker = {
             "mark_price": candles[-1]["close"],
             "volume_24h": round(abs(rng.gauss(15000, 4000)) * vol_multi, 2),
@@ -383,14 +435,17 @@ class ContractScanner:
         for s, w in zip(top, weights):
             s.suggested_size_pct = round(w / total * 100, 1)
 
-    def _build_summary(self, all_scores: List[ContractScore],
-                        top: List[ContractScore]) -> str:
+    def _build_summary(
+        self, all_scores: List[ContractScore], top: List[ContractScore]
+    ) -> str:
         if not all_scores:
             return "No contracts scanned."
-        buy_cnt  = sum(1 for s in all_scores if s.action == "BUY")
+        buy_cnt = sum(1 for s in all_scores if s.action == "BUY")
         sell_cnt = sum(1 for s in all_scores if s.action == "SELL")
         trending = [s.symbol for s in all_scores[:5] if s.market_regime == "trending"]
-        parts = [f"Scanned {len(all_scores)} contracts: {buy_cnt} BUY / {sell_cnt} SELL signals."]
+        parts = [
+            f"Scanned {len(all_scores)} contracts: {buy_cnt} BUY / {sell_cnt} SELL signals."
+        ]
         if top:
             top_str = ", ".join(f"{s.symbol}({s.action})" for s in top[:3])
             parts.append(f"Top opportunities: {top_str}.")
@@ -407,7 +462,8 @@ class ContractScanner:
         try:
             products = self.exchange.get_products()
             return [
-                p["symbol"] for p in products
+                p["symbol"]
+                for p in products
                 if p.get("contract_type") in ("perpetual_futures",)
                 and p.get("is_active", False)
                 and p.get("quoting_asset", {}).get("symbol") == "USD"

@@ -2,6 +2,7 @@
 Geopolitical Analyzer - categorizes and scores geopolitical events
 for their expected impact on crypto markets.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
@@ -15,12 +16,13 @@ logger = get_logger(__name__)
 @dataclass
 class GeopoliticalEvent:
     """A categorized geopolitical event with market impact scoring."""
-    category: str          # e.g. "war", "sanctions", "regulation", "macro"
-    severity: str          # "low", "medium", "high", "critical"
-    region: str            # Affected region
+
+    category: str  # e.g. "war", "sanctions", "regulation", "macro"
+    severity: str  # "low", "medium", "high", "critical"
+    region: str  # Affected region
     description: str
     articles: List[Article] = field(default_factory=list)
-    crypto_impact_score: float = 0.0    # -1.0 to 1.0
+    crypto_impact_score: float = 0.0  # -1.0 to 1.0
     confidence: float = 0.0
     detected_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
@@ -30,48 +32,122 @@ class GeopoliticalEvent:
 # Negative impact = bearish for crypto
 GEOPOLITICAL_IMPACT_RULES: List[Tuple[List[str], float, str]] = [
     # Regulatory - negative for crypto
-    (["ban", "outlaw", "prohibit", "illegal", "crackdown", "arrest", "seized"], -0.7, "Crypto regulatory crackdown"),
-    (["sec", "lawsuit", "enforcement", "violation", "fraud"], -0.5, "Regulatory enforcement action"),
-    (["regulate", "regulation", "framework", "compliance", "clarity"], 0.2, "Crypto regulatory clarity"),
+    (
+        ["ban", "outlaw", "prohibit", "illegal", "crackdown", "arrest", "seized"],
+        -0.7,
+        "Crypto regulatory crackdown",
+    ),
+    (
+        ["sec", "lawsuit", "enforcement", "violation", "fraud"],
+        -0.5,
+        "Regulatory enforcement action",
+    ),
+    (
+        ["regulate", "regulation", "framework", "compliance", "clarity"],
+        0.2,
+        "Crypto regulatory clarity",
+    ),
     (["etf approved", "etf approval", "spot bitcoin etf"], 0.8, "Crypto ETF approval"),
-    (["cbdc", "central bank digital", "digital currency"], -0.3, "CBDC development (competition)"),
-
+    (
+        ["cbdc", "central bank digital", "digital currency"],
+        -0.3,
+        "CBDC development (competition)",
+    ),
     # Banking/Financial crisis - bullish for crypto
-    (["bank run", "bank collapse", "banking crisis", "bank failure"], 0.7, "Banking system stress"),
-    (["inflation", "hyperinflation", "currency crisis", "currency collapse"], 0.6, "Currency devaluation risk"),
-    (["debt crisis", "sovereign debt", "default", "imf bailout"], 0.5, "Sovereign debt crisis"),
-    (["recession", "economic crisis", "depression"], -0.2, "Economic slowdown (risk-off)"),
-
+    (
+        ["bank run", "bank collapse", "banking crisis", "bank failure"],
+        0.7,
+        "Banking system stress",
+    ),
+    (
+        ["inflation", "hyperinflation", "currency crisis", "currency collapse"],
+        0.6,
+        "Currency devaluation risk",
+    ),
+    (
+        ["debt crisis", "sovereign debt", "default", "imf bailout"],
+        0.5,
+        "Sovereign debt crisis",
+    ),
+    (
+        ["recession", "economic crisis", "depression"],
+        -0.2,
+        "Economic slowdown (risk-off)",
+    ),
     # War/Conflict - mixed
-    (["nuclear", "nuclear war", "nuclear threat"], -0.8, "Nuclear threat (extreme risk-off)"),
-    (["invasion", "war declared", "military offensive"], -0.5, "Military conflict escalation"),
-    (["ceasefire", "peace deal", "peace talks", "de-escalation"], 0.3, "Conflict de-escalation"),
+    (
+        ["nuclear", "nuclear war", "nuclear threat"],
+        -0.8,
+        "Nuclear threat (extreme risk-off)",
+    ),
+    (
+        ["invasion", "war declared", "military offensive"],
+        -0.5,
+        "Military conflict escalation",
+    ),
+    (
+        ["ceasefire", "peace deal", "peace talks", "de-escalation"],
+        0.3,
+        "Conflict de-escalation",
+    ),
     (["sanction", "sanctions"], 0.2, "Sanctions (drive crypto adoption)"),
-
     # Macro - interest rates
-    (["rate hike", "interest rate increase", "tightening"], -0.4, "Interest rate increase"),
-    (["rate cut", "interest rate cut", "easing", "quantitative easing", "qe"], 0.5, "Monetary easing"),
+    (
+        ["rate hike", "interest rate increase", "tightening"],
+        -0.4,
+        "Interest rate increase",
+    ),
+    (
+        ["rate cut", "interest rate cut", "easing", "quantitative easing", "qe"],
+        0.5,
+        "Monetary easing",
+    ),
     (["pivot", "fed pivot", "dovish"], 0.4, "Dovish monetary policy shift"),
     (["hawkish", "taper", "tapering"], -0.3, "Hawkish monetary policy"),
-
     # Geopolitical instability - often bullish for crypto as alternative asset
-    (["coup", "political instability", "civil unrest", "protest"], 0.2, "Political instability"),
-    (["capital controls", "capital control"], 0.5, "Capital controls (drive crypto adoption)"),
+    (
+        ["coup", "political instability", "civil unrest", "protest"],
+        0.2,
+        "Political instability",
+    ),
+    (
+        ["capital controls", "capital control"],
+        0.5,
+        "Capital controls (drive crypto adoption)",
+    ),
     (["currency devaluation", "devalue", "depreciation"], 0.4, "Currency devaluation"),
-
     # Institutional adoption - bullish
-    (["institutional", "institutional buying", "corporate treasury", "nation-state"], 0.6, "Institutional adoption"),
+    (
+        ["institutional", "institutional buying", "corporate treasury", "nation-state"],
+        0.6,
+        "Institutional adoption",
+    ),
     (["legal tender", "bitcoin legal tender"], 0.7, "Bitcoin as legal tender"),
 ]
 
 REGION_KEYWORDS = {
-    "USA": ["us", "america", "united states", "washington", "congress", "senate", "white house"],
+    "USA": [
+        "us",
+        "america",
+        "united states",
+        "washington",
+        "congress",
+        "senate",
+        "white house",
+    ],
     "China": ["china", "beijing", "chinese", "prc", "xi jinping"],
     "Russia": ["russia", "moscow", "russian", "putin", "kremlin"],
     "Europe": ["europe", "eu", "european", "ecb", "eurozone", "germany", "france"],
     "Middle East": ["middle east", "israel", "iran", "saudi", "opec", "gulf", "iran"],
     "Asia": ["japan", "korea", "india", "southeast asia", "asean"],
-    "Global": ["global", "worldwide", "international", "imf", "world bank", "united nations"],
+    "Global": [
+        "global",
+        "worldwide",
+        "international",
+        "imf",
+        "world bank",
+        "united nations",
+    ],
 }
 
 
@@ -106,19 +182,25 @@ class GeopoliticalAnalyzer:
                     # Increase confidence with more articles confirming the event
                     existing.confidence = min(existing.confidence + 0.1, 1.0)
                 else:
-                    events.append(GeopoliticalEvent(
-                        category=category,
-                        severity=severity,
-                        region=region,
-                        description=description,
-                        articles=[article],
-                        crypto_impact_score=impact,
-                        confidence=0.5 + (article.relevance_score * 0.3),
-                    ))
+                    events.append(
+                        GeopoliticalEvent(
+                            category=category,
+                            severity=severity,
+                            region=region,
+                            description=description,
+                            articles=[article],
+                            crypto_impact_score=impact,
+                            confidence=0.5 + (article.relevance_score * 0.3),
+                        )
+                    )
 
         # Sort by impact magnitude
-        events.sort(key=lambda e: abs(e.crypto_impact_score) * e.confidence, reverse=True)
-        logger.info(f"Detected {len(events)} geopolitical events from {len(articles)} articles")
+        events.sort(
+            key=lambda e: abs(e.crypto_impact_score) * e.confidence, reverse=True
+        )
+        logger.info(
+            f"Detected {len(events)} geopolitical events from {len(articles)} articles"
+        )
         return events
 
     def get_aggregate_impact(self, events: List[GeopoliticalEvent]) -> Dict:
@@ -177,7 +259,11 @@ class GeopoliticalAnalyzer:
 
         # Top 3 dominant events
         dominant = [
-            {"description": e.description, "impact": e.crypto_impact_score, "region": e.region}
+            {
+                "description": e.description,
+                "impact": e.crypto_impact_score,
+                "region": e.region,
+            }
             for e in events[:3]
         ]
 
@@ -191,7 +277,9 @@ class GeopoliticalAnalyzer:
             "event_count": len(events),
         }
 
-    def get_risk_adjusted_signal(self, geo_impact: Dict, emotion_score) -> Optional[str]:
+    def get_risk_adjusted_signal(
+        self, geo_impact: Dict, emotion_score
+    ) -> Optional[str]:
         """
         Combine geopolitical impact with emotion score to produce a final signal.
         Returns: "strong_buy", "buy", "neutral", "sell", "strong_sell", or None (no signal)
@@ -253,8 +341,9 @@ class GeopoliticalAnalyzer:
         return "low"
 
     @staticmethod
-    def _find_similar_event(events: List[GeopoliticalEvent],
-                            category: str, description: str) -> Optional[GeopoliticalEvent]:
+    def _find_similar_event(
+        events: List[GeopoliticalEvent], category: str, description: str
+    ) -> Optional[GeopoliticalEvent]:
         for event in events:
             if event.category == category and event.description == description:
                 return event

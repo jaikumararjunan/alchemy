@@ -2,6 +2,7 @@
 Multi-timeframe signal aggregator.
 Combines signals across 1h, 4h, 1d timeframes for higher confidence entries.
 """
+
 from dataclasses import dataclass, field
 from typing import Dict, List
 from datetime import datetime, timezone
@@ -13,10 +14,10 @@ class TimeframeSignal:
     trend: str
     rsi: float
     macd_signal: str  # "bullish", "bearish", "neutral"
-    bb_signal: str    # "oversold", "overbought", "neutral"
+    bb_signal: str  # "oversold", "overbought", "neutral"
     volume_signal: str
-    score: float      # -1.0 to 1.0
-    weight: float     # importance of this timeframe
+    score: float  # -1.0 to 1.0
+    weight: float  # importance of this timeframe
 
 
 @dataclass
@@ -27,7 +28,9 @@ class AggregatedSignal:
     confluence_level: str  # "high", "medium", "low"
     recommended_action: str
     timeframe_signals: List[TimeframeSignal] = field(default_factory=list)
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class SignalAggregator:
@@ -37,8 +40,12 @@ class SignalAggregator:
     """
 
     TIMEFRAME_WEIGHTS = {
-        "1m": 0.05, "5m": 0.10, "15m": 0.15,
-        "1h": 0.25, "4h": 0.25, "1d": 0.20,
+        "1m": 0.05,
+        "5m": 0.10,
+        "15m": 0.15,
+        "1h": 0.25,
+        "4h": 0.25,
+        "1d": 0.20,
     }
 
     def aggregate(self, tf_signals: Dict[str, dict]) -> AggregatedSignal:
@@ -55,27 +62,39 @@ class SignalAggregator:
         for tf, indicators in tf_signals.items():
             score = self._score_timeframe(indicators)
             weight = self.TIMEFRAME_WEIGHTS.get(tf, 0.1)
-            signals.append(TimeframeSignal(
-                timeframe=tf,
-                trend=indicators.get("trend", "sideways"),
-                rsi=indicators.get("rsi", 50),
-                macd_signal="bullish" if indicators.get("macd", 0) > 0 else "bearish",
-                bb_signal=self._bb_signal(indicators),
-                volume_signal="high" if indicators.get("volume_ratio", 1) > 1.5 else "normal",
-                score=score,
-                weight=weight,
-            ))
+            signals.append(
+                TimeframeSignal(
+                    timeframe=tf,
+                    trend=indicators.get("trend", "sideways"),
+                    rsi=indicators.get("rsi", 50),
+                    macd_signal="bullish"
+                    if indicators.get("macd", 0) > 0
+                    else "bearish",
+                    bb_signal=self._bb_signal(indicators),
+                    volume_signal="high"
+                    if indicators.get("volume_ratio", 1) > 1.5
+                    else "normal",
+                    score=score,
+                    weight=weight,
+                )
+            )
 
         if not signals:
             return AggregatedSignal(
-                weighted_score=0, agreement_pct=0,
-                primary_trend="unknown", confluence_level="low",
-                recommended_action="hold"
+                weighted_score=0,
+                agreement_pct=0,
+                primary_trend="unknown",
+                confluence_level="low",
+                recommended_action="hold",
             )
 
         # Weighted score
         total_weight = sum(s.weight for s in signals)
-        weighted_score = sum(s.score * s.weight for s in signals) / total_weight if total_weight > 0 else 0
+        weighted_score = (
+            sum(s.score * s.weight for s in signals) / total_weight
+            if total_weight > 0
+            else 0
+        )
 
         # Agreement percentage
         bullish = sum(1 for s in signals if s.score > 0.2)
@@ -86,7 +105,13 @@ class SignalAggregator:
         ht_signals = [s for s in signals if s.timeframe in ("4h", "1d")]
         if ht_signals:
             ht_avg = sum(s.score for s in ht_signals) / len(ht_signals)
-            primary_trend = "bullish" if ht_avg > 0.2 else "bearish" if ht_avg < -0.2 else "sideways"
+            primary_trend = (
+                "bullish"
+                if ht_avg > 0.2
+                else "bearish"
+                if ht_avg < -0.2
+                else "sideways"
+            )
         else:
             primary_trend = "sideways"
 
@@ -135,8 +160,13 @@ class SignalAggregator:
             score -= 0.2
 
         # Trend
-        trend_map = {"strong_uptrend": 0.4, "uptrend": 0.2, "sideways": 0,
-                     "downtrend": -0.2, "strong_downtrend": -0.4}
+        trend_map = {
+            "strong_uptrend": 0.4,
+            "uptrend": 0.2,
+            "sideways": 0,
+            "downtrend": -0.2,
+            "strong_downtrend": -0.4,
+        }
         score += trend_map.get(trend, 0)
 
         # MACD

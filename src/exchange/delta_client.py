@@ -2,6 +2,7 @@
 Delta Exchange API client.
 Supports REST API for order management, account info, and market data.
 """
+
 import hashlib
 import hmac
 import time
@@ -18,8 +19,8 @@ logger = get_logger(__name__)
 @dataclass
 class Order:
     symbol: str
-    side: str          # "buy" or "sell"
-    order_type: str    # "limit" or "market"
+    side: str  # "buy" or "sell"
+    order_type: str  # "limit" or "market"
     size: float
     price: Optional[float] = None
     stop_price: Optional[float] = None
@@ -62,17 +63,17 @@ class DeltaExchangeClient:
         self.api_secret = api_secret
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "User-Agent": "Alchemy-Trader/1.0",
-        })
+        self.session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "User-Agent": "Alchemy-Trader/1.0",
+            }
+        )
 
     def _sign(self, method: str, path: str, timestamp: str, body: str = "") -> str:
         message = method + timestamp + path + body
         return hmac.new(
-            self.api_secret.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256
+            self.api_secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256
         ).hexdigest()
 
     def _get_headers(self, method: str, path: str, body: str = "") -> Dict[str, str]:
@@ -84,13 +85,20 @@ class DeltaExchangeClient:
             "signature": signature,
         }
 
-    def _request(self, method: str, path: str, params: Optional[Dict] = None,
-                  json_body: Optional[Dict] = None, auth: bool = True) -> Dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict] = None,
+        json_body: Optional[Dict] = None,
+        auth: bool = True,
+    ) -> Dict[str, Any]:
         url = f"{self.base_url}{path}"
         body_str = ""
 
         if json_body:
             import json
+
             body_str = json.dumps(json_body, separators=(",", ":"))
 
         headers = {}
@@ -112,7 +120,9 @@ class DeltaExchangeClient:
             logger.error(f"Request timeout: {method} {path}")
             raise
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {method} {path} - {e.response.text}")
+            logger.error(
+                f"HTTP error {e.response.status_code}: {method} {path} - {e.response.text}"
+            )
             raise
         except Exception as e:
             logger.error(f"Request error: {method} {path} - {e}")
@@ -146,12 +156,18 @@ class DeltaExchangeClient:
 
     def get_orderbook(self, symbol: str, depth: int = 10) -> Dict:
         """Get order book for a symbol."""
-        resp = self._request("GET", f"/v2/l2orderbook/{symbol}",
-                             params={"depth": depth}, auth=False)
+        resp = self._request(
+            "GET", f"/v2/l2orderbook/{symbol}", params={"depth": depth}, auth=False
+        )
         return resp.get("result", {})
 
-    def get_candles(self, symbol: str, resolution: int = 60,
-                    start: Optional[int] = None, end: Optional[int] = None) -> List[Dict]:
+    def get_candles(
+        self,
+        symbol: str,
+        resolution: int = 60,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+    ) -> List[Dict]:
         """
         Get OHLCV candle data.
         resolution: candle size in seconds (60=1m, 300=5m, 3600=1h, 86400=1d)
@@ -162,8 +178,12 @@ class DeltaExchangeClient:
         if end:
             params["end"] = end
 
-        resp = self._request("GET", f"/v2/history/candles",
-                             params={"symbol": symbol, **params}, auth=False)
+        resp = self._request(
+            "GET",
+            "/v2/history/candles",
+            params={"symbol": symbol, **params},
+            auth=False,
+        )
         return resp.get("result", [])
 
     # -------------------------
@@ -182,7 +202,12 @@ class DeltaExchangeClient:
                     "available_balance": float(bal.get("available_balance", 0)),
                     "blocked_margin": float(bal.get("blocked_margin", 0)),
                 }
-        return {"asset": asset, "balance": 0.0, "available_balance": 0.0, "blocked_margin": 0.0}
+        return {
+            "asset": asset,
+            "balance": 0.0,
+            "available_balance": 0.0,
+            "blocked_margin": 0.0,
+        }
 
     def get_positions(self) -> List[Position]:
         """Get all open positions."""
@@ -192,16 +217,18 @@ class DeltaExchangeClient:
             size = float(p.get("size", 0))
             if size == 0:
                 continue
-            positions.append(Position(
-                symbol=p.get("product_symbol", ""),
-                size=abs(size),
-                side="long" if size > 0 else "short",
-                entry_price=float(p.get("entry_price", 0)),
-                liquidation_price=float(p.get("liquidation_price", 0)),
-                unrealized_pnl=float(p.get("unrealized_pnl", 0)),
-                realized_pnl=float(p.get("realized_pnl", 0)),
-                leverage=int(p.get("leverage", {}).get("value", 1)),
-            ))
+            positions.append(
+                Position(
+                    symbol=p.get("product_symbol", ""),
+                    size=abs(size),
+                    side="long" if size > 0 else "short",
+                    entry_price=float(p.get("entry_price", 0)),
+                    liquidation_price=float(p.get("liquidation_price", 0)),
+                    unrealized_pnl=float(p.get("unrealized_pnl", 0)),
+                    realized_pnl=float(p.get("realized_pnl", 0)),
+                    leverage=int(p.get("leverage", {}).get("value", 1)),
+                )
+            )
         return positions
 
     def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict]:
@@ -232,7 +259,9 @@ class DeltaExchangeClient:
             body["stop_price"] = str(order.stop_price)
 
         resp = self._request("POST", "/v2/orders", json_body=body, auth=True)
-        logger.info(f"Order placed: {order.side} {order.size} {order.symbol} @ {order.price or 'market'}")
+        logger.info(
+            f"Order placed: {order.side} {order.size} {order.symbol} @ {order.price or 'market'}"
+        )
         return resp.get("result", {})
 
     def cancel_order(self, order_id: int, product_id: int) -> Dict:
@@ -252,7 +281,9 @@ class DeltaExchangeClient:
     def set_leverage(self, product_id: int, leverage: int) -> Dict:
         """Set leverage for a product."""
         body = {"product_id": product_id, "leverage": leverage}
-        resp = self._request("POST", "/v2/products/orders/leverage", json_body=body, auth=True)
+        resp = self._request(
+            "POST", "/v2/products/orders/leverage", json_body=body, auth=True
+        )
         return resp.get("result", {})
 
     def close_position(self, product_id: int, symbol: str) -> Dict:

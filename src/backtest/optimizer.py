@@ -16,14 +16,14 @@ The search space is deliberately compact by default (≤ 200 iterations) so
 the API endpoint responds in a few seconds.  Pass a custom ``grid`` dict to
 expand or narrow the search.
 """
+
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Any, Optional
 
 from src.backtest.backtester import BacktestEngine, BacktestResult
-from src.backtest.performance import PerformanceMetrics
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,32 +32,34 @@ logger = get_logger(__name__)
 # ── Default search grid ───────────────────────────────────────────────────────
 
 DEFAULT_GRID: Dict[str, List] = {
-    "stop_loss_pct":    [1.0, 1.5, 2.0, 2.5, 3.0],
-    "take_profit_pct":  [2.5, 3.5, 4.5, 6.0, 8.0],
-    "leverage":         [3, 5, 7],
-    "position_size_pct": [3.0, 5.0, 7.0],   # % of initial_balance
+    "stop_loss_pct": [1.0, 1.5, 2.0, 2.5, 3.0],
+    "take_profit_pct": [2.5, 3.5, 4.5, 6.0, 8.0],
+    "leverage": [3, 5, 7],
+    "position_size_pct": [3.0, 5.0, 7.0],  # % of initial_balance
 }
 
 # Quick grid for smoke-testing (max ~20 combos)
 QUICK_GRID: Dict[str, List] = {
-    "stop_loss_pct":    [1.5, 2.0, 2.5],
-    "take_profit_pct":  [3.5, 4.5, 6.0],
-    "leverage":         [5],
+    "stop_loss_pct": [1.5, 2.0, 2.5],
+    "take_profit_pct": [3.5, 4.5, 6.0],
+    "leverage": [5],
     "position_size_pct": [5.0],
 }
 
 
 # ── Result data class ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class OptimizationResult:
     """Output of one StrategyOptimizer.run() call."""
+
     symbol: str
     timeframe: str
     total_combinations: int
-    valid_combinations: int          # had at least 1 trade
+    valid_combinations: int  # had at least 1 trade
     sort_metric: str
-    results: List[Dict[str, Any]]    # sorted, best first; each entry has params + metrics
+    results: List[Dict[str, Any]]  # sorted, best first; each entry has params + metrics
     best_params: Dict[str, Any]
     best_metrics: Dict[str, Any]
 
@@ -70,11 +72,12 @@ class OptimizationResult:
             "sort_metric": self.sort_metric,
             "best_params": self.best_params,
             "best_metrics": self.best_metrics,
-            "results": self.results[:50],   # cap API response at top-50
+            "results": self.results[:50],  # cap API response at top-50
         }
 
 
 # ── Optimizer ─────────────────────────────────────────────────────────────────
+
 
 class StrategyOptimizer:
     """Grid-search optimizer for BacktestEngine parameters."""
@@ -107,21 +110,21 @@ class StrategyOptimizer:
             min_trades:      skip results with fewer trades than this
         """
         g = grid or DEFAULT_GRID
-        keys   = list(g.keys())
+        keys = list(g.keys())
         values = list(g.values())
         combos = list(itertools.product(*values))
-        total  = len(combos)
+        total = len(combos)
         logger.info(f"Optimizer: {total} combinations × {len(candles)} candles")
 
-        engine  = BacktestEngine(self.config)
+        engine = BacktestEngine(self.config)
         results = []
 
         for combo in combos:
             params = dict(zip(keys, combo))
-            sl_pct   = params["stop_loss_pct"]
-            tp_pct   = params["take_profit_pct"]
-            lev      = params["leverage"]
-            pos_pct  = params.get("position_size_pct", 5.0)
+            sl_pct = params["stop_loss_pct"]
+            tp_pct = params["take_profit_pct"]
+            lev = params["leverage"]
+            pos_pct = params.get("position_size_pct", 5.0)
             pos_size = initial_balance * pos_pct / 100.0
 
             try:
@@ -146,9 +149,9 @@ class StrategyOptimizer:
 
             entry = {
                 "params": {
-                    "stop_loss_pct":    sl_pct,
-                    "take_profit_pct":  tp_pct,
-                    "leverage":         lev,
+                    "stop_loss_pct": sl_pct,
+                    "take_profit_pct": tp_pct,
+                    "leverage": lev,
                     "position_size_pct": pos_pct,
                     "position_size_usd": round(pos_size, 2),
                 },

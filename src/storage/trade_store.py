@@ -3,6 +3,7 @@ Trade Store
 ===========
 CRUD operations for the trade_log table.
 """
+
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
@@ -45,10 +46,24 @@ class TradeStore:
                 size_usd, leverage, pnl_usd, pnl_pct, fee_usd,
                 stop_loss_pct, take_profit_pct, exit_reason, dry_run, notes)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (ts, symbol, side, order_type, entry_price, exit_price,
-             size_usd, leverage, pnl_usd, pnl_pct, fee_usd,
-             stop_loss_pct, take_profit_pct, exit_reason,
-             int(dry_run), notes),
+            (
+                ts,
+                symbol,
+                side,
+                order_type,
+                entry_price,
+                exit_price,
+                size_usd,
+                leverage,
+                pnl_usd,
+                pnl_pct,
+                fee_usd,
+                stop_loss_pct,
+                take_profit_pct,
+                exit_reason,
+                int(dry_run),
+                notes,
+            ),
         )
         logger.debug(f"Trade recorded: {side} {symbol} pnl={pnl_usd}")
         return cur.lastrowid
@@ -81,16 +96,22 @@ class TradeStore:
         )
         if not row or row.get("total_trades", 0) == 0:
             return {
-                "total_trades": 0, "winning_trades": 0, "losing_trades": 0,
-                "win_rate_pct": 0.0, "total_pnl_usd": 0.0, "total_fees_usd": 0.0,
-                "avg_pnl_usd": 0.0, "best_trade_usd": 0.0, "worst_trade_usd": 0.0,
+                "total_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "win_rate_pct": 0.0,
+                "total_pnl_usd": 0.0,
+                "total_fees_usd": 0.0,
+                "avg_pnl_usd": 0.0,
+                "best_trade_usd": 0.0,
+                "worst_trade_usd": 0.0,
             }
         n = row["total_trades"] or 1
         row["win_rate_pct"] = round(row["winning_trades"] / n * 100, 2)
-        row["total_pnl_usd"]   = round(row["total_pnl_usd"], 4)
-        row["total_fees_usd"]  = round(row["total_fees_usd"], 4)
-        row["avg_pnl_usd"]     = round(row["avg_pnl_usd"], 4)
-        row["best_trade_usd"]  = round(row["best_trade_usd"], 4)
+        row["total_pnl_usd"] = round(row["total_pnl_usd"], 4)
+        row["total_fees_usd"] = round(row["total_fees_usd"], 4)
+        row["avg_pnl_usd"] = round(row["avg_pnl_usd"], 4)
+        row["best_trade_usd"] = round(row["best_trade_usd"], 4)
         row["worst_trade_usd"] = round(row["worst_trade_usd"], 4)
         return row
 

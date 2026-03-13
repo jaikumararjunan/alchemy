@@ -2,10 +2,11 @@
 News fetcher for geopolitical and crypto market news.
 Pulls from RSS feeds and NewsAPI.
 """
+
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict
 from urllib.parse import urlencode
 
 import feedparser
@@ -43,26 +44,80 @@ class NewsFetcher:
     """
 
     CRYPTO_BOOST_KEYWORDS = {
-        "bitcoin", "btc", "ethereum", "eth", "crypto", "cryptocurrency",
-        "defi", "blockchain", "stablecoin", "sec", "cftc", "regulation",
-        "exchange", "coinbase", "binance", "cbdc", "digital currency",
+        "bitcoin",
+        "btc",
+        "ethereum",
+        "eth",
+        "crypto",
+        "cryptocurrency",
+        "defi",
+        "blockchain",
+        "stablecoin",
+        "sec",
+        "cftc",
+        "regulation",
+        "exchange",
+        "coinbase",
+        "binance",
+        "cbdc",
+        "digital currency",
     }
 
     HIGH_IMPACT_KEYWORDS = {
-        "war", "nuclear", "invasion", "coup", "crash", "crisis", "collapse",
-        "sanction", "ban", "attack", "explosion", "emergency", "default",
-        "recession", "depression", "hyperinflation", "bank run", "bankruptcy",
+        "war",
+        "nuclear",
+        "invasion",
+        "coup",
+        "crash",
+        "crisis",
+        "collapse",
+        "sanction",
+        "ban",
+        "attack",
+        "explosion",
+        "emergency",
+        "default",
+        "recession",
+        "depression",
+        "hyperinflation",
+        "bank run",
+        "bankruptcy",
     }
 
     MEDIUM_IMPACT_KEYWORDS = {
-        "inflation", "interest rate", "federal reserve", "fed", "rate hike",
-        "rate cut", "gdp", "unemployment", "trade war", "tariff", "election",
-        "geopolitical", "nato", "military", "conflict", "ceasefire", "peace",
-        "opec", "oil", "energy", "currency", "dollar", "yuan", "ruble",
+        "inflation",
+        "interest rate",
+        "federal reserve",
+        "fed",
+        "rate hike",
+        "rate cut",
+        "gdp",
+        "unemployment",
+        "trade war",
+        "tariff",
+        "election",
+        "geopolitical",
+        "nato",
+        "military",
+        "conflict",
+        "ceasefire",
+        "peace",
+        "opec",
+        "oil",
+        "energy",
+        "currency",
+        "dollar",
+        "yuan",
+        "ruble",
     }
 
-    def __init__(self, news_api_key: str, rss_feeds: List[str],
-                 keywords: List[str], max_articles: int = 50):
+    def __init__(
+        self,
+        news_api_key: str,
+        rss_feeds: List[str],
+        keywords: List[str],
+        max_articles: int = 50,
+    ):
         self.news_api_key = news_api_key
         self.rss_feeds = rss_feeds
         self.keywords = [kw.lower() for kw in keywords]
@@ -77,7 +132,9 @@ class NewsFetcher:
         """
         age = time.time() - self._last_fetch
         if not force and age < max_age_minutes * 60 and self._cache:
-            logger.debug(f"Returning {len(self._cache)} cached articles (age={age:.0f}s)")
+            logger.debug(
+                f"Returning {len(self._cache)} cached articles (age={age:.0f}s)"
+            )
             return self._cache
 
         articles: List[Article] = []
@@ -100,7 +157,7 @@ class NewsFetcher:
 
         # Sort by relevance and limit
         articles.sort(key=lambda a: a.relevance_score, reverse=True)
-        articles = articles[:self.max_articles]
+        articles = articles[: self.max_articles]
 
         self._cache = articles
         self._last_fetch = time.time()
@@ -119,8 +176,11 @@ class NewsFetcher:
         """Get articles that directly mention crypto."""
         all_articles = self.fetch()
         return [
-            a for a in all_articles
-            if any(kw in (a.title + a.summary).lower() for kw in self.CRYPTO_BOOST_KEYWORDS)
+            a
+            for a in all_articles
+            if any(
+                kw in (a.title + a.summary).lower() for kw in self.CRYPTO_BOOST_KEYWORDS
+            )
         ]
 
     def _fetch_rss(self) -> List[Article]:
@@ -138,13 +198,15 @@ class NewsFetcher:
                     # Filter by keywords
                     combined = (title + " " + summary).lower()
                     if any(kw in combined for kw in self.keywords):
-                        articles.append(Article(
-                            title=title,
-                            summary=summary[:500],
-                            source=source,
-                            url=link,
-                            published_at=published,
-                        ))
+                        articles.append(
+                            Article(
+                                title=title,
+                                summary=summary[:500],
+                                source=source,
+                                url=link,
+                                published_at=published,
+                            )
+                        )
             except Exception as e:
                 logger.warning(f"Failed to fetch RSS feed {feed_url}: {e}")
         return articles
@@ -165,13 +227,15 @@ class NewsFetcher:
             resp.raise_for_status()
             data = resp.json()
             for item in data.get("articles", []):
-                articles.append(Article(
-                    title=item.get("title", ""),
-                    summary=item.get("description", "")[:500],
-                    source=item.get("source", {}).get("name", "NewsAPI"),
-                    url=item.get("url", ""),
-                    published_at=item.get("publishedAt", ""),
-                ))
+                articles.append(
+                    Article(
+                        title=item.get("title", ""),
+                        summary=item.get("description", "")[:500],
+                        source=item.get("source", {}).get("name", "NewsAPI"),
+                        url=item.get("url", ""),
+                        published_at=item.get("publishedAt", ""),
+                    )
+                )
         except Exception as e:
             logger.warning(f"NewsAPI fetch failed: {e}")
         return articles

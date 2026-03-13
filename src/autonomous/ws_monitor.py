@@ -2,8 +2,8 @@
 Real-time WebSocket price monitor for Delta Exchange.
 Monitors prices, triggers trailing stop updates, and sends alerts.
 """
+
 import json
-import asyncio
 import threading
 import time
 from typing import Callable, Dict, Optional
@@ -29,11 +29,11 @@ class PriceUpdate:
 @dataclass
 class TrailingStop:
     symbol: str
-    side: str       # "long" or "short"
+    side: str  # "long" or "short"
     entry_price: float
     initial_stop: float
     current_stop: float
-    trail_pct: float   # e.g. 0.015 = 1.5%
+    trail_pct: float  # e.g. 0.015 = 1.5%
     peak_price: float  # highest (long) or lowest (short) seen
 
 
@@ -47,7 +47,9 @@ class DeltaWSMonitor:
 
     WS_URL = "wss://socket.india.delta.exchange"
 
-    def __init__(self, symbols: list, on_price: Callable = None, on_stop_trigger: Callable = None):
+    def __init__(
+        self, symbols: list, on_price: Callable = None, on_stop_trigger: Callable = None
+    ):
         self.symbols = symbols
         self.on_price = on_price
         self.on_stop_trigger = on_stop_trigger
@@ -69,14 +71,26 @@ class DeltaWSMonitor:
             self._ws.close()
         logger.info("WebSocket monitor stopped")
 
-    def add_trailing_stop(self, symbol: str, side: str, entry_price: float,
-                          stop_price: float, trail_pct: float = 0.015):
+    def add_trailing_stop(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        stop_price: float,
+        trail_pct: float = 0.015,
+    ):
         self._trailing_stops[symbol] = TrailingStop(
-            symbol=symbol, side=side, entry_price=entry_price,
-            initial_stop=stop_price, current_stop=stop_price,
-            trail_pct=trail_pct, peak_price=entry_price,
+            symbol=symbol,
+            side=side,
+            entry_price=entry_price,
+            initial_stop=stop_price,
+            current_stop=stop_price,
+            trail_pct=trail_pct,
+            peak_price=entry_price,
         )
-        logger.info(f"Trailing stop set: {symbol} {side} entry={entry_price} stop={stop_price} trail={trail_pct*100}%")
+        logger.info(
+            f"Trailing stop set: {symbol} {side} entry={entry_price} stop={stop_price} trail={trail_pct * 100}%"
+        )
 
     def remove_trailing_stop(self, symbol: str):
         if symbol in self._trailing_stops:
@@ -115,7 +129,7 @@ class DeltaWSMonitor:
                         {"name": "mark_price", "symbols": [sym]},
                         {"name": "spot_price", "symbols": [sym]},
                     ]
-                }
+                },
             }
             ws.send(json.dumps(subscribe_msg))
 
@@ -128,9 +142,7 @@ class DeltaWSMonitor:
                 sym = data.get("symbol")
                 price = float(data.get("price", 0))
                 if sym and price > 0:
-                    update = PriceUpdate(
-                        symbol=sym, price=price, timestamp=time.time()
-                    )
+                    update = PriceUpdate(symbol=sym, price=price, timestamp=time.time())
                     self._prices[sym] = update
 
                     if self.on_price:
@@ -158,12 +170,16 @@ class DeltaWSMonitor:
                 if potential_stop > ts.current_stop:
                     new_stop = potential_stop
                     ts.current_stop = new_stop
-                    logger.info(f"Trailing stop raised: {symbol} long -> ${new_stop:.2f} (price=${price:.2f})")
+                    logger.info(
+                        f"Trailing stop raised: {symbol} long -> ${new_stop:.2f} (price=${price:.2f})"
+                    )
 
             # Check if price hit stop
             if price <= ts.current_stop:
                 triggered = True
-                logger.warning(f"TRAILING STOP TRIGGERED: {symbol} long at ${price:.2f} (stop=${ts.current_stop:.2f})")
+                logger.warning(
+                    f"TRAILING STOP TRIGGERED: {symbol} long at ${price:.2f} (stop=${ts.current_stop:.2f})"
+                )
 
         elif ts.side == "short":
             if price < ts.peak_price:
@@ -175,7 +191,9 @@ class DeltaWSMonitor:
 
             if price >= ts.current_stop:
                 triggered = True
-                logger.warning(f"TRAILING STOP TRIGGERED: {symbol} short at ${price:.2f} (stop=${ts.current_stop:.2f})")
+                logger.warning(
+                    f"TRAILING STOP TRIGGERED: {symbol} short at ${price:.2f} (stop=${ts.current_stop:.2f})"
+                )
 
         if triggered and self.on_stop_trigger:
             self.on_stop_trigger(ts, price)

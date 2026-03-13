@@ -2,8 +2,8 @@
 Portfolio Manager - tracks P&L, positions, equity curve, and trade history.
 Provides real-time performance metrics for dashboard display.
 """
-import time
-from dataclasses import dataclass, field
+
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
@@ -56,7 +56,11 @@ class PortfolioManager:
         equity = balance + unrealized_pnl
         if equity > self.peak_equity:
             self.peak_equity = equity
-        drawdown = (self.peak_equity - equity) / self.peak_equity * 100 if self.peak_equity > 0 else 0
+        drawdown = (
+            (self.peak_equity - equity) / self.peak_equity * 100
+            if self.peak_equity > 0
+            else 0
+        )
         point = EquityPoint(
             timestamp=datetime.now(timezone.utc).isoformat(),
             equity=round(equity, 2),
@@ -72,17 +76,37 @@ class PortfolioManager:
         if today not in self._daily_pnl:
             self._daily_pnl[today] = 0.0
 
-    def open_trade(self, symbol: str, side: str, entry_price: float,
-                   contracts: int, stop_loss: float, take_profit: float,
-                   emotion_score: float, ai_confidence: float, reasoning: str) -> str:
+    def open_trade(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        contracts: int,
+        stop_loss: float,
+        take_profit: float,
+        emotion_score: float,
+        ai_confidence: float,
+        reasoning: str,
+    ) -> str:
         self._trade_counter += 1
         trade_id = f"T{self._trade_counter:04d}"
         trade = TradeLog(
-            id=trade_id, symbol=symbol, side=side, entry_price=entry_price,
-            exit_price=None, contracts=contracts, realized_pnl=0.0, unrealized_pnl=0.0,
-            status="open", entry_time=datetime.now(timezone.utc).isoformat(),
-            exit_time=None, emotion_score=emotion_score, ai_confidence=ai_confidence,
-            stop_loss=stop_loss, take_profit=take_profit, reasoning=reasoning,
+            id=trade_id,
+            symbol=symbol,
+            side=side,
+            entry_price=entry_price,
+            exit_price=None,
+            contracts=contracts,
+            realized_pnl=0.0,
+            unrealized_pnl=0.0,
+            status="open",
+            entry_time=datetime.now(timezone.utc).isoformat(),
+            exit_time=None,
+            emotion_score=emotion_score,
+            ai_confidence=ai_confidence,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            reasoning=reasoning,
         )
         self._trade_log.insert(0, trade)
         return trade_id
@@ -106,7 +130,8 @@ class PortfolioManager:
             if trade.id == trade_id and trade.status == "open":
                 direction = 1 if trade.side == "buy" else -1
                 trade.unrealized_pnl = round(
-                    direction * (current_price - trade.entry_price) * trade.contracts, 2)
+                    direction * (current_price - trade.entry_price) * trade.contracts, 2
+                )
                 break
 
     def get_stats(self, balance: float) -> Dict:
@@ -120,14 +145,23 @@ class PortfolioManager:
         avg_win = sum(t.realized_pnl for t in winners) / len(winners) if winners else 0
         losers = [t for t in closed if t.realized_pnl <= 0]
         avg_loss = sum(t.realized_pnl for t in losers) / len(losers) if losers else 0
-        profit_factor = abs(sum(t.realized_pnl for t in winners) / sum(t.realized_pnl for t in losers)) if losers and sum(t.realized_pnl for t in losers) != 0 else 0
+        profit_factor = (
+            abs(
+                sum(t.realized_pnl for t in winners)
+                / sum(t.realized_pnl for t in losers)
+            )
+            if losers and sum(t.realized_pnl for t in losers) != 0
+            else 0
+        )
 
         today = datetime.now(timezone.utc).date().isoformat()
         return {
             "equity": round(equity, 2),
             "balance": round(balance, 2),
             "total_pnl": round(self._realized_pnl, 2),
-            "total_pnl_pct": round((self._realized_pnl / self.initial_balance) * 100, 2),
+            "total_pnl_pct": round(
+                (self._realized_pnl / self.initial_balance) * 100, 2
+            ),
             "unrealized_pnl": round(total_unrealized, 2),
             "daily_pnl": round(self._daily_pnl.get(today, 0), 2),
             "max_drawdown_pct": round(max_dd, 2),
@@ -145,8 +179,13 @@ class PortfolioManager:
     @property
     def equity_curve(self) -> List[Dict]:
         return [
-            {"t": p.timestamp, "eq": p.equity, "dd": p.drawdown_pct,
-             "upnl": p.unrealized_pnl, "rpnl": p.realized_pnl}
+            {
+                "t": p.timestamp,
+                "eq": p.equity,
+                "dd": p.drawdown_pct,
+                "upnl": p.unrealized_pnl,
+                "rpnl": p.realized_pnl,
+            }
             for p in self._equity_curve[-500:]
         ]
 
@@ -154,13 +193,21 @@ class PortfolioManager:
     def trade_log(self) -> List[Dict]:
         return [
             {
-                "id": t.id, "symbol": t.symbol, "side": t.side,
-                "entry": t.entry_price, "exit": t.exit_price,
-                "contracts": t.contracts, "pnl": t.realized_pnl,
-                "upnl": t.unrealized_pnl, "status": t.status,
-                "entry_time": t.entry_time, "exit_time": t.exit_time,
-                "stop_loss": t.stop_loss, "take_profit": t.take_profit,
-                "emotion": t.emotion_score, "confidence": t.ai_confidence,
+                "id": t.id,
+                "symbol": t.symbol,
+                "side": t.side,
+                "entry": t.entry_price,
+                "exit": t.exit_price,
+                "contracts": t.contracts,
+                "pnl": t.realized_pnl,
+                "upnl": t.unrealized_pnl,
+                "status": t.status,
+                "entry_time": t.entry_time,
+                "exit_time": t.exit_time,
+                "stop_loss": t.stop_loss,
+                "take_profit": t.take_profit,
+                "emotion": t.emotion_score,
+                "confidence": t.ai_confidence,
                 "reasoning": t.reasoning[:150],
             }
             for t in self._trade_log[:50]
