@@ -12,13 +12,6 @@ alerting:
 rule_files: []
 
 scrape_configs:
-  # Alchemy application metrics (if /metrics endpoint added)
-  - job_name: alchemy
-    static_configs:
-      - targets: ["alchemy:8000"]
-    metrics_path: /metrics
-    scrape_interval: 30s
-
   # Prometheus self-monitoring
   - job_name: prometheus
     static_configs:

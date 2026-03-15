@@ -111,6 +111,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Public paths, static assets, and WebSocket upgrades skip auth here
         # (WebSocket token is validated inside the /ws handler itself)
+        # Requests from localhost (e.g. run_server.py auto-start) skip auth.
+        # Port 8000 is never exposed to the host — only nginx (172.x) and
+        # loopback processes can reach it, so this bypass is safe.
+        if request.client and request.client.host == "127.0.0.1":
+            return await call_next(request)
+
         if (
             path in _PUBLIC_PATHS
             or path.startswith("/static")
