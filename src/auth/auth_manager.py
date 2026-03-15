@@ -18,10 +18,10 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Optional
 
+import bcrypt
 import pyotp
 import qrcode
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from src.utils.logger import get_logger
 
@@ -30,8 +30,6 @@ logger = get_logger(__name__)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 TEMP_TOKEN_EXPIRE_MINUTES = 5  # Only valid for the 2FA verification step
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class AuthManager:
@@ -64,7 +62,7 @@ class AuthManager:
     @staticmethod
     def hash_password(plain_password: str) -> str:
         """Return a bcrypt hash suitable for AUTH_PASSWORD_HASH env var."""
-        return pwd_context.hash(plain_password)
+        return bcrypt.hashpw(plain_password.encode(), bcrypt.gensalt(12)).decode()
 
     @staticmethod
     def generate_totp_secret() -> str:
@@ -79,7 +77,7 @@ class AuthManager:
     # ── Verification ──────────────────────────────────────────────────────────
 
     def verify_password(self, plain_password: str) -> bool:
-        return pwd_context.verify(plain_password, self.password_hash)
+        return bcrypt.checkpw(plain_password.encode(), self.password_hash.encode())
 
     def verify_totp(self, code: str) -> bool:
         """Accept current window ±1 (30-second drift tolerance)."""

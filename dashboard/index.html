@@ -422,7 +422,8 @@ document.getElementById('inp-2fa').addEventListener('keydown',e=>{if(e.key==='En
 let ws;
 function connectWS(){
   const tok=getToken();
-  const url='ws://'+window.location.host+'/ws'+(tok?'?token='+encodeURIComponent(tok):'');
+  const proto=window.location.protocol==='https:'?'wss:':'ws:';
+  const url=proto+'//'+window.location.host+'/ws'+(tok?'?token='+encodeURIComponent(tok):'');
   ws=new WebSocket(url);
   ws.onopen=()=>{document.getElementById('conn-dot').className='status-dot dot-green';document.getElementById('conn-label').textContent='Connected';};
   ws.onclose=()=>{document.getElementById('conn-dot').className='status-dot dot-red';document.getElementById('conn-label').textContent='Disconnected';setTimeout(connectWS,3000);};
