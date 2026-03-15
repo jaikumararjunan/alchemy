@@ -1,0 +1,17 @@
+services:
+  emotion-engine:
+    build: .
+    container_name: emotion-engine-v2
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v2/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
