@@ -19,8 +19,6 @@ services:
     build:
       context: .
       target: runtime
-      cache_from:
-        - alchemy:latest
     image: alchemy:latest
     container_name: alchemy
     expose:
