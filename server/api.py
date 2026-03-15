@@ -90,6 +90,7 @@ auth_manager = AuthManager(
 _PUBLIC_PATHS = {
     "/",
     "/health",
+    "/metrics",
     "/api/auth/login",
     "/api/auth/verify-2fa",
     "/api/auth/setup",
@@ -177,6 +178,7 @@ class AppState:
         self.last_broadcast: dict = {}
         self.bot_running: bool = False
         self.bot_task: Optional[asyncio.Task] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None  # captured at bot start
         # Persistence
         self.db = Database(getattr(config, "db_path", "alchemy.db"))
         self.trade_store = TradeStore(self.db)
@@ -184,7 +186,14 @@ class AppState:
 
     def _broadcast_state(self, data: dict):
         self.last_broadcast = data
-        asyncio.create_task(self._ws_broadcast(data))
+        try:
+            # Fast path: called from within the event loop thread
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._ws_broadcast(data))
+        except RuntimeError:
+            # Called from a thread executor — schedule on the stored event loop
+            if self._loop and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(self._ws_broadcast(data), self._loop)
 
     async def _ws_broadcast(self, data: dict):
         disconnected = []
@@ -1565,6 +1574,7 @@ async def get_config():
 
 
 async def _run_bot_loop():
+    app_state._loop = asyncio.get_running_loop()
     logger.info("Autonomous bot loop started")
     while app_state.bot_running:
         await _run_single_cycle()
@@ -1580,7 +1590,8 @@ async def _run_bot_loop():
 
 async def _run_single_cycle():
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        app_state._loop = loop  # keep reference fresh for thread-safe broadcasts
         result = await loop.run_in_executor(None, app_state.orchestrator.run_cycle)
         # Update portfolio
         balance = 10000.0 if config.trading.dry_run else 0
