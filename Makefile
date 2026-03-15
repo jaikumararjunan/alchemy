@@ -84,10 +84,10 @@ type-check: ## Run mypy type checker
 	mypy src/ server/ --ignore-missing-imports
 
 test: ## Run test suite
-	pytest tests/ -v
+	python -m pytest tests/ -v
 
 test-cov: ## Run tests with coverage report
-	pytest tests/ -v --cov=src --cov=server --cov-report=html --cov-report=term-missing
+	python -m pytest tests/ -v --cov=src --cov=server --cov-report=html --cov-report=term-missing
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 install: ## Install Python dependencies

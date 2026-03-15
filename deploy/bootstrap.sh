@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/jaikumararjunan/alchemy.git"
-BRANCH="main"
+BRANCH="claude/crypto-trading-geopolitical-ai-UsIYY"
 ALCHEMY_DIR="/opt/alchemy"
 DOMAIN="akilamirthya.in"
 
@@ -29,7 +29,7 @@ info "=== Alchemy Bootstrap — akilamirthya.in ==="
 info "Updating system..."
 apt-get update -qq
 apt-get upgrade -y -qq
-apt-get install -y -qq git curl wget ufw fail2ban ca-certificates gnupg lsb-release htop jq
+apt-get install -y -qq git curl wget ufw fail2ban ca-certificates gnupg lsb-release htop jq python3 python3-pip python3-venv
 
 # ── 2. Docker ─────────────────────────────────────────────────────────────────
 if ! command -v docker &>/dev/null; then
@@ -59,7 +59,12 @@ else
     git clone --branch "$BRANCH" "$REPO_URL" "$ALCHEMY_DIR"
 fi
 
-# ── 4. .env setup ─────────────────────────────────────────────────────────────
+# ── 4. Python dependencies (needed for auth setup script) ─────────────────────
+info "Installing Python dependencies for auth setup..."
+pip3 install --quiet pyotp passlib[bcrypt] python-jose[cryptography] qrcode 2>/dev/null || \
+    pip3 install --quiet --break-system-packages pyotp passlib python-jose qrcode
+
+# ── 5. .env setup ─────────────────────────────────────────────────────────────
 if [[ ! -f "$ALCHEMY_DIR/.env" ]]; then
     warn ".env not found — copying from template"
     cp "$ALCHEMY_DIR/.env.example" "$ALCHEMY_DIR/.env"
@@ -69,7 +74,43 @@ else
     info ".env already exists — skipping"
 fi
 
-# ── 5. Firewall ───────────────────────────────────────────────────────────────
+# ── 6. Auth credentials setup ─────────────────────────────────────────────────
+if grep -qE "^(JWT_SECRET_KEY=|TOTP_SECRET=)$" "$ALCHEMY_DIR/.env" 2>/dev/null || \
+   ! grep -q "JWT_SECRET_KEY" "$ALCHEMY_DIR/.env" 2>/dev/null; then
+    info "Generating auth credentials..."
+    cd "$ALCHEMY_DIR"
+    # Generate credentials non-interactively using Python
+    python3 - <<'PYEOF'
+import sys, os, secrets
+sys.path.insert(0, "/opt/alchemy")
+try:
+    from src.auth.auth_manager import AuthManager
+    jwt_secret = AuthManager.generate_jwt_secret()
+    totp_secret = AuthManager.generate_totp_secret()
+    # Write to a temp file for bash to source
+    with open("/tmp/alchemy_auth_secrets", "w") as f:
+        f.write(f"JWT_SECRET_KEY={jwt_secret}\n")
+        f.write(f"TOTP_SECRET={totp_secret}\n")
+    print(f"  JWT secret:  {jwt_secret[:16]}... (generated)")
+    print(f"  TOTP secret: {totp_secret[:8]}... (generated)")
+except Exception as e:
+    print(f"  Warning: Could not generate secrets automatically: {e}")
+    print("  Run: python3 /opt/alchemy/scripts/setup_auth.py manually")
+PYEOF
+
+    if [[ -f /tmp/alchemy_auth_secrets ]]; then
+        # Append generated secrets to .env (if not already set)
+        grep -q "JWT_SECRET_KEY=" "$ALCHEMY_DIR/.env" || \
+            cat /tmp/alchemy_auth_secrets >> "$ALCHEMY_DIR/.env"
+        rm -f /tmp/alchemy_auth_secrets
+        warn "Auth secrets added to .env. Set AUTH_PASSWORD_HASH by running:"
+        warn "  cd $ALCHEMY_DIR && python3 scripts/setup_auth.py"
+    fi
+else
+    info "Auth credentials already present in .env"
+fi
+
+# ── 7. Firewall ───────────────────────────────────────────────────────────────
 info "Configuring UFW..."
 ufw --force reset
 ufw default deny incoming
@@ -79,7 +120,7 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 
-# ── 6. Fail2ban ───────────────────────────────────────────────────────────────
+# ── 8. Fail2ban ───────────────────────────────────────────────────────────────
 cat > /etc/fail2ban/jail.local <<'EOF'
 [DEFAULT]
 bantime  = 1h
@@ -90,7 +131,7 @@ enabled = true
 EOF
 systemctl enable --now fail2ban
 
-# ── 7. Kernel tuning ─────────────────────────────────────────────────────────
+# ── 9. Kernel tuning ─────────────────────────────────────────────────────────
 grep -q "alchemy network tuning" /etc/sysctl.conf || cat >> /etc/sysctl.conf <<'EOF'
 
 # alchemy network tuning
@@ -101,7 +142,7 @@ net.ipv4.tcp_tw_reuse = 1
 EOF
 sysctl -p
 
-# ── 8. systemd service ────────────────────────────────────────────────────────
+# ── 10. systemd service ───────────────────────────────────────────────────────
 cat > /etc/systemd/system/alchemy.service <<EOF
 [Unit]
 Description=Alchemy AI Trading Bot
@@ -124,10 +165,10 @@ EOF
 systemctl daemon-reload
 systemctl enable alchemy
 
-# ── 9. SSL dirs ───────────────────────────────────────────────────────────────
+# ── 11. SSL dirs ──────────────────────────────────────────────────────────────
 mkdir -p "$ALCHEMY_DIR/ssl"
 
-# ── 10. Start (skip if .env still has placeholder) ────────────────────────────
+# ── 12. Start (skip if .env still has placeholder) ────────────────────────────
 if grep -q "your_anthropic_api_key_here" "$ALCHEMY_DIR/.env"; then
     echo ""
     warn "=========================================================="
@@ -156,8 +197,11 @@ echo ""
 echo "  Next steps:"
 echo "  1. Point DNS A record:  akilamirthya.in → 213.199.38.90"
 echo "  2. Edit .env:           nano $ALCHEMY_DIR/.env"
-echo "  3. Start:               systemctl start alchemy"
-echo "  4. Get SSL cert:        cd $ALCHEMY_DIR && docker compose -f docker-compose.prod.yml run --rm certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --email admin@$DOMAIN --agree-tos --no-eff-email"
-echo "  5. Restart nginx:       docker compose -f docker-compose.prod.yml restart nginx"
-echo "  6. Monitor:             docker compose -f docker-compose.prod.yml logs -f alchemy"
+echo "     Required: ANTHROPIC_API_KEY, DELTA_API_KEY, DELTA_API_SECRET"
+echo "  3. Set auth password:   cd $ALCHEMY_DIR && python3 scripts/setup_auth.py"
+echo "     (adds AUTH_PASSWORD_HASH, QR code for Google Authenticator)"
+echo "  4. Start stack:         systemctl start alchemy"
+echo "  5. Get SSL cert:        cd $ALCHEMY_DIR && docker compose -f docker-compose.prod.yml run --rm certbot certonly --webroot -w /var/www/certbot -d $DOMAIN --email admin@$DOMAIN --agree-tos --no-eff-email"
+echo "  6. Restart nginx:       docker compose -f docker-compose.prod.yml restart nginx"
+echo "  7. Monitor:             docker compose -f docker-compose.prod.yml logs -f alchemy"
 echo ""

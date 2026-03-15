@@ -30,6 +30,11 @@ services:
     environment:
       - DRY_RUN=${DRY_RUN:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AUTH_ENABLED=${AUTH_ENABLED:-true}
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - TOTP_SECRET=${TOTP_SECRET}
     volumes:
       - alchemy_logs:/app/logs
     command: >
