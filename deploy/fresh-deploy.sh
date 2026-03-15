@@ -162,8 +162,13 @@ try:
     pw_hash   = ctx.hash(pwd)
     jwt_key   = secrets.token_hex(64)
     totp_sec  = pyotp.random_base32()
+    # Docker Compose v2 interpolates $VAR inside env_file values.
+    # Bcrypt hashes contain literal $ signs ($2b$12$...) which get
+    # stripped to empty strings.  Escape every $ as $$ so Compose
+    # unescapes them back to $ before the value reaches the container.
+    pw_hash_esc = pw_hash.replace("$", "$$")
     with open("/tmp/alchemy_auth", "w") as f:
-        f.write(f"AUTH_PASSWORD_HASH={pw_hash}\n")
+        f.write(f"AUTH_PASSWORD_HASH={pw_hash_esc}\n")
         f.write(f"JWT_SECRET_KEY={jwt_key}\n")
         f.write(f"TOTP_SECRET={totp_sec}\n")
     print(f"  Password hash:  {pw_hash[:20]}...")
