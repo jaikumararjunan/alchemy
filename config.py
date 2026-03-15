@@ -142,11 +142,34 @@ class TradingConfig:
 
 
 @dataclass
+class AuthConfig:
+    """Authentication + 2FA configuration.
+
+    Generate initial credentials with:
+        python scripts/setup_auth.py
+    """
+
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("AUTH_ENABLED", "true").lower() == "true"
+    )
+    username: str = field(default_factory=lambda: os.getenv("AUTH_USERNAME", "admin"))
+    # bcrypt hash of the admin password — generate with scripts/setup_auth.py
+    password_hash: str = field(
+        default_factory=lambda: os.getenv("AUTH_PASSWORD_HASH", "")
+    )
+    # 64-char hex key used to sign JWTs — generate with scripts/setup_auth.py
+    jwt_secret_key: str = field(default_factory=lambda: os.getenv("JWT_SECRET_KEY", ""))
+    # base32 TOTP secret — generate with scripts/setup_auth.py, then scan QR code
+    totp_secret: str = field(default_factory=lambda: os.getenv("TOTP_SECRET", ""))
+
+
+@dataclass
 class AppConfig:
     delta: DeltaConfig = field(default_factory=DeltaConfig)
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
     def validate(self):
         errors = []

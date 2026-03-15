@@ -32,3 +32,9 @@ pydantic>=2.5.0
 schedule>=1.2.0
 colorlog>=6.8.0
 rich>=13.7.0
+
+# Security & Authentication
+pyotp>=2.9.0
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+qrcode>=7.4.2
