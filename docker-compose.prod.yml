@@ -19,8 +19,6 @@ services:
     build:
       context: .
       target: runtime
-      cache_from:
-        - alchemy:latest
     image: alchemy:latest
     container_name: alchemy
     expose:
@@ -30,11 +28,9 @@ services:
     environment:
       - DRY_RUN=${DRY_RUN:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - AUTH_ENABLED=${AUTH_ENABLED:-true}
-      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
-      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - TOTP_SECRET=${TOTP_SECRET}
+      # AUTH_PASSWORD_HASH, JWT_SECRET_KEY, TOTP_SECRET are loaded verbatim
+      # via env_file above — DO NOT add them here; Compose interpolation
+      # corrupts bcrypt hashes that contain $ characters.
     volumes:
       - alchemy_logs:/app/logs
     command: >
@@ -66,7 +62,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${NGINX_CONF:-./deploy/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
       - certbot_webroot:/var/www/certbot:ro
     depends_on:

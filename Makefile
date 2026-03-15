@@ -117,6 +117,9 @@ deploy: ## Trigger GitHub Actions deploy (requires gh CLI)
 server-setup: ## Run production server setup script (requires SSH + sudo)
 	ssh -t $(DEPLOY_USER)@$(DEPLOY_HOST) "sudo bash -s" < deploy/setup.sh
 
+fresh-deploy: ## Full fresh deployment on VPS (wipe + clone + SSL + start)
+	ssh -t root@$(DEPLOY_HOST) "bash -s" < deploy/fresh-deploy.sh
+
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean: ## Remove build artifacts and __pycache__
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
