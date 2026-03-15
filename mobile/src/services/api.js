@@ -1,10 +1,14 @@
 /**
  * API Service - connects to Alchemy FastAPI backend
+ * Includes JWT + TOTP 2FA authentication support.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Change this to your server IP when running on device
 const BASE_URL = __DEV__ ? 'http://localhost:8000' : 'http://YOUR_SERVER_IP:8000';
 const WS_URL = __DEV__ ? 'ws://localhost:8000/ws' : 'ws://YOUR_SERVER_IP:8000/ws';
+
+const TOKEN_KEY = 'alchemy_access_token';
 
 class AlchemyAPI {
   constructor() {
@@ -13,22 +17,94 @@ class AlchemyAPI {
     this.ws = null;
     this.listeners = new Map();
     this.reconnectTimer = null;
+    this._token = null;
+    this._onUnauthorized = null;  // set by app to redirect to login screen
   }
 
-  async get(path) {
-    const res = await fetch(`${this.baseUrl}${path}`);
+  // ── Token management ──────────────────────────────────────────────────────
+
+  async loadToken() {
+    this._token = await AsyncStorage.getItem(TOKEN_KEY);
+    return this._token;
+  }
+
+  async saveToken(token) {
+    this._token = token;
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+  }
+
+  async clearToken() {
+    this._token = null;
+    await AsyncStorage.removeItem(TOKEN_KEY);
+  }
+
+  setUnauthorizedHandler(fn) { this._onUnauthorized = fn; }
+
+  _authHeaders() {
+    const h = { 'Content-Type': 'application/json' };
+    if (this._token) h['Authorization'] = `Bearer ${this._token}`;
+    return h;
+  }
+
+  async _handleResponse(res) {
+    if (res.status === 401) {
+      await this.clearToken();
+      this._onUnauthorized?.();
+      throw new Error('Unauthorized');
+    }
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();
+  }
+
+  // ── Auth endpoints (no token required) ───────────────────────────────────
+
+  async login(username, password) {
+    const res = await fetch(`${this.baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'Login failed');
+    }
+    return res.json();  // { requires_2fa, temp_token }
+  }
+
+  async verify2fa(tempToken, code) {
+    const res = await fetch(`${this.baseUrl}/api/auth/verify-2fa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ temp_token: tempToken, code }),
+    });
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'Invalid 2FA code');
+    }
+    const data = await res.json();
+    await this.saveToken(data.access_token);
+    return data;  // { access_token, token_type, expires_in }
+  }
+
+  async logout() {
+    await this.clearToken();
+    this.disconnectWS();
+  }
+
+  // ── Authenticated requests ────────────────────────────────────────────────
+
+  async get(path) {
+    const res = await fetch(`${this.baseUrl}${path}`, { headers: this._authHeaders() });
+    return this._handleResponse(res);
   }
 
   async post(path, body) {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this._authHeaders(),
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
-    return res.json();
+    return this._handleResponse(res);
   }
 
   // REST endpoints
@@ -89,7 +165,10 @@ class AlchemyAPI {
   // WebSocket
   connectWS(onMessage, onConnect, onDisconnect) {
     if (this.ws) { this.ws.close(); }
-    this.ws = new WebSocket(this.wsUrl);
+    const url = this._token
+      ? `${this.wsUrl}?token=${encodeURIComponent(this._token)}`
+      : this.wsUrl;
+    this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }

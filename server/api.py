@@ -13,13 +13,16 @@ from fastapi import (
     WebSocketDisconnect,
     HTTPException,
     BackgroundTasks,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import config
+from src.auth import AuthManager
 from src.exchange import DeltaExchangeClient
 from src.intelligence import EmotionEngine, GeopoliticalAnalyzer, NewsFetcher
 from src.strategy import TradingStrategy
@@ -43,6 +46,91 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─────────────────────────────────────────────────────
+# Authentication
+# ─────────────────────────────────────────────────────
+
+# Bootstrap auth credentials on startup — auto-generate missing secrets so the
+# server always starts.  Operators MUST set AUTH_PASSWORD_HASH in .env before
+# exposing the server to any network.
+_auth_cfg = config.auth
+
+if not _auth_cfg.jwt_secret_key:
+    _auth_cfg.jwt_secret_key = AuthManager.generate_jwt_secret()
+    logger.warning(
+        "JWT_SECRET_KEY not set — generated ephemeral key. "
+        "Sessions will be lost on restart. Set JWT_SECRET_KEY in .env."
+    )
+
+if not _auth_cfg.totp_secret:
+    _auth_cfg.totp_secret = AuthManager.generate_totp_secret()
+    logger.warning(
+        "TOTP_SECRET not set — generated ephemeral secret. "
+        "Run `python scripts/setup_auth.py` to configure persistent 2FA."
+    )
+
+if not _auth_cfg.password_hash:
+    # Default password "alchemy" — force change via setup_auth.py
+    _auth_cfg.password_hash = AuthManager.hash_password("alchemy")
+    logger.warning(
+        "AUTH_PASSWORD_HASH not set — using default password 'alchemy'. "
+        "Run `python scripts/setup_auth.py` to set a secure password."
+    )
+
+auth_manager = AuthManager(
+    secret_key=_auth_cfg.jwt_secret_key,
+    username=_auth_cfg.username,
+    password_hash=_auth_cfg.password_hash,
+    totp_secret=_auth_cfg.totp_secret,
+)
+
+
+# Paths that do NOT require a valid access token
+_PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/api/auth/login",
+    "/api/auth/verify-2fa",
+    "/api/auth/setup",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Enforce JWT bearer token on all non-public, non-WebSocket paths."""
+
+    async def dispatch(self, request: Request, call_next):
+        # Auth disabled → pass through
+        if not config.auth.enabled:
+            return await call_next(request)
+
+        path = request.url.path
+
+        # Public paths, static assets, and WebSocket upgrades skip auth here
+        # (WebSocket token is validated inside the /ws handler itself)
+        if (
+            path in _PUBLIC_PATHS
+            or path.startswith("/static")
+            or path.startswith("/assets")
+            or request.headers.get("upgrade", "").lower() == "websocket"
+        ):
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+
+        token = auth_header[7:]
+        if not auth_manager.verify_token(token, "access"):
+            return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
+
+        return await call_next(request)
+
+
+app.add_middleware(AuthMiddleware)
 
 # ─────────────────────────────────────────────────────
 # Global State
@@ -139,7 +227,12 @@ class ConfigUpdateRequest(BaseModel):
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
+    # Validate token before accepting (skip if auth disabled)
+    if config.auth.enabled:
+        if not token or not auth_manager.verify_token(token, "access"):
+            await ws.close(code=4401)
+            return
     await ws.accept()
     app_state.ws_clients.append(ws)
     logger.info(f"WebSocket client connected. Total: {len(app_state.ws_clients)}")
@@ -155,6 +248,73 @@ async def websocket_endpoint(ws: WebSocket):
         logger.info(
             f"WebSocket client disconnected. Total: {len(app_state.ws_clients)}"
         )
+
+
+# ─────────────────────────────────────────────────────
+# Auth Endpoints  (public — no token required)
+# ─────────────────────────────────────────────────────
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TwoFARequest(BaseModel):
+    temp_token: str
+    code: str
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: LoginRequest):
+    """Step 1: Verify username + password.  Returns a short-lived temp_token."""
+    if req.username != auth_manager.username or not auth_manager.verify_password(
+        req.password
+    ):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return {
+        "requires_2fa": True,
+        "temp_token": auth_manager.create_temp_token(),
+        "message": "Password accepted. Enter your 2FA code.",
+    }
+
+
+@app.post("/api/auth/verify-2fa")
+async def auth_verify_2fa(req: TwoFARequest):
+    """Step 2: Verify TOTP code + temp_token.  Returns a full access_token."""
+    if not auth_manager.verify_token(req.temp_token, "temp"):
+        raise HTTPException(status_code=401, detail="Temp token invalid or expired")
+    if not auth_manager.verify_totp(req.code):
+        raise HTTPException(status_code=401, detail="Invalid 2FA code")
+    return {
+        "access_token": auth_manager.create_access_token(),
+        "token_type": "bearer",
+        "expires_in": 86400,
+    }
+
+
+@app.get("/api/auth/setup")
+async def auth_setup():
+    """
+    Returns the TOTP QR code and secret for first-time authenticator setup.
+    Disable or protect this endpoint once initial setup is complete.
+    """
+    return {
+        "totp_secret": auth_manager.totp_secret,
+        "provisioning_uri": auth_manager.get_totp_provisioning_uri(),
+        "qr_code_base64": auth_manager.get_qr_code_base64(),
+        "username": auth_manager.username,
+        "instructions": (
+            "Scan the QR code with Google Authenticator or Authy. "
+            "Then set TOTP_SECRET in your .env file."
+        ),
+    }
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    """Client-side logout — instructs client to discard the token."""
+    return {"message": "Logged out. Discard your access token."}
 
 
 # ─────────────────────────────────────────────────────

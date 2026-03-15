@@ -67,9 +67,63 @@ tr:hover td{background:rgba(255,255,255,.02)}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 @media(max-width:1200px){.g-4{grid-template-columns:repeat(2,1fr)}.g-3{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:768px){.g-4,.g-3,.g-2,.g-1-2,.g-2-1,.g-1-1-1{grid-template-columns:1fr}}
+
+/* ── Login modal ──────────────────────────────────────────────────── */
+#login-overlay{position:fixed;inset:0;background:rgba(10,14,26,.97);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+#login-overlay.hidden{display:none}
+.login-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:360px;box-shadow:0 0 60px rgba(0,212,255,.12)}
+.login-logo{font-size:28px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:3px;text-align:center;margin-bottom:6px}
+.login-sub{font-size:12px;color:var(--text3);text-align:center;margin-bottom:28px}
+.login-step{display:none}.login-step.active{display:block}
+.login-field{margin-bottom:16px}
+.login-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px}
+.login-field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;transition:border .2s}
+.login-field input:focus{border-color:var(--accent)}
+.login-btn{width:100%;padding:11px;border-radius:8px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s;margin-top:4px}
+.login-btn:hover{opacity:.88}
+.login-err{font-size:12px;color:var(--red);margin-top:10px;min-height:18px;text-align:center}
+.login-back{font-size:11px;color:var(--text3);cursor:pointer;text-align:center;margin-top:14px;text-decoration:underline}
+.login-2fa-hint{font-size:12px;color:var(--text2);text-align:center;margin-bottom:16px;line-height:1.5}
+.totp-input{text-align:center;font-size:24px;letter-spacing:6px;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
+
+<!-- ── Login / 2FA overlay ────────────────────────────────────────── -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">ALCHEMY</div>
+    <div class="login-sub">Autonomous AI Crypto Trading</div>
+
+    <!-- Step 1: username + password -->
+    <div class="login-step active" id="step-pw">
+      <div class="login-field">
+        <label>Username</label>
+        <input id="inp-user" type="text" autocomplete="username" placeholder="admin">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input id="inp-pw" type="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button class="login-btn" onclick="loginStep1()">Sign In</button>
+      <div class="login-err" id="err-pw"></div>
+    </div>
+
+    <!-- Step 2: TOTP code -->
+    <div class="login-step" id="step-2fa">
+      <div class="login-2fa-hint">Open your authenticator app<br>and enter the 6-digit code.</div>
+      <div class="login-field">
+        <label>2FA Code</label>
+        <input id="inp-2fa" class="totp-input" type="text" inputmode="numeric"
+               maxlength="6" placeholder="000000" autocomplete="one-time-code">
+      </div>
+      <button class="login-btn" onclick="loginStep2()">Verify</button>
+      <div class="login-err" id="err-2fa"></div>
+      <div class="login-back" onclick="backToPassword()">← Use a different account</div>
+    </div>
+  </div>
+</div>
+
 <div class="header">
   <div style="display:flex;align-items:center;gap:16px">
     <div class="logo">ALCHEMY</div>
@@ -85,6 +139,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <span id="mode-text">DRY RUN</span>
     </div>
     <div style="font-size:12px;color:var(--text2)" id="header-time"></div>
+    <button onclick="logout()" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#ef4444;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">Logout</button>
   </div>
 </div>
 
@@ -292,9 +347,83 @@ const pnlChart=new Chart(document.getElementById('pnl-chart').getContext('2d'),{
   options:{...co,scales:{x:{display:true,ticks:{color:'#64748b',font:{size:9}}},y:{display:true,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#64748b',font:{size:9}}}}}
 });
 
+// ── Auth helpers ──────────────────────────────────────────────────────────
+const TOKEN_KEY='alchemy_token';
+let _tempToken=null;
+
+function getToken(){return localStorage.getItem(TOKEN_KEY);}
+function setToken(t){localStorage.setItem(TOKEN_KEY,t);}
+function clearToken(){localStorage.removeItem(TOKEN_KEY);}
+
+async function apiFetch(url,opts={}){
+  const headers={...(opts.headers||{})};
+  const tok=getToken();
+  if(tok)headers['Authorization']='Bearer '+tok;
+  const res=await fetch(url,{...opts,headers});
+  if(res.status===401){showLogin();throw new Error('Unauthenticated');}
+  return res;
+}
+
+function showLogin(){
+  document.getElementById('login-overlay').classList.remove('hidden');
+  document.getElementById('step-pw').classList.add('active');
+  document.getElementById('step-2fa').classList.remove('active');
+  document.getElementById('err-pw').textContent='';
+  document.getElementById('err-2fa').textContent='';
+}
+
+function hideLogin(){document.getElementById('login-overlay').classList.add('hidden');}
+
+async function loginStep1(){
+  const user=document.getElementById('inp-user').value.trim();
+  const pw=document.getElementById('inp-pw').value;
+  document.getElementById('err-pw').textContent='';
+  try{
+    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pw})});
+    const d=await r.json();
+    if(!r.ok){document.getElementById('err-pw').textContent=d.detail||'Login failed';return;}
+    _tempToken=d.temp_token;
+    document.getElementById('step-pw').classList.remove('active');
+    document.getElementById('step-2fa').classList.add('active');
+    document.getElementById('inp-2fa').value='';
+    document.getElementById('inp-2fa').focus();
+  }catch(e){document.getElementById('err-pw').textContent='Network error';}
+}
+
+async function loginStep2(){
+  const code=document.getElementById('inp-2fa').value.trim();
+  document.getElementById('err-2fa').textContent='';
+  try{
+    const r=await fetch('/api/auth/verify-2fa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({temp_token:_tempToken,code})});
+    const d=await r.json();
+    if(!r.ok){document.getElementById('err-2fa').textContent=d.detail||'Invalid code';return;}
+    setToken(d.access_token);
+    hideLogin();
+    initDashboard();
+  }catch(e){document.getElementById('err-2fa').textContent='Network error';}
+}
+
+function backToPassword(){
+  document.getElementById('step-2fa').classList.remove('active');
+  document.getElementById('step-pw').classList.add('active');
+}
+
+function logout(){
+  clearToken();
+  if(ws){ws.close();ws=null;}
+  showLogin();
+}
+
+// Allow Enter key in login fields
+document.getElementById('inp-pw').addEventListener('keydown',e=>{if(e.key==='Enter')loginStep1();});
+document.getElementById('inp-2fa').addEventListener('keydown',e=>{if(e.key==='Enter')loginStep2();});
+
+// ── WebSocket ─────────────────────────────────────────────────────────────
 let ws;
 function connectWS(){
-  ws=new WebSocket('ws://'+window.location.host+'/ws');
+  const tok=getToken();
+  const url='ws://'+window.location.host+'/ws'+(tok?'?token='+encodeURIComponent(tok):'');
+  ws=new WebSocket(url);
   ws.onopen=()=>{document.getElementById('conn-dot').className='status-dot dot-green';document.getElementById('conn-label').textContent='Connected';};
   ws.onclose=()=>{document.getElementById('conn-dot').className='status-dot dot-red';document.getElementById('conn-label').textContent='Disconnected';setTimeout(connectWS,3000);};
   ws.onmessage=e=>{try{processData(JSON.parse(e.data));}catch(err){}};
@@ -495,32 +624,32 @@ function updateNews(articles){
 
 async function botControl(action){
   const interval=parseInt($id('interval-in').value)||30;
-  const res=await fetch('/api/bot/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,interval_minutes:interval})});
+  const res=await apiFetch('/api/bot/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,interval_minutes:interval})});
   const data=await res.json();
   if(data.status==='started'||data.status==='already_running'){$id('mode-badge').className='status-badge status-live';}
   else if(data.status==='stopped'){$id('mode-badge').className='status-badge status-dry';}
 }
 
 async function toggleDryRun(){
-  const res=await fetch('/api/config');const cfg=await res.json();
+  const res=await apiFetch('/api/config');const cfg=await res.json();
   const nv=!cfg.dry_run;
-  await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:nv})});
+  await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dry_run:nv})});
   $id('btn-dry').textContent=nv?'Paper Trading ON':'LIVE TRADING';
   $id('mode-text').textContent=nv?'DRY RUN':'LIVE';
 }
 
 async function changeSymbol(){
   const sym=$id('sym-select').value;
-  await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})});
+  await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})});
 }
 
 async function pollData(){
   try{
     const [port,emo,news,dec]=await Promise.all([
-      fetch('/api/portfolio').then(r=>r.json()),
-      fetch('/api/emotion').then(r=>r.json()),
-      fetch('/api/news').then(r=>r.json()),
-      fetch('/api/decisions').then(r=>r.json()),
+      apiFetch('/api/portfolio').then(r=>r.json()),
+      apiFetch('/api/emotion').then(r=>r.json()),
+      apiFetch('/api/news').then(r=>r.json()),
+      apiFetch('/api/decisions').then(r=>r.json()),
     ]);
     if(port.stats)updatePortfolio(port.stats);
     if(port.equity_curve)updateEquityChart(port.equity_curve);
@@ -532,17 +661,23 @@ async function pollData(){
   }catch(e){}
 }
 
+function initDashboard(){
+  connectWS();
+  pollData();
+  apiFetch('/api/config').then(r=>r.json()).then(cfg=>{
+    $id('sym-select').value=cfg.symbol||'BTCUSD';
+    $id('interval-in').value=cfg.interval_minutes||30;
+    $id('btn-dry').textContent=cfg.dry_run?'Paper Trading ON':'LIVE TRADING';
+    $id('mode-text').textContent=cfg.dry_run?'DRY RUN':'LIVE';
+    $id('mode-badge').className=cfg.dry_run?'status-badge status-dry':'status-badge status-live';
+  }).catch(()=>{});
+}
+
 setInterval(()=>$id('header-time').textContent=new Date().toUTCString().slice(17,25)+' UTC',1000);
-connectWS();
-pollData();
 setInterval(pollData,30000);
-fetch('/api/config').then(r=>r.json()).then(cfg=>{
-  $id('sym-select').value=cfg.symbol||'BTCUSD';
-  $id('interval-in').value=cfg.interval_minutes||30;
-  $id('btn-dry').textContent=cfg.dry_run?'Paper Trading ON':'LIVE TRADING';
-  $id('mode-text').textContent=cfg.dry_run?'DRY RUN':'LIVE';
-  $id('mode-badge').className=cfg.dry_run?'status-badge status-dry':'status-badge status-live';
-});
+
+// On load: if token exists try dashboard, otherwise show login
+if(getToken()){hideLogin();initDashboard();}else{showLogin();}
 </script>
 </body>
 </html>
