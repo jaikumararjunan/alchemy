@@ -111,6 +111,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Public paths, static assets, and WebSocket upgrades skip auth here
         # (WebSocket token is validated inside the /ws handler itself)
+        # Requests from localhost (e.g. run_server.py auto-start) skip auth.
+        # Port 8000 is never exposed to the host — only nginx (172.x) and
+        # loopback processes can reach it, so this bypass is safe.
+        if request.client and request.client.host == "127.0.0.1":
+            return await call_next(request)
+
         if (
             path in _PUBLIC_PATHS
             or path.startswith("/static")
@@ -206,11 +212,13 @@ class BotControlRequest(BaseModel):
 
 class TradeRequest(BaseModel):
     symbol: str
-    side: str
-    size_usd: float
-    stop_loss_pct: float = 2.0
-    take_profit_pct: float = 4.0
+    side: str                       # "buy" | "sell"
+    size_usd: float                 # margin to commit in USD
+    stop_loss_pct: float = 2.0      # stop-loss distance from entry (%)
+    take_profit_pct: float = 4.0    # take-profit distance from entry (%)
     leverage: int = 5
+    order_type: str = "market"      # "market" | "limit"
+    limit_price: Optional[float] = None  # required when order_type="limit"
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -1215,32 +1223,301 @@ async def backtest_defaults():
     }
 
 
-@app.post("/api/trade")
-async def manual_trade(req: TradeRequest):
-    """Manually place a trade (bypasses autonomous AI)."""
-    from src.exchange.delta_client import Order
+def _build_trade_preview(
+    symbol: str,
+    side: str,
+    size_usd: float,
+    current_price: float,
+    leverage: int,
+    stop_loss_pct: float,
+    take_profit_pct: float,
+    risk_manager: "RiskManager",
+) -> dict:
+    """Compute trade parameters and fee breakdown without placing the order."""
+    fee_usd = risk_manager.estimate_fee_usd(size_usd)
+    rt_fee_pct = risk_manager.round_trip_fee_pct_of_margin() * 100
+    contracts = risk_manager.calculate_contracts(size_usd, current_price, leverage)
+    notional = size_usd * leverage
+
+    if side == "buy":
+        stop_loss_price = round(current_price * (1 - stop_loss_pct / 100), 4)
+        take_profit_price = round(current_price * (1 + take_profit_pct / 100), 4)
+        risk_usd = size_usd * (stop_loss_pct / 100) * leverage
+        reward_usd = size_usd * (take_profit_pct / 100) * leverage
+    else:
+        stop_loss_price = round(current_price * (1 + stop_loss_pct / 100), 4)
+        take_profit_price = round(current_price * (1 - take_profit_pct / 100), 4)
+        risk_usd = size_usd * (stop_loss_pct / 100) * leverage
+        reward_usd = size_usd * (take_profit_pct / 100) * leverage
+
+    gross_rr = take_profit_pct / stop_loss_pct if stop_loss_pct else 0
+    net_reward = reward_usd - fee_usd
+    net_rr = net_reward / risk_usd if risk_usd > 0 else 0
+
+    return {
+        "symbol": symbol,
+        "side": side,
+        "entry_price": current_price,
+        "stop_loss_price": stop_loss_price,
+        "take_profit_price": take_profit_price,
+        "stop_loss_pct": stop_loss_pct,
+        "take_profit_pct": take_profit_pct,
+        "size_usd": size_usd,
+        "notional_usd": round(notional, 2),
+        "contracts": contracts,
+        "leverage": leverage,
+        "fee_usd": round(fee_usd, 4),
+        "fee_pct_of_margin": round(rt_fee_pct, 4),
+        "gross_rr": round(gross_rr, 2),
+        "net_rr_after_fees": round(net_rr, 2),
+        "risk_usd": round(risk_usd, 4),
+        "reward_usd": round(reward_usd, 4),
+        "net_reward_usd": round(net_reward, 4),
+        "breakeven_move_pct": round(rt_fee_pct / leverage, 4),
+    }
+
+
+@app.get("/api/trade/symbols")
+async def trade_symbols():
+    """Return the list of tradeable symbols and their current prices."""
+    watch_list = getattr(config.trading, "watch_list", ["BTCUSD", "ETHUSD"])
+    dry_run = config.trading.dry_run
+    import random
+
+    symbols = []
+    for sym in watch_list:
+        if dry_run:
+            mock = {
+                "BTCUSD": 65000.0, "ETHUSD": 3200.0, "SOLUSD": 150.0,
+                "BNBUSD": 420.0, "XRPUSD": 0.65, "AVAXUSD": 38.0,
+                "DOGEUSD": 0.18, "MATICUSD": 0.85, "LINKUSD": 18.0, "DOTUSD": 9.0,
+            }
+            price = mock.get(sym, 100.0) * random.uniform(0.99, 1.01)
+            symbols.append({"symbol": sym, "price": round(price, 4), "dry_run": True})
+        else:
+            try:
+                ticker = app_state.exchange.get_ticker(sym)
+                symbols.append({
+                    "symbol": sym,
+                    "price": ticker.mark_price,
+                    "bid": ticker.bid,
+                    "ask": ticker.ask,
+                    "change_24h_pct": ticker.change_24h_pct,
+                    "volume_24h": ticker.volume_24h,
+                })
+            except Exception:
+                symbols.append({"symbol": sym, "price": None, "error": "unavailable"})
+    return {"symbols": symbols, "dry_run": dry_run}
+
+
+@app.post("/api/trade/quote")
+async def trade_quote(req: TradeRequest):
+    """
+    Preview a trade — compute entry, SL, TP, contracts, and fee breakdown
+    without placing any order.
+    """
+    symbol = req.symbol.upper()
+    watch_list = [s.upper() for s in getattr(config.trading, "watch_list", [])]
+    if watch_list and symbol not in watch_list:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Symbol {symbol} not in watch list. Available: {watch_list}",
+        )
+    if req.side not in ("buy", "sell"):
+        raise HTTPException(status_code=400, detail="side must be 'buy' or 'sell'")
 
     try:
         if config.trading.dry_run:
+            import random
+            mock = {
+                "BTCUSD": 65000.0, "ETHUSD": 3200.0, "SOLUSD": 150.0,
+                "BNBUSD": 420.0, "XRPUSD": 0.65,
+            }
+            price = mock.get(symbol, 1000.0) * random.uniform(0.99, 1.01)
+        else:
+            ticker = app_state.exchange.get_ticker(symbol)
+            price = req.limit_price if req.order_type == "limit" and req.limit_price else ticker.mark_price
+
+        preview = _build_trade_preview(
+            symbol=symbol,
+            side=req.side,
+            size_usd=req.size_usd,
+            current_price=price,
+            leverage=req.leverage,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            risk_manager=app_state.risk_manager,
+        )
+        preview["order_type"] = req.order_type
+        preview["dry_run"] = config.trading.dry_run
+        return preview
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/trade")
+async def manual_trade(req: TradeRequest):
+    """
+    Manually place a trade on a crypto derivative (BTC, ETH, SOL, etc.).
+
+    Flow:
+      1. Validate symbol and side
+      2. Fetch current market price
+      3. Run hard-limit risk checks (daily loss, drawdown, open positions)
+      4. Calculate contracts and fees
+      5. Place order (or simulate in dry-run mode)
+      6. Persist to SQLite trade_log
+    """
+    from src.exchange.delta_client import Order
+
+    symbol = req.symbol.upper()
+    watch_list = [s.upper() for s in getattr(config.trading, "watch_list", [])]
+    if watch_list and symbol not in watch_list:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Symbol {symbol} not in watch list. Available: {watch_list}",
+        )
+    if req.side not in ("buy", "sell"):
+        raise HTTPException(status_code=400, detail="side must be 'buy' or 'sell'")
+    if req.order_type not in ("market", "limit"):
+        raise HTTPException(status_code=400, detail="order_type must be 'market' or 'limit'")
+    if req.order_type == "limit" and not req.limit_price:
+        raise HTTPException(status_code=400, detail="limit_price is required for limit orders")
+    max_leverage = getattr(config.trading, "leverage", 10)
+    if not (1 <= req.leverage <= max_leverage):
+        raise HTTPException(
+            status_code=400, detail=f"leverage must be between 1 and {max_leverage}"
+        )
+
+    dry_run = config.trading.dry_run
+
+    try:
+        # ── 1. Current price ─────────────────────────────────────────────────
+        if dry_run:
+            import random
+            mock = {
+                "BTCUSD": 65000.0, "ETHUSD": 3200.0, "SOLUSD": 150.0,
+                "BNBUSD": 420.0, "XRPUSD": 0.65, "AVAXUSD": 38.0,
+                "DOGEUSD": 0.18, "MATICUSD": 0.85, "LINKUSD": 18.0, "DOTUSD": 9.0,
+            }
+            current_price = mock.get(symbol, 1000.0) * random.uniform(0.99, 1.01)
+        else:
+            ticker = app_state.exchange.get_ticker(symbol)
+            current_price = (
+                req.limit_price
+                if req.order_type == "limit" and req.limit_price
+                else ticker.mark_price
+            )
+
+        # ── 2. Account state ─────────────────────────────────────────────────
+        if dry_run:
+            balance = 10000.0
+            open_positions_count = 0
+        else:
+            wallet = app_state.exchange.get_wallet_balance()
+            balance = float(wallet.get("available_balance", 0.0))
+            positions = app_state.exchange.get_positions()
+            open_positions_count = len(positions)
+
+        # ── 3. Risk evaluation (hard limits) ─────────────────────────────────
+        risk_metrics = app_state.risk_manager.evaluate(
+            signal=None,
+            account_balance=balance,
+            open_positions=open_positions_count,
+            current_price=current_price,
+        )
+        if not risk_metrics.can_trade:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Trade rejected: {risk_metrics.rejection_reason}",
+            )
+
+        # ── 4. Trade parameters ───────────────────────────────────────────────
+        preview = _build_trade_preview(
+            symbol=symbol,
+            side=req.side,
+            size_usd=req.size_usd,
+            current_price=current_price,
+            leverage=req.leverage,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            risk_manager=app_state.risk_manager,
+        )
+
+        # ── 5. Dry-run path ───────────────────────────────────────────────────
+        if dry_run:
+            trade_id = app_state.trade_store.record(
+                symbol=symbol,
+                side=req.side,
+                size_usd=req.size_usd,
+                leverage=req.leverage,
+                entry_price=current_price,
+                fee_usd=preview["fee_usd"],
+                stop_loss_pct=req.stop_loss_pct,
+                take_profit_pct=req.take_profit_pct,
+                order_type=req.order_type,
+                dry_run=True,
+                notes="Manual trade (dry-run)",
+            )
             return {
                 "status": "dry_run_simulated",
-                "symbol": req.symbol,
-                "side": req.side,
-                "size_usd": req.size_usd,
+                "trade_id": trade_id,
+                "risk_level": risk_metrics.risk_level,
+                **preview,
             }
-        product_id = app_state.exchange.get_product_id(req.symbol)
+
+        # ── 6. Live execution ─────────────────────────────────────────────────
+        product_id = app_state.exchange.get_product_id(symbol)
         if not product_id:
             raise HTTPException(
-                status_code=404, detail=f"Symbol {req.symbol} not found"
+                status_code=404, detail=f"Product ID not found for {symbol}"
             )
         app_state.exchange.set_leverage(product_id, req.leverage)
-        contracts = max(int(req.size_usd * req.leverage), 1)
+
         order = Order(
-            symbol=req.symbol, side=req.side, order_type="market", size=contracts
+            symbol=symbol,
+            side=req.side,
+            order_type=req.order_type,
+            size=preview["contracts"],
+            price=req.limit_price if req.order_type == "limit" else None,
         )
         result = app_state.exchange.place_order(order, product_id)
-        return {"status": "executed", "order": result}
+
+        # ── 7. Persist to SQLite ──────────────────────────────────────────────
+        trade_id = app_state.trade_store.record(
+            symbol=symbol,
+            side=req.side,
+            size_usd=req.size_usd,
+            leverage=req.leverage,
+            entry_price=current_price,
+            fee_usd=preview["fee_usd"],
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            order_type=req.order_type,
+            dry_run=False,
+            notes=f"Manual trade | order_id={result.get('id', 'unknown')}",
+        )
+
+        logger.info(
+            "Manual trade placed: %s %s %s | contracts=%d | price=%.4f | fee=$%.4f",
+            req.side.upper(), symbol, req.order_type,
+            preview["contracts"], current_price, preview["fee_usd"],
+        )
+
+        return {
+            "status": "executed",
+            "trade_id": trade_id,
+            "risk_level": risk_metrics.risk_level,
+            "order": result,
+            **preview,
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error("Manual trade error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
