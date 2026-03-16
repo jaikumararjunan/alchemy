@@ -499,25 +499,77 @@ function renderSentiment(result) {
 }
 
 // ── Signals ───────────────────────────────────────────────────────────────────
-function pushSignal(signal) {
-  signalQueue.unshift(signal);
+
+// Normalise option/futures signals into the common display shape
+function _normSignal(s, kind) {
+  if (kind === 'options') {
+    const leg0 = (s.legs || [])[0] || {};
+    return {
+      strategy_name: s.strategy_name,
+      symbol: s.symbol,
+      action: s.action === 'enter' ? (s.net_delta >= 0 ? 'buy' : 'sell') : s.action,
+      kind: 'OPT',
+      confidence: s.confidence,
+      risk_reward_ratio: s.risk_reward_ratio,
+      stop_loss: null,
+      take_profit: null,
+      detail: `Credit/Debit $${(Math.abs(s.net_premium||0)).toFixed(2)} · θ ${(s.net_theta||0).toFixed(2)}/day · ν ${(s.net_vega||0).toFixed(2)}/1%IV`,
+    };
+  }
+  if (kind === 'futures') {
+    return {
+      strategy_name: s.strategy_name,
+      symbol: s.symbol,
+      action: s.action,
+      kind: s.contract_type === 'perpetual' ? 'PERP' : s.contract_type === 'dated' ? 'FUTR' : 'SPRD',
+      confidence: s.confidence,
+      risk_reward_ratio: s.risk_reward_ratio,
+      stop_loss: s.stop_loss,
+      take_profit: s.take_profit,
+      detail: `${s.leverage}× lev · ${s.expected_hold_hours}h hold · ${s.annualised_yield_pct ? s.annualised_yield_pct.toFixed(1)+'% ann.' : ''}`,
+    };
+  }
+  // intraday signal
+  return {
+    strategy_name: s.strategy_name,
+    symbol: s.symbol,
+    action: s.action,
+    kind: 'SPOT',
+    confidence: s.confidence,
+    risk_reward_ratio: s.risk_reward_ratio,
+    stop_loss: s.stop_loss,
+    take_profit: s.take_profit,
+    detail: `SL ${fmtPrice(s.stop_loss, s.symbol)} · TP ${fmtPrice(s.take_profit, s.symbol)}`,
+  };
+}
+
+function pushSignal(signal, kind = 'spot') {
+  signalQueue.unshift(_normSignal(signal, kind));
   if (signalQueue.length > MAX_SIGNALS) signalQueue.pop();
   renderSignals();
 }
+
+const KIND_COLOR = { OPT: 'var(--purple)', PERP: 'var(--orange)', FUTR: 'var(--yellow)', SPRD: 'var(--primary)', SPOT: 'var(--text-dim)' };
 
 function renderSignals() {
   const feed = document.getElementById('signal-feed');
   if (!signalQueue.length) { feed.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No signals yet</div>'; return; }
   feed.innerHTML = signalQueue.map(s => {
     const action = s.action || 'hold';
-    const cls = action.includes('buy') ? 'sig-buy' : action.includes('sell') ? 'sig-sell' : 'sig-hold';
+    const isBuy  = ['buy','long','enter'].some(a => action.includes(a));
+    const isSell = ['sell','short'].some(a => action.includes(a));
+    const cls = isBuy ? 'sig-buy' : isSell ? 'sig-sell' : 'sig-hold';
     const conf = ((s.confidence || 0) * 100).toFixed(0);
     const rr = s.risk_reward_ratio ? s.risk_reward_ratio.toFixed(1) : '—';
+    const kindColor = KIND_COLOR[s.kind] || 'var(--text-dim)';
     return `<div class="signal-item">
-      <span class="sig-action ${cls}">${action.toUpperCase()}</span>
+      <span class="sig-action ${cls}">${action.toUpperCase().slice(0,5)}</span>
       <div class="sig-meta">
-        <div class="sig-name">${s.strategy_name || '—'} · ${s.symbol || ''}</div>
-        <div class="sig-detail">RR ${rr} · SL ${fmtPrice(s.stop_loss, s.symbol)} · TP ${fmtPrice(s.take_profit, s.symbol)}</div>
+        <div class="sig-name">
+          <span style="color:${kindColor};font-size:9px;border:1px solid ${kindColor};border-radius:3px;padding:0 3px;margin-right:4px">${s.kind||''}</span>
+          ${s.strategy_name || '—'} · ${s.symbol || ''}
+        </div>
+        <div class="sig-detail">RR ${rr} · ${s.detail || ''}</div>
       </div>
       <span class="sig-conf" style="color:${conf>=70?'var(--green)':conf>=50?'var(--yellow)':'var(--text-dim)'}">${conf}%</span>
     </div>`;
@@ -651,7 +703,17 @@ function connectWS() {
         break;
 
       case 'signal':
-        if (msg.signal) pushSignal(msg.signal);
+        if (msg.signal) pushSignal(msg.signal, 'spot');
+        break;
+
+      case 'options_signal':
+        if (msg.signal) pushSignal(msg.signal, 'options');
+        else if (msg.signals) msg.signals.filter(s => s.action === 'enter').forEach(s => pushSignal(s, 'options'));
+        break;
+
+      case 'futures_signal':
+        if (msg.signal) pushSignal(msg.signal, 'futures');
+        else if (msg.signals) msg.signals.filter(s => s.action !== 'hold').forEach(s => pushSignal(s, 'futures'));
         break;
 
       case 'capital':
