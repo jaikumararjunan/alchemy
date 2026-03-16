@@ -1,0 +1,13 @@
+# Blue slot override — extend docker-compose.prod.yml for blue/green deployment.
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.blue.yml \
+#          --project-name alchemy-blue up -d
+services:
+  alchemy:
+    container_name: alchemy-blue
+    networks:
+      alchemy_internal:
+        aliases:
+          - alchemy-blue
+      alchemy_public:
+        aliases:
+          - alchemy-blue
