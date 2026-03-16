@@ -1,0 +1,89 @@
+version: "3.9"
+
+# =============================================================================
+# Alchemy — Bootstrap Compose Override
+#
+# Starts the app with HTTP only (no SSL certs required).
+# Use this to:
+#   1. Get the app running immediately on http://213.199.38.90
+#   2. Obtain SSL certs via certbot
+#   3. Switch to the full prod stack (docker-compose.prod.yml)
+#
+# Usage:
+#   docker compose -f docker-compose.bootstrap.yml up -d
+#   # Then get SSL cert:
+#   docker compose -f docker-compose.bootstrap.yml run --rm certbot certonly \
+#     --webroot -w /var/www/certbot -d akilamirthya.in \
+#     --email admin@akilamirthya.in --agree-tos --no-eff-email
+#   # Then switch to prod:
+#   docker compose -f docker-compose.bootstrap.yml down
+#   docker compose -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+
+  alchemy:
+    build:
+      context: .
+      target: runtime
+    image: alchemy:latest
+    container_name: alchemy
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      - DRY_RUN=${DRY_RUN:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AUTH_ENABLED=${AUTH_ENABLED:-true}
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD_HASH=${AUTH_PASSWORD_HASH}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - TOTP_SECRET=${TOTP_SECRET}
+    volumes:
+      - alchemy_logs:/app/logs
+    command: >
+      python run_server.py
+        --host 0.0.0.0
+        --port 8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - alchemy_public
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: alchemy_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx-bootstrap.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot_webroot:/var/www/certbot:ro
+    depends_on:
+      alchemy:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - alchemy_public
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: alchemy_certbot
+    volumes:
+      - ./ssl:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    networks:
+      - alchemy_public
+
+networks:
+  alchemy_public:
+    driver: bridge
+
+volumes:
+  alchemy_logs:
+  certbot_webroot:

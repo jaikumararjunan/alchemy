@@ -1,21 +1,49 @@
-FROM python:3.11-slim
+# ── Stage 1: builder ──────────────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+# Non-root user for security
+RUN groupadd -r alchemy && useradd -r -g alchemy -d /app -s /sbin/nologin alchemy
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy only installed packages from builder
+# User home is /app, so Python user-site resolves to /app/.local
+COPY --from=builder /root/.local /app/.local
 
-# Copy source
-COPY . .
+# Copy application source
+COPY --chown=alchemy:alchemy . .
 
-# Create storage dir
-RUN mkdir -p storage
+# Runtime system deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && chown -R alchemy:alchemy /app
 
-# Non-root user
-RUN useradd -m -u 1001 emotion && chown -R emotion:emotion /app
-USER emotion
+# Make sure scripts in .local are usable
+ENV PATH=/app/.local/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-EXPOSE 8001
+USER alchemy
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["python", "run_server.py", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Alchemy",
+    "slug": "alchemy-trader",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0a0e1a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.alchemy.trader"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0e1a"
+      },
+      "package": "com.alchemy.trader"
+    },
+    "plugins": [
+      "expo-notifications"
+    ]
+  }
+}

@@ -1,13 +1,4 @@
-.env
 __pycache__/
 *.pyc
-*.pyo
-storage/
-*.db
-.venv/
-dist/
-*.egg-info/
-
-# Mobile / React Native
-mobile/node_modules/
-mobile/.expo/
+node_modules/
+.expo/
