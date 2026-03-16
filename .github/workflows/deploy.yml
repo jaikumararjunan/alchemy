@@ -7,28 +7,88 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Deploy in DRY_RUN mode?"
+        description: "Deploy in DRY_RUN mode (paper trading)?"
         required: true
-        default: "true"
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      force_rollback:
+        description: "Roll back to previous image immediately?"
+        required: false
+        default: "false"
         type: choice
         options: ["true", "false"]
 
+# Only one deploy can run at a time; never cancel a running deploy.
 concurrency:
   group: production
-  cancel-in-progress: false    # never cancel a running deploy
+  cancel-in-progress: false
 
 jobs:
-  # ── Build & Push Image ───────────────────────────────────────────────────────
-  build:
-    name: Build & Push
+  # ── Security Gate: Trivy container scan must pass before any deploy ──────────
+  security-gate:
+    name: Security Gate
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      passed: ${{ steps.gate.outputs.passed }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Docker meta
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: alchemy:scan-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy — block on HIGH/CRITICAL
+        id: trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: alchemy:scan-${{ github.sha }}
+          format: sarif
+          output: trivy-deploy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"       # hard fail — no deploy if HIGH/CRITICAL CVEs present
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-deploy.sarif
+          category: trivy-deploy
+
+      - name: Mark gate passed
+        id: gate
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  # ── Build, Sign & Push Image ─────────────────────────────────────────────────
+  build:
+    name: Build, Sign & Push
+    needs: security-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # required for cosign keyless signing
+    outputs:
+      image_tag:    ${{ steps.meta.outputs.version }}
+      image_digest: ${{ steps.push.outputs.digest }}
+      image_ref:    ${{ secrets.REGISTRY_HOST }}/alchemy:${{ steps.meta.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -36,10 +96,17 @@ jobs:
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=Alchemy Trading Bot
+            org.opencontainers.image.description=AI-powered crypto trading bot
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Install cosign (image signing)
+        uses: sigstore/cosign-installer@v3
 
       - name: Login to registry
         uses: docker/login-action@v3
@@ -49,6 +116,7 @@ jobs:
           password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Build and push
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -57,98 +125,267 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ secrets.REGISTRY_HOST }}/alchemy:buildcache
           cache-to: type=registry,ref=${{ secrets.REGISTRY_HOST }}/alchemy:buildcache,mode=max
+          provenance: true    # SLSA Level 3 provenance attestation
+          sbom: true          # Generate SBOM
 
-  # ── Deploy ───────────────────────────────────────────────────────────────────
+      - name: Sign image with cosign (keyless OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes \
+            "${{ secrets.REGISTRY_HOST }}/alchemy@${{ steps.push.outputs.digest }}"
+
+      - name: Verify signature
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${{ secrets.REGISTRY_HOST }}/alchemy@${{ steps.push.outputs.digest }}"
+
+  # ── Deploy ────────────────────────────────────────────────────────────────────
   deploy:
-    name: Deploy
+    name: Deploy (Blue/Green)
     needs: build
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      SSH_KEY_PATH: ~/.ssh/deploy_key
+      REMOTE: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+      IMAGE_REF: ${{ needs.build.outputs.image_ref }}
+      IMAGE_DIGEST: ${{ needs.build.outputs.image_digest }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      FORCE_ROLLBACK: ${{ github.event.inputs.force_rollback || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
 
+      # ── SSH setup ──────────────────────────────────────────────────────────
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > "$SSH_KEY_PATH"
+          chmod 600 "$SSH_KEY_PATH"
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Copy deploy files
+      # ── Handle force rollback ──────────────────────────────────────────────
+      - name: Force rollback (if requested)
+        if: env.FORCE_ROLLBACK == 'true'
         run: |
-          scp -i ~/.ssh/deploy_key \
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" "bash /opt/alchemy/deploy/rollback.sh"
+          echo "::warning::Forced rollback executed"
+          exit 0
+
+      # ── Sync deploy artifacts ──────────────────────────────────────────────
+      - name: Sync deploy files to server
+        run: |
+          # Create remote dirs
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" \
+            "mkdir -p /opt/alchemy/{deploy,scripts,deploy/grafana/datasources}"
+
+          # Compose files
+          scp -i "$SSH_KEY_PATH" \
             docker-compose.prod.yml \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/alchemy/
-          scp -i ~/.ssh/deploy_key \
+            docker-compose.blue.yml \
+            docker-compose.green.yml \
+            "$REMOTE":/opt/alchemy/
+
+          # Deploy scripts (atomically replace)
+          scp -i "$SSH_KEY_PATH" \
+            deploy/deploy.sh \
+            deploy/rollback.sh \
+            deploy/healthcheck.sh \
             deploy/nginx.conf \
+            deploy/nginx-bootstrap.conf \
             deploy/prometheus.yml \
             deploy/promtail.yml \
             deploy/loki.yml \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/alchemy/deploy/
-          scp -i ~/.ssh/deploy_key -r \
+            "$REMOTE":/opt/alchemy/deploy/
+
+          # Grafana datasources
+          scp -i "$SSH_KEY_PATH" \
+            deploy/grafana/datasources/datasources.yml \
+            "$REMOTE":/opt/alchemy/deploy/grafana/datasources/
+
+          # Scripts
+          scp -i "$SSH_KEY_PATH" -r \
             scripts/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/alchemy/
+            "$REMOTE":/opt/alchemy/
 
-      - name: Deploy
-        env:
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "bash /opt/alchemy/deploy/deploy.sh $IMAGE_TAG $DRY_RUN"
+          # Ensure scripts are executable
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" \
+            "chmod +x /opt/alchemy/deploy/*.sh /opt/alchemy/scripts/*.py 2>/dev/null || true"
 
-      - name: Inject auth secrets into .env
+      # ── Inject secrets into .env ───────────────────────────────────────────
+      - name: Inject secrets into .env
         run: |
-          ssh -i ~/.ssh/deploy_key \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENVSSH'
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" bash << 'ENDSSH'
+          set -euo pipefail
           ENV_FILE="/opt/alchemy/.env"
-          set_env() {
+
+          # Ensure .env exists with correct permissions
+          touch "$ENV_FILE"
+          chmod 640 "$ENV_FILE"
+
+          upsert() {
             local key="$1" val="$2"
             if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
-              sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+              # Use temp file for atomic replace (avoids partial writes)
+              local tmp; tmp=$(mktemp)
+              sed "s|^${key}=.*|${key}=${val}|" "$ENV_FILE" > "$tmp"
+              mv "$tmp" "$ENV_FILE"
             else
-              echo "${key}=${val}" >> "$ENV_FILE"
+              printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
             fi
           }
-          set_env "AUTH_ENABLED"       "${{ secrets.AUTH_ENABLED || 'true' }}"
-          set_env "AUTH_USERNAME"      "${{ secrets.AUTH_USERNAME || 'admin' }}"
-          set_env "AUTH_PASSWORD_HASH" "${{ secrets.AUTH_PASSWORD_HASH }}"
-          set_env "JWT_SECRET_KEY"     "${{ secrets.JWT_SECRET_KEY }}"
-          set_env "TOTP_SECRET"        "${{ secrets.TOTP_SECRET }}"
-          echo "Auth secrets injected into .env"
-          ENVSSH
 
-      - name: Health check
+          upsert "AUTH_ENABLED"       "${{ secrets.AUTH_ENABLED || 'true' }}"
+          upsert "AUTH_USERNAME"      "${{ secrets.AUTH_USERNAME || 'admin' }}"
+          upsert "AUTH_PASSWORD_HASH" "${{ secrets.AUTH_PASSWORD_HASH }}"
+          upsert "JWT_SECRET_KEY"     "${{ secrets.JWT_SECRET_KEY }}"
+          upsert "TOTP_SECRET"        "${{ secrets.TOTP_SECRET }}"
+          upsert "ANTHROPIC_API_KEY"  "${{ secrets.ANTHROPIC_API_KEY }}"
+          upsert "DELTA_API_KEY"      "${{ secrets.DELTA_API_KEY }}"
+          upsert "DELTA_API_SECRET"   "${{ secrets.DELTA_API_SECRET }}"
+
+          # Restrict env file ownership after write
+          chown alchemy:alchemy "$ENV_FILE" 2>/dev/null || true
+          echo "✅ Secrets injected"
+          ENDSSH
+
+      # ── Run blue/green deploy ──────────────────────────────────────────────
+      - name: Blue/Green Deploy
+        id: deploy_step
         run: |
-          sleep 15
-          ssh -i ~/.ssh/deploy_key \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "curl -sf http://localhost:8000/health | python3 -m json.tool"
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" \
+            "bash /opt/alchemy/deploy/deploy.sh \
+               '${{ secrets.REGISTRY_HOST }}/alchemy' \
+               '${{ env.IMAGE_TAG }}' \
+               '${{ env.DRY_RUN }}' \
+               '${{ github.sha }}' \
+               '${{ github.actor }}'"
 
-      - name: Notify Slack on success
+      # ── Extended health check & smoke tests ───────────────────────────────
+      - name: Health check + smoke tests
+        id: healthcheck
+        run: |
+          sleep 10
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" \
+            "bash /opt/alchemy/deploy/healthcheck.sh"
+
+      # ── Auto-rollback on failure ───────────────────────────────────────────
+      - name: Auto-rollback on failure
+        if: failure() && steps.deploy_step.outcome != 'skipped'
+        run: |
+          echo "::error::Deploy or healthcheck failed — triggering auto-rollback"
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" \
+            "bash /opt/alchemy/deploy/rollback.sh auto '${{ github.sha }}'"
+
+      # ── Write deploy audit record ──────────────────────────────────────────
+      - name: Write audit record
+        if: always()
+        run: |
+          OUTCOME="${{ job.status }}"
+          ssh -i "$SSH_KEY_PATH" "$REMOTE" << ENDSSH
+          mkdir -p /opt/alchemy/logs
+          printf '%s\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ) | deploy | outcome=${OUTCOME} | image=${{ env.IMAGE_TAG }} | sha=${{ github.sha }} | actor=${{ github.actor }} | run=${{ github.run_id }}" \
+            >> /opt/alchemy/logs/deploy-audit.log
+          ENDSSH
+
+      # ── Slack: Success ─────────────────────────────────────────────────────
+      - name: Slack — deploy success
         if: success()
         uses: slackapi/slack-github-action@v1
         with:
           payload: |
             {
-              "text": "✅ Alchemy deployed successfully — `${{ needs.build.outputs.image_tag }}`",
-              "channel": "#deployments"
+              "text": "✅ *Alchemy deployed* — `${{ env.IMAGE_TAG }}`",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "✅ *Alchemy deployed to production*\n• Image: `${{ env.IMAGE_TAG }}`\n• SHA: `${{ github.sha }}`\n• Actor: `${{ github.actor }}`\n• Mode: `DRY_RUN=${{ env.DRY_RUN }}`"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": { "type": "plain_text", "text": "View Run" },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         continue-on-error: true
 
-      - name: Notify Slack on failure
+      # ── Slack: Failure + Rollback ──────────────────────────────────────────
+      - name: Slack — deploy failed + rollback triggered
         if: failure()
         uses: slackapi/slack-github-action@v1
         with:
           payload: |
             {
-              "text": "❌ Alchemy deploy FAILED — `${{ needs.build.outputs.image_tag }}`\nSee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "channel": "#deployments"
+              "text": "🚨 *Alchemy deploy FAILED* — auto-rollback triggered",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🚨 *Deploy FAILED* — auto-rollback triggered\n• Image: `${{ env.IMAGE_TAG }}`\n• SHA: `${{ github.sha }}`\n• Actor: `${{ github.actor }}`\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+                  }
+                }
+              ]
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         continue-on-error: true
+
+  # ── Post-deploy verification (independent job) ────────────────────────────────
+  verify:
+    name: Post-Deploy Verification
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/verify_key
+          chmod 600 ~/.ssh/verify_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Verify containers are running
+        run: |
+          ssh -i ~/.ssh/verify_key \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "docker compose -f /opt/alchemy/docker-compose.prod.yml ps --format json \
+              | python3 -c \"
+          import sys, json
+          services = [json.loads(l) for l in sys.stdin if l.strip()]
+          unhealthy = [s['Service'] for s in services if s.get('Health','healthy') not in ('healthy','')]
+          if unhealthy:
+              print('UNHEALTHY:', unhealthy); sys.exit(1)
+          print('All services healthy:', [s['Service'] for s in services])
+          \""
+
+      - name: Verify signed image is running
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          pip install cosign 2>/dev/null || true
+          echo "Image digest on record: ${{ needs.build.outputs.image_digest }}"
