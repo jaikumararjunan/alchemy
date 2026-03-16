@@ -7,3 +7,7 @@ storage/
 .venv/
 dist/
 *.egg-info/
+
+# Mobile / React Native
+mobile/node_modules/
+mobile/.expo/
