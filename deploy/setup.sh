@@ -15,8 +15,8 @@ set -euo pipefail
 
 ALCHEMY_USER="alchemy"
 ALCHEMY_DIR="/opt/alchemy"
-REPO_URL="${REPO_URL:-https://github.com/your-org/alchemy.git}"
-DOMAIN="${DOMAIN:-alchemy.yourdomain.com}"
+REPO_URL="${REPO_URL:-https://github.com/jaikumararjunan/alchemy.git}"
+DOMAIN="${DOMAIN:-akilamirthya.in}"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'

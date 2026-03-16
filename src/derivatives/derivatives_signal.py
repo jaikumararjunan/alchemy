@@ -10,6 +10,7 @@ Weights:
 
 Output: DerivativesSignal with composite score in -1..+1 and BUY/SELL/HOLD suggestion.
 """
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -26,9 +27,10 @@ logger = get_logger(__name__)
 @dataclass
 class DerivativesSignal:
     """Composite signal from all derivative market data."""
-    composite_score: float        # -1.0 (strong bearish) to +1.0 (strong bullish)
-    action_suggestion: str        # "BUY" | "SELL" | "HOLD"
-    confidence: float             # 0.0 – 1.0
+
+    composite_score: float  # -1.0 (strong bearish) to +1.0 (strong bullish)
+    action_suggestion: str  # "BUY" | "SELL" | "HOLD"
+    confidence: float  # 0.0 – 1.0
 
     # Sub-signals
     funding: Optional[FundingRateData]
@@ -45,10 +47,10 @@ class DerivativesSignal:
     options_score: float
 
     # Flags
-    extreme_funding: bool         # funding at extreme levels
+    extreme_funding: bool  # funding at extreme levels
     short_squeeze_risk: bool
     long_squeeze_risk: bool
-    high_oi_conviction: bool      # large OI + price confirmation
+    high_oi_conviction: bool  # large OI + price confirmation
 
     summary: str
 
@@ -81,17 +83,17 @@ class DerivativesSignalEngine:
     Instantiate once and call analyze() each trading cycle.
     """
 
-    _W_FUNDING  = 0.30
-    _W_BASIS    = 0.20
-    _W_OI       = 0.30
-    _W_LIQ      = 0.10
-    _W_OPTIONS  = 0.10
+    _W_FUNDING = 0.30
+    _W_BASIS = 0.20
+    _W_OI = 0.30
+    _W_LIQ = 0.10
+    _W_OPTIONS = 0.10
 
     def __init__(self):
-        self.funding_monitor  = FundingRateMonitor()
-        self.basis_tracker    = BasisTracker()
-        self.oi_analyzer      = OpenInterestAnalyzer()
-        self.liq_tracker      = LiquidationTracker()
+        self.funding_monitor = FundingRateMonitor()
+        self.basis_tracker = BasisTracker()
+        self.oi_analyzer = OpenInterestAnalyzer()
+        self.liq_tracker = LiquidationTracker()
         self.options_analyzer = OptionsAnalyzer()
 
     def analyze(
@@ -117,7 +119,7 @@ class DerivativesSignalEngine:
         f_score = 0.0
         if funding_rate is not None:
             try:
-                f_data  = self.funding_monitor.analyze(funding_rate)
+                f_data = self.funding_monitor.analyze(funding_rate)
                 f_score = f_data.sentiment_score
             except Exception as e:
                 logger.warning(f"Funding analysis error: {e}")
@@ -128,7 +130,7 @@ class DerivativesSignalEngine:
         perp_price = current_price
         spot = spot_price or current_price * 0.9997  # ~0.03% assumed basis if no spot
         try:
-            b_data  = self.basis_tracker.analyze(spot, perp_price)
+            b_data = self.basis_tracker.analyze(spot, perp_price)
             b_score = b_data.sentiment_score
         except Exception as e:
             logger.warning(f"Basis analysis error: {e}")
@@ -138,7 +140,7 @@ class DerivativesSignalEngine:
         oi_score = 0.0
         if open_interest is not None:
             try:
-                oi_data  = self.oi_analyzer.analyze(open_interest, current_price)
+                oi_data = self.oi_analyzer.analyze(open_interest, current_price)
                 oi_score = oi_data.sentiment_score
             except Exception as e:
                 logger.warning(f"OI analysis error: {e}")
@@ -147,7 +149,7 @@ class DerivativesSignalEngine:
         liq_data: Optional[LiquidationMap] = None
         liq_score = 0.0
         try:
-            liq_data  = self.liq_tracker.compute_map(current_price)
+            liq_data = self.liq_tracker.compute_map(current_price)
             liq_score = liq_data.sentiment_score
         except Exception as e:
             logger.warning(f"Liquidation analysis error: {e}")
@@ -157,7 +159,9 @@ class DerivativesSignalEngine:
         opt_score = 0.0
         if options_chain:
             try:
-                opt_data  = self.options_analyzer.analyze_chain(current_price, options_chain)
+                opt_data = self.options_analyzer.analyze_chain(
+                    current_price, options_chain
+                )
                 opt_score = opt_data.pc_sentiment_score
             except Exception as e:
                 logger.warning(f"Options analysis error: {e}")
@@ -166,26 +170,34 @@ class DerivativesSignalEngine:
         # Normalise weights for available signals
         weights = {
             "funding": self._W_FUNDING if f_data else 0.0,
-            "basis":   self._W_BASIS,
-            "oi":      self._W_OI if oi_data else 0.0,
-            "liq":     self._W_LIQ,
+            "basis": self._W_BASIS,
+            "oi": self._W_OI if oi_data else 0.0,
+            "liq": self._W_LIQ,
             "options": self._W_OPTIONS if opt_data else 0.0,
         }
         total_w = sum(weights.values()) or 1.0
         composite = (
-            f_score  * weights["funding"] +
-            b_score  * weights["basis"] +
-            oi_score * weights["oi"] +
-            liq_score* weights["liq"] +
-            opt_score* weights["options"]
+            f_score * weights["funding"]
+            + b_score * weights["basis"]
+            + oi_score * weights["oi"]
+            + liq_score * weights["liq"]
+            + opt_score * weights["options"]
         ) / total_w
 
         composite = round(max(-1.0, min(1.0, composite)), 4)
 
         # Confidence: how many signals agree with composite direction
-        scores = [s for s, w in [(f_score, weights["funding"]), (b_score, weights["basis"]),
-                                   (oi_score, weights["oi"]), (liq_score, weights["liq"]),
-                                   (opt_score, weights["options"])] if w > 0]
+        scores = [
+            s
+            for s, w in [
+                (f_score, weights["funding"]),
+                (b_score, weights["basis"]),
+                (oi_score, weights["oi"]),
+                (liq_score, weights["liq"]),
+                (opt_score, weights["options"]),
+            ]
+            if w > 0
+        ]
         agree = sum(1 for s in scores if (s > 0) == (composite > 0)) if scores else 0
         confidence = round(agree / len(scores) if scores else 0.5, 3)
 
@@ -198,11 +210,18 @@ class DerivativesSignalEngine:
             action = "HOLD"
 
         # Flags
-        extreme_funding   = f_data is not None and f_data.rate_label in ("extreme_positive", "extreme_negative")
-        short_sq          = liq_data is not None and liq_data.signal == "short_squeeze_risk"
-        long_sq           = liq_data is not None and liq_data.signal == "long_squeeze_risk"
-        high_oi_conv      = (oi_data is not None and oi_data.large_oi_change and
-                             oi_data.price_oi_signal in ("bullish_confirmation", "bearish_confirmation"))
+        extreme_funding = f_data is not None and f_data.rate_label in (
+            "extreme_positive",
+            "extreme_negative",
+        )
+        short_sq = liq_data is not None and liq_data.signal == "short_squeeze_risk"
+        long_sq = liq_data is not None and liq_data.signal == "long_squeeze_risk"
+        high_oi_conv = (
+            oi_data is not None
+            and oi_data.large_oi_change
+            and oi_data.price_oi_signal
+            in ("bullish_confirmation", "bearish_confirmation")
+        )
 
         # Summary
         parts = [f"Derivatives score: {composite:+.3f} → {action}."]
@@ -219,8 +238,11 @@ class DerivativesSignalEngine:
             composite_score=composite,
             action_suggestion=action,
             confidence=confidence,
-            funding=f_data, basis=b_data, oi=oi_data,
-            liquidation=liq_data, options=opt_data,
+            funding=f_data,
+            basis=b_data,
+            oi=oi_data,
+            liquidation=liq_data,
+            options=opt_data,
             funding_score=round(f_score, 4),
             basis_score=round(b_score, 4),
             oi_score=round(oi_score, 4),

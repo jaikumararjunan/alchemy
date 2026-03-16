@@ -2,19 +2,27 @@
 FastAPI Server for Alchemy Trading Bot.
 Provides REST API and WebSocket for mobile app and web dashboard.
 """
+
 import asyncio
-import json
-import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    BackgroundTasks,
+    Request,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import config
+from src.auth import AuthManager
 from src.exchange import DeltaExchangeClient
 from src.intelligence import EmotionEngine, GeopoliticalAnalyzer, NewsFetcher
 from src.strategy import TradingStrategy
@@ -40,8 +48,101 @@ app.add_middleware(
 )
 
 # ─────────────────────────────────────────────────────
+# Authentication
+# ─────────────────────────────────────────────────────
+
+# Bootstrap auth credentials on startup — auto-generate missing secrets so the
+# server always starts.  Operators MUST set AUTH_PASSWORD_HASH in .env before
+# exposing the server to any network.
+_auth_cfg = config.auth
+
+if not _auth_cfg.jwt_secret_key:
+    _auth_cfg.jwt_secret_key = AuthManager.generate_jwt_secret()
+    logger.warning(
+        "JWT_SECRET_KEY not set — generated ephemeral key. "
+        "Sessions will be lost on restart. Set JWT_SECRET_KEY in .env."
+    )
+
+if not _auth_cfg.totp_secret:
+    _auth_cfg.totp_secret = AuthManager.generate_totp_secret()
+    logger.warning(
+        "TOTP_SECRET not set — generated ephemeral secret. "
+        "Run `python scripts/setup_auth.py` to configure persistent 2FA."
+    )
+
+if not _auth_cfg.password_hash:
+    # Default password "alchemy" — force change via setup_auth.py
+    _auth_cfg.password_hash = AuthManager.hash_password("alchemy")
+    logger.warning(
+        "AUTH_PASSWORD_HASH not set — using default password 'alchemy'. "
+        "Run `python scripts/setup_auth.py` to set a secure password."
+    )
+
+auth_manager = AuthManager(
+    secret_key=_auth_cfg.jwt_secret_key,
+    username=_auth_cfg.username,
+    password_hash=_auth_cfg.password_hash,
+    totp_secret=_auth_cfg.totp_secret,
+)
+
+
+# Paths that do NOT require a valid access token
+_PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/metrics",
+    "/api/auth/login",
+    "/api/auth/verify-2fa",
+    "/api/auth/setup",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Enforce JWT bearer token on all non-public, non-WebSocket paths."""
+
+    async def dispatch(self, request: Request, call_next):
+        # Auth disabled → pass through
+        if not config.auth.enabled:
+            return await call_next(request)
+
+        path = request.url.path
+
+        # Public paths, static assets, and WebSocket upgrades skip auth here
+        # (WebSocket token is validated inside the /ws handler itself)
+        # Requests from localhost (e.g. run_server.py auto-start) skip auth.
+        # Port 8000 is never exposed to the host — only nginx (172.x) and
+        # loopback processes can reach it, so this bypass is safe.
+        if request.client and request.client.host == "127.0.0.1":
+            return await call_next(request)
+
+        if (
+            path in _PUBLIC_PATHS
+            or path.startswith("/static")
+            or path.startswith("/assets")
+            or request.headers.get("upgrade", "").lower() == "websocket"
+        ):
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+
+        token = auth_header[7:]
+        if not auth_manager.verify_token(token, "access"):
+            return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
+
+        return await call_next(request)
+
+
+app.add_middleware(AuthMiddleware)
+
+# ─────────────────────────────────────────────────────
 # Global State
 # ─────────────────────────────────────────────────────
+
 
 class AppState:
     def __init__(self):
@@ -77,14 +178,22 @@ class AppState:
         self.last_broadcast: dict = {}
         self.bot_running: bool = False
         self.bot_task: Optional[asyncio.Task] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None  # captured at bot start
         # Persistence
         self.db = Database(getattr(config, "db_path", "alchemy.db"))
-        self.trade_store    = TradeStore(self.db)
+        self.trade_store = TradeStore(self.db)
         self.decision_store = DecisionStore(self.db)
 
     def _broadcast_state(self, data: dict):
         self.last_broadcast = data
-        asyncio.create_task(self._ws_broadcast(data))
+        try:
+            # Fast path: called from within the event loop thread
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._ws_broadcast(data))
+        except RuntimeError:
+            # Called from a thread executor — schedule on the stored event loop
+            if self._loop and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(self._ws_broadcast(data), self._loop)
 
     async def _ws_broadcast(self, data: dict):
         disconnected = []
@@ -104,17 +213,22 @@ app_state = AppState()
 # Pydantic Models
 # ─────────────────────────────────────────────────────
 
+
 class BotControlRequest(BaseModel):
     action: str  # "start", "stop", "pause"
     interval_minutes: Optional[int] = None
 
+
 class TradeRequest(BaseModel):
     symbol: str
-    side: str
-    size_usd: float
-    stop_loss_pct: float = 2.0
-    take_profit_pct: float = 4.0
+    side: str                       # "buy" | "sell"
+    size_usd: float                 # margin to commit in USD
+    stop_loss_pct: float = 2.0      # stop-loss distance from entry (%)
+    take_profit_pct: float = 4.0    # take-profit distance from entry (%)
     leverage: int = 5
+    order_type: str = "market"      # "market" | "limit"
+    limit_price: Optional[float] = None  # required when order_type="limit"
+
 
 class ConfigUpdateRequest(BaseModel):
     symbol: Optional[str] = None
@@ -123,12 +237,19 @@ class ConfigUpdateRequest(BaseModel):
     position_size_usd: Optional[float] = None
     leverage: Optional[int] = None
 
+
 # ─────────────────────────────────────────────────────
 # WebSocket
 # ─────────────────────────────────────────────────────
 
+
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def websocket_endpoint(ws: WebSocket, token: Optional[str] = None):
+    # Validate token before accepting (skip if auth disabled)
+    if config.auth.enabled:
+        if not token or not auth_manager.verify_token(token, "access"):
+            await ws.close(code=4401)
+            return
     await ws.accept()
     app_state.ws_clients.append(ws)
     logger.info(f"WebSocket client connected. Total: {len(app_state.ws_clients)}")
@@ -141,15 +262,87 @@ async def websocket_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         if ws in app_state.ws_clients:
             app_state.ws_clients.remove(ws)
-        logger.info(f"WebSocket client disconnected. Total: {len(app_state.ws_clients)}")
+        logger.info(
+            f"WebSocket client disconnected. Total: {len(app_state.ws_clients)}"
+        )
+
+
+# ─────────────────────────────────────────────────────
+# Auth Endpoints  (public — no token required)
+# ─────────────────────────────────────────────────────
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TwoFARequest(BaseModel):
+    temp_token: str
+    code: str
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: LoginRequest):
+    """Step 1: Verify username + password.  Returns a short-lived temp_token."""
+    if req.username != auth_manager.username or not auth_manager.verify_password(
+        req.password
+    ):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return {
+        "requires_2fa": True,
+        "temp_token": auth_manager.create_temp_token(),
+        "message": "Password accepted. Enter your 2FA code.",
+    }
+
+
+@app.post("/api/auth/verify-2fa")
+async def auth_verify_2fa(req: TwoFARequest):
+    """Step 2: Verify TOTP code + temp_token.  Returns a full access_token."""
+    if not auth_manager.verify_token(req.temp_token, "temp"):
+        raise HTTPException(status_code=401, detail="Temp token invalid or expired")
+    if not auth_manager.verify_totp(req.code):
+        raise HTTPException(status_code=401, detail="Invalid 2FA code")
+    return {
+        "access_token": auth_manager.create_access_token(),
+        "token_type": "bearer",
+        "expires_in": 86400,
+    }
+
+
+@app.get("/api/auth/setup")
+async def auth_setup():
+    """
+    Returns the TOTP QR code and secret for first-time authenticator setup.
+    Disable or protect this endpoint once initial setup is complete.
+    """
+    return {
+        "totp_secret": auth_manager.totp_secret,
+        "provisioning_uri": auth_manager.get_totp_provisioning_uri(),
+        "qr_code_base64": auth_manager.get_qr_code_base64(),
+        "username": auth_manager.username,
+        "instructions": (
+            "Scan the QR code with Google Authenticator or Authy. "
+            "Then set TOTP_SECRET in your .env file."
+        ),
+    }
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    """Client-side logout — instructs client to discard the token."""
+    return {"message": "Logged out. Discard your access token."}
+
 
 # ─────────────────────────────────────────────────────
 # REST Endpoints
 # ─────────────────────────────────────────────────────
 
+
 @app.get("/")
 async def root():
     return FileResponse("dashboard/index.html")
+
 
 @app.get("/health")
 async def health():
@@ -161,6 +354,7 @@ async def health():
         "symbol": config.trading.symbol,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
 
 @app.get("/api/status")
 async def get_status():
@@ -177,6 +371,7 @@ async def get_status():
         "symbol": config.trading.symbol,
         "ws_clients": len(app_state.ws_clients),
     }
+
 
 @app.get("/api/portfolio")
 async def get_portfolio():
@@ -195,6 +390,7 @@ async def get_portfolio():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/positions")
 async def get_positions():
     try:
@@ -204,7 +400,9 @@ async def get_positions():
         return {
             "positions": [
                 {
-                    "symbol": p.symbol, "side": p.side, "size": p.size,
+                    "symbol": p.symbol,
+                    "side": p.side,
+                    "size": p.size,
                     "entry_price": p.entry_price,
                     "liquidation_price": p.liquidation_price,
                     "unrealized_pnl": p.unrealized_pnl,
@@ -217,25 +415,35 @@ async def get_positions():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/market/{symbol}")
 async def get_market(symbol: str):
     try:
         if config.trading.dry_run:
             import random
+
+            mp = 85000 + random.uniform(-3000, 3000)
             return {
-                "symbol": symbol, "mark_price": 67000 + random.uniform(-1000, 1000),
-                "change_24h_pct": random.uniform(-5, 5),
-                "volume_24h": 28000, "dry_run": True
+                "symbol": symbol,
+                "mark_price": round(mp, 2),
+                "change_24h_pct": round(random.uniform(-5, 5), 2),
+                "volume_24h": round(random.uniform(800_000_000, 1_200_000_000), 0),
+                "dry_run": True,
             }
         ticker = app_state.exchange.get_ticker(symbol)
         return {
-            "symbol": ticker.symbol, "mark_price": ticker.mark_price,
-            "last_price": ticker.last_price, "bid": ticker.bid, "ask": ticker.ask,
-            "volume_24h": ticker.volume_24h, "change_24h_pct": ticker.change_24h_pct,
+            "symbol": ticker.symbol,
+            "mark_price": ticker.mark_price,
+            "last_price": ticker.last_price,
+            "bid": ticker.bid,
+            "ask": ticker.ask,
+            "volume_24h": ticker.volume_24h,
+            "change_24h_pct": ticker.change_24h_pct,
             "open_interest": ticker.open_interest,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/emotion")
 async def get_emotion():
@@ -259,25 +467,37 @@ async def get_emotion():
             "geopolitical": geo,
             "articles_count": len(articles),
             "top_articles": [
-                {"title": a.title, "source": a.source,
-                 "score": a.relevance_score, "published": a.published_at}
+                {
+                    "title": a.title,
+                    "source": a.source,
+                    "score": a.relevance_score,
+                    "published": a.published_at,
+                }
                 for a in articles[:15]
             ],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/news")
 async def get_news(limit: int = 20):
     articles = app_state.news_fetcher.fetch()
     return {
         "articles": [
-            {"title": a.title, "summary": a.summary[:200], "source": a.source,
-             "url": a.url, "score": a.relevance_score, "published": a.published_at}
+            {
+                "title": a.title,
+                "summary": a.summary[:200],
+                "source": a.source,
+                "url": a.url,
+                "score": a.relevance_score,
+                "published": a.published_at,
+            }
             for a in articles[:limit]
         ],
         "total": len(articles),
     }
+
 
 @app.get("/api/decisions")
 async def get_decisions(limit: int = 20):
@@ -285,6 +505,7 @@ async def get_decisions(limit: int = 20):
         "decisions": app_state.orchestrator.state.decisions[:limit],
         "total_trades": app_state.orchestrator.state.total_trades,
     }
+
 
 @app.post("/api/bot/control")
 async def control_bot(req: BotControlRequest, background_tasks: BackgroundTasks):
@@ -295,7 +516,10 @@ async def control_bot(req: BotControlRequest, background_tasks: BackgroundTasks)
             config.trading.analysis_interval_minutes = req.interval_minutes
         app_state.bot_running = True
         background_tasks.add_task(_run_bot_loop)
-        return {"status": "started", "interval_minutes": config.trading.analysis_interval_minutes}
+        return {
+            "status": "started",
+            "interval_minutes": config.trading.analysis_interval_minutes,
+        }
 
     elif req.action == "stop":
         app_state.bot_running = False
@@ -308,6 +532,7 @@ async def control_bot(req: BotControlRequest, background_tasks: BackgroundTasks)
 
     raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")
 
+
 @app.get("/api/forecast")
 async def get_forecast(symbol: str = "BTCUSD"):
     """Run MarketForecaster on recent candles and return structured forecast."""
@@ -318,18 +543,23 @@ async def get_forecast(symbol: str = "BTCUSD"):
         current_price = 0.0
 
         if config.trading.dry_run:
-            import random, math
-            base = 67000.0
+            import random
+            import math
+
+            base = 85000.0
             for i in range(100):
                 trend = 15.0 * math.sin(i / 10) + i * 3
                 noise = random.gauss(0, 80)
                 c = base + trend + noise
-                candles.append({
-                    "close": c, "open": c - random.uniform(-50, 50),
-                    "high": c + random.uniform(30, 120),
-                    "low":  c - random.uniform(30, 120),
-                    "volume": random.uniform(150, 400),
-                })
+                candles.append(
+                    {
+                        "close": c,
+                        "open": c - random.uniform(-50, 50),
+                        "high": c + random.uniform(30, 120),
+                        "low": c - random.uniform(30, 120),
+                        "volume": random.uniform(150, 400),
+                    }
+                )
             current_price = candles[-1]["close"]
         else:
             try:
@@ -347,7 +577,7 @@ async def get_forecast(symbol: str = "BTCUSD"):
         fc = forecaster.forecast(candles, current_price)
 
         tc = config.trading
-        leverage  = getattr(tc, "leverage", 5)
+        leverage = getattr(tc, "leverage", 5)
         taker_fee = getattr(tc, "taker_fee_rate", 0.0005)
         rt_fee_pct = taker_fee * 2 * leverage * 100
 
@@ -392,11 +622,14 @@ async def scanner_contracts():
     """List all tradeable perpetual symbols in the watch-list."""
     try:
         from src.scanner.contract_scanner import DEFAULT_WATCH_LIST
+
         watch = getattr(config.trading, "watch_list", DEFAULT_WATCH_LIST)
         return {
             "watch_list": watch,
             "total": len(watch),
-            "top_contracts_to_trade": getattr(config.trading, "top_contracts_to_trade", 3),
+            "top_contracts_to_trade": getattr(
+                config.trading, "top_contracts_to_trade", 3
+            ),
             "scan_all_contracts": getattr(config.trading, "scan_all_contracts", False),
         }
     except Exception as e:
@@ -411,6 +644,7 @@ async def scanner_scan(symbols: Optional[str] = None):
     """
     try:
         from src.scanner.contract_scanner import ContractScanner, DEFAULT_WATCH_LIST
+
         sym_list = None
         if symbols:
             sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
@@ -433,13 +667,14 @@ async def scanner_top(n: int = 5):
     """Return only the top N actionable opportunities from a quick scan."""
     try:
         from src.scanner.contract_scanner import ContractScanner, DEFAULT_WATCH_LIST
+
         sym_list = getattr(config.trading, "watch_list", DEFAULT_WATCH_LIST)
-        scanner  = ContractScanner(
+        scanner = ContractScanner(
             config=config,
             exchange=app_state.exchange if not config.trading.dry_run else None,
         )
         result = scanner.scan(sym_list)
-        top_n  = result.top_opportunities[:n]
+        top_n = result.top_opportunities[:n]
         return {
             "top_opportunities": [c.to_dict() for c in top_n],
             "total_scanned": result.total_scanned,
@@ -461,18 +696,23 @@ async def ml_analyze(symbol: str = "BTCUSD"):
         current_price = 0.0
 
         if config.trading.dry_run:
-            import random, math
-            base = 67000.0
+            import random
+            import math
+
+            base = 85000.0
             for i in range(200):
                 trend = 20.0 * math.sin(i / 15) + i * 2.5
                 noise = random.gauss(0, 90)
                 c = base + trend + noise
-                candles.append({
-                    "close": c, "open": c - random.uniform(-60, 60),
-                    "high": c + random.uniform(40, 130),
-                    "low":  c - random.uniform(40, 130),
-                    "volume": random.uniform(100, 500),
-                })
+                candles.append(
+                    {
+                        "close": c,
+                        "open": c - random.uniform(-60, 60),
+                        "high": c + random.uniform(40, 130),
+                        "low": c - random.uniform(40, 130),
+                        "volume": random.uniform(100, 500),
+                    }
+                )
             current_price = candles[-1]["close"]
         else:
             try:
@@ -513,18 +753,23 @@ async def ml_train(background_tasks: BackgroundTasks):
         async def _do_train():
             candles = []
             if config.trading.dry_run:
-                import random, math
-                base = 67000.0
+                import random
+                import math
+
+                base = 85000.0
                 for i in range(300):
                     trend = 20.0 * math.sin(i / 15) + i * 2.0
                     noise = random.gauss(0, 100)
                     c = base + trend + noise
-                    candles.append({
-                        "close": c, "open": c - random.uniform(-70, 70),
-                        "high": c + random.uniform(50, 150),
-                        "low":  c - random.uniform(50, 150),
-                        "volume": random.uniform(120, 600),
-                    })
+                    candles.append(
+                        {
+                            "close": c,
+                            "open": c - random.uniform(-70, 70),
+                            "high": c + random.uniform(50, 150),
+                            "low": c - random.uniform(50, 150),
+                            "volume": random.uniform(120, 600),
+                        }
+                    )
             else:
                 try:
                     candles = app_state.exchange.get_candles(
@@ -536,7 +781,10 @@ async def ml_train(background_tasks: BackgroundTasks):
             ml_engine.train_now(candles)
 
         background_tasks.add_task(_do_train)
-        return {"status": "training_started", "message": "ML models training in background"}
+        return {
+            "status": "training_started",
+            "message": "ML models training in background",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -546,6 +794,7 @@ async def ml_status():
     """Return current ML model status."""
     try:
         from src.ml.model_trainer import MLEngine
+
         ml_engine = MLEngine()
         return ml_engine.get_model_status()
     except Exception as e:
@@ -561,6 +810,7 @@ async def ml_sentiment(req: SentimentRequest):
     """Analyze sentiment of provided headlines."""
     try:
         from src.ml.sentiment_analyzer import SentimentAnalyzer
+
         analyzer = SentimentAnalyzer()
         results = analyzer.analyze_batch(req.headlines)
         agg = analyzer.aggregate(results)
@@ -578,9 +828,11 @@ async def derivatives_funding(symbol: str = "BTCUSD"):
     """Funding rate analysis for perpetual futures."""
     try:
         from src.derivatives.funding_rate import FundingRateMonitor
+
         monitor = FundingRateMonitor()
         if config.trading.dry_run:
             import random
+
             rate = random.gauss(0.0001, 0.0008)
         else:
             try:
@@ -601,18 +853,20 @@ async def derivatives_basis(symbol: str = "BTCUSD"):
     """Spot-perp basis analysis."""
     try:
         from src.derivatives.basis_tracker import BasisTracker
+
         tracker = BasisTracker()
         if config.trading.dry_run:
             import random
-            perp  = 67000 + random.uniform(-500, 500)
-            spot  = perp  * (1 + random.gauss(0.0, 0.0015))
+
+            perp = 85000 + random.uniform(-500, 500)
+            spot = perp * (1 + random.gauss(0.0, 0.0015))
         else:
             try:
                 ticker = app_state.exchange.get_ticker(symbol)
-                perp   = ticker.mark_price
-                spot   = perp * 0.9997   # approximate if no spot feed
+                perp = ticker.mark_price
+                spot = perp * 0.9997  # approximate if no spot feed
             except Exception:
-                perp = spot = 67000.0
+                perp = spot = 85000.0
         result = tracker.analyze(spot, perp)
         return result.to_dict()
     except Exception as e:
@@ -624,18 +878,21 @@ async def derivatives_oi(symbol: str = "BTCUSD"):
     """Open interest analysis."""
     try:
         from src.derivatives.open_interest import OpenInterestAnalyzer
+
         analyzer = OpenInterestAnalyzer()
         if config.trading.dry_run:
             import random
-            oi    = random.uniform(400_000_000, 800_000_000)
-            price = 67000 + random.uniform(-1000, 1000)
+
+            oi = random.uniform(400_000_000, 800_000_000)
+            price = 85000 + random.uniform(-1000, 1000)
         else:
             try:
                 ticker = app_state.exchange.get_ticker(symbol)
-                oi     = ticker.open_interest
-                price  = ticker.mark_price
+                oi = ticker.open_interest
+                price = ticker.mark_price
             except Exception:
-                oi = 500_000_000; price = 67000.0
+                oi = 500_000_000
+                price = 85000.0
         result = analyzer.analyze(oi, price)
         return result.to_dict()
     except Exception as e:
@@ -647,16 +904,18 @@ async def derivatives_liquidations(symbol: str = "BTCUSD"):
     """Estimated liquidation level map around current price."""
     try:
         from src.derivatives.liquidation_tracker import LiquidationTracker
+
         tracker = LiquidationTracker()
         if config.trading.dry_run:
             import random
-            price = 67000 + random.uniform(-1000, 1000)
+
+            price = 85000 + random.uniform(-1000, 1000)
         else:
             try:
                 ticker = app_state.exchange.get_ticker(symbol)
-                price  = ticker.mark_price
+                price = ticker.mark_price
             except Exception:
-                price = 67000.0
+                price = 85000.0
         result = tracker.compute_map(price)
         return result.to_dict()
     except Exception as e:
@@ -668,10 +927,12 @@ async def derivatives_options(symbol: str = "BTCUSD"):
     """Options chain Greeks and chain summary (illustrative in dry-run mode)."""
     try:
         from src.derivatives.options_analyzer import OptionsAnalyzer
+
         analyzer = OptionsAnalyzer()
         if config.trading.dry_run:
-            import random, math
-            spot = 67000 + random.uniform(-500, 500)
+            import random
+
+            spot = 85000 + random.uniform(-500, 500)
             # Construct a synthetic mini chain
             chain = []
             for strike_offset in [-5000, -3000, -1000, 0, 1000, 3000, 5000]:
@@ -680,15 +941,18 @@ async def derivatives_options(symbol: str = "BTCUSD"):
                 iv = max(0.3, min(2.5, iv))
                 for otype in ("call", "put"):
                     dte = random.choice([7, 14, 30])
-                    g   = analyzer.price_option(otype, spot, strike, dte, iv)
-                    mp  = g.theoretical_price * random.uniform(0.95, 1.05)
-                    chain.append({
-                        "type": otype, "strike": strike,
-                        "days_to_expiry": dte,
-                        "market_price": round(mp, 2),
-                        "oi": random.randint(10, 500),
-                        "iv": iv,
-                    })
+                    g = analyzer.price_option(otype, spot, strike, dte, iv)
+                    mp = g.theoretical_price * random.uniform(0.95, 1.05)
+                    chain.append(
+                        {
+                            "type": otype,
+                            "strike": strike,
+                            "days_to_expiry": dte,
+                            "market_price": round(mp, 2),
+                            "oi": random.randint(10, 500),
+                            "iv": iv,
+                        }
+                    )
         else:
             # On live: fetch real options products from Delta Exchange
             try:
@@ -698,28 +962,46 @@ async def derivatives_options(symbol: str = "BTCUSD"):
                 chain = []
                 underlying = symbol.replace("USD", "")
                 for p in products:
-                    if (p.get("contract_type") in ("put_options", "call_options") and
-                            p.get("underlying_asset", {}).get("symbol", "").startswith(underlying)):
+                    if p.get("contract_type") in (
+                        "put_options",
+                        "call_options",
+                    ) and p.get("underlying_asset", {}).get("symbol", "").startswith(
+                        underlying
+                    ):
                         sym = p.get("symbol", "")
                         try:
                             t = app_state.exchange.get_ticker(sym)
-                            dte = max(1, (p.get("settlement_time", 0) - __import__("time").time()) // 86400)
-                            chain.append({
-                                "type": "call" if "call" in p.get("contract_type", "") else "put",
-                                "strike": float(p.get("strike_price", spot)),
-                                "days_to_expiry": int(dte),
-                                "market_price": t.mark_price,
-                                "oi": t.open_interest,
-                            })
+                            dte = max(
+                                1,
+                                (
+                                    p.get("settlement_time", 0)
+                                    - __import__("time").time()
+                                )
+                                // 86400,
+                            )
+                            chain.append(
+                                {
+                                    "type": "call"
+                                    if "call" in p.get("contract_type", "")
+                                    else "put",
+                                    "strike": float(p.get("strike_price", spot)),
+                                    "days_to_expiry": int(dte),
+                                    "market_price": t.mark_price,
+                                    "oi": t.open_interest,
+                                }
+                            )
                         except Exception:
                             pass
             except Exception:
                 chain = []
-                spot = 67000.0
+                spot = 85000.0
 
         # Greeks for ATM call (representative)
         import random
-        spot_val = spot if not config.trading.dry_run else (67000 + random.uniform(-500, 500))
+
+        spot_val = (
+            spot if not config.trading.dry_run else (85000 + random.uniform(-500, 500))
+        )
         atm_greeks = analyzer.price_option("call", spot_val, spot_val, 7, 0.80)
         summary = analyzer.analyze_chain(spot_val, chain) if chain else None
 
@@ -741,23 +1023,29 @@ async def derivatives_signal(symbol: str = "BTCUSD"):
     try:
         from src.derivatives.derivatives_signal import DerivativesSignalEngine
         import random
+
         engine = DerivativesSignalEngine()
 
         if config.trading.dry_run:
-            price    = 67000 + random.uniform(-1000, 1000)
-            funding  = random.gauss(0.0001, 0.0006)
-            spot     = price * (1 + random.gauss(0, 0.001))
-            oi       = random.uniform(400e6, 900e6)
+            price = 85000 + random.uniform(-1000, 1000)
+            funding = random.gauss(0.0001, 0.0006)
+            spot = price * (1 + random.gauss(0, 0.001))
+            oi = random.uniform(400e6, 900e6)
         else:
             try:
-                ticker  = app_state.exchange.get_ticker(symbol)
-                price   = ticker.mark_price
-                oi      = ticker.open_interest
-                resp    = app_state.exchange._request("GET", f"/v2/tickers/{symbol}", auth=False)
+                ticker = app_state.exchange.get_ticker(symbol)
+                price = ticker.mark_price
+                oi = ticker.open_interest
+                resp = app_state.exchange._request(
+                    "GET", f"/v2/tickers/{symbol}", auth=False
+                )
                 funding = float(resp.get("result", {}).get("funding_rate", 0.0001))
-                spot    = price * 0.9997
+                spot = price * 0.9997
             except Exception:
-                price = 67000.0; funding = 0.0001; spot = price * 0.9997; oi = 500e6
+                price = 85000.0
+                funding = 0.0001
+                spot = price * 0.9997
+                oi = 500e6
 
         result = engine.analyze(
             current_price=price,
@@ -796,29 +1084,37 @@ async def backtest_run(req: BacktestRequest):
 
         # Build candles
         if config.trading.dry_run:
-            import random, math
+            import random
+            import math
+
             candles = []
-            base = 67000.0
+            base = 85000.0
             price = base
             for i in range(req.candle_count):
                 trend = 30.0 * math.sin(i / 40) + i * 1.2
                 noise = random.gauss(0, 120)
                 price = max(100.0, base + trend + noise)
                 h = price + random.uniform(40, 200)
-                l = price - random.uniform(40, 200)
+                lo = price - random.uniform(40, 200)
                 o = price + random.gauss(0, 60)
                 v = random.uniform(80, 600)
-                candles.append({"close": price, "open": o, "high": h, "low": l, "volume": v})
+                candles.append(
+                    {"close": price, "open": o, "high": h, "low": lo, "volume": v}
+                )
         else:
             try:
                 candles = app_state.exchange.get_candles(
                     req.symbol, resolution=req.timeframe, count=req.candle_count
                 )
             except Exception as e:
-                raise HTTPException(status_code=502, detail=f"Failed to fetch candles: {e}")
+                raise HTTPException(
+                    status_code=502, detail=f"Failed to fetch candles: {e}"
+                )
 
         if len(candles) < req.warmup_bars + 10:
-            raise HTTPException(status_code=400, detail="Not enough candles for backtest")
+            raise HTTPException(
+                status_code=400, detail="Not enough candles for backtest"
+            )
 
         engine = BacktestEngine(config)
         result = engine.run(
@@ -848,7 +1144,7 @@ class OptimizeRequest(BaseModel):
     candle_count: int = 500
     warmup_bars: int = 50
     min_trades: int = 3
-    quick: bool = True   # use QUICK_GRID (≤20 combos); False = full DEFAULT_GRID
+    quick: bool = True  # use QUICK_GRID (≤20 combos); False = full DEFAULT_GRID
 
 
 @app.post("/api/backtest/optimize")
@@ -862,27 +1158,40 @@ async def backtest_optimize(req: OptimizeRequest):
 
         candles = []
         if config.trading.dry_run:
-            import random, math
-            base = 67000.0
+            import random
+            import math
+
+            base = 85000.0
             price = base
             for i in range(req.candle_count):
                 trend = 30.0 * math.sin(i / 40) + i * 1.2
                 noise = random.gauss(0, 120)
                 price = max(100.0, base + trend + noise)
                 h = price + random.uniform(40, 200)
-                l = price - random.uniform(40, 200)
-                candles.append({"close": price, "open": price + random.gauss(0, 60),
-                                 "high": h, "low": l, "volume": random.uniform(80, 600)})
+                lo = price - random.uniform(40, 200)
+                candles.append(
+                    {
+                        "close": price,
+                        "open": price + random.gauss(0, 60),
+                        "high": h,
+                        "low": lo,
+                        "volume": random.uniform(80, 600),
+                    }
+                )
         else:
             try:
                 candles = app_state.exchange.get_candles(
                     req.symbol, resolution=req.timeframe, count=req.candle_count
                 )
             except Exception as e:
-                raise HTTPException(status_code=502, detail=f"Failed to fetch candles: {e}")
+                raise HTTPException(
+                    status_code=502, detail=f"Failed to fetch candles: {e}"
+                )
 
         if len(candles) < req.warmup_bars + 10:
-            raise HTTPException(status_code=400, detail="Not enough candles for optimization")
+            raise HTTPException(
+                status_code=400, detail="Not enough candles for optimization"
+            )
 
         grid = QUICK_GRID if req.quick else DEFAULT_GRID
         optimizer = StrategyOptimizer(config)
@@ -923,27 +1232,303 @@ async def backtest_defaults():
     }
 
 
-@app.post("/api/trade")
-async def manual_trade(req: TradeRequest):
-    """Manually place a trade (bypasses autonomous AI)."""
-    from src.exchange.delta_client import Order
+def _build_trade_preview(
+    symbol: str,
+    side: str,
+    size_usd: float,
+    current_price: float,
+    leverage: int,
+    stop_loss_pct: float,
+    take_profit_pct: float,
+    risk_manager: "RiskManager",
+) -> dict:
+    """Compute trade parameters and fee breakdown without placing the order."""
+    fee_usd = risk_manager.estimate_fee_usd(size_usd)
+    rt_fee_pct = risk_manager.round_trip_fee_pct_of_margin() * 100
+    contracts = risk_manager.calculate_contracts(size_usd, current_price, leverage)
+    notional = size_usd * leverage
+
+    if side == "buy":
+        stop_loss_price = round(current_price * (1 - stop_loss_pct / 100), 4)
+        take_profit_price = round(current_price * (1 + take_profit_pct / 100), 4)
+        risk_usd = size_usd * (stop_loss_pct / 100) * leverage
+        reward_usd = size_usd * (take_profit_pct / 100) * leverage
+    else:
+        stop_loss_price = round(current_price * (1 + stop_loss_pct / 100), 4)
+        take_profit_price = round(current_price * (1 - take_profit_pct / 100), 4)
+        risk_usd = size_usd * (stop_loss_pct / 100) * leverage
+        reward_usd = size_usd * (take_profit_pct / 100) * leverage
+
+    gross_rr = take_profit_pct / stop_loss_pct if stop_loss_pct else 0
+    net_reward = reward_usd - fee_usd
+    net_rr = net_reward / risk_usd if risk_usd > 0 else 0
+
+    return {
+        "symbol": symbol,
+        "side": side,
+        "entry_price": current_price,
+        "stop_loss_price": stop_loss_price,
+        "take_profit_price": take_profit_price,
+        "stop_loss_pct": stop_loss_pct,
+        "take_profit_pct": take_profit_pct,
+        "size_usd": size_usd,
+        "notional_usd": round(notional, 2),
+        "contracts": contracts,
+        "leverage": leverage,
+        "fee_usd": round(fee_usd, 4),
+        "fee_pct_of_margin": round(rt_fee_pct, 4),
+        "gross_rr": round(gross_rr, 2),
+        "net_rr_after_fees": round(net_rr, 2),
+        "risk_usd": round(risk_usd, 4),
+        "reward_usd": round(reward_usd, 4),
+        "net_reward_usd": round(net_reward, 4),
+        "breakeven_move_pct": round(rt_fee_pct / leverage, 4),
+    }
+
+
+@app.get("/api/trade/symbols")
+async def trade_symbols():
+    """Return the list of tradeable symbols and their current prices."""
+    watch_list = getattr(config.trading, "watch_list", ["BTCUSD", "ETHUSD"])
+    dry_run = config.trading.dry_run
+    import random
+
+    symbols = []
+    for sym in watch_list:
+        if dry_run:
+            mock = {
+                "BTCUSD": 65000.0, "ETHUSD": 3200.0, "SOLUSD": 150.0,
+                "BNBUSD": 420.0, "XRPUSD": 0.65, "AVAXUSD": 38.0,
+                "DOGEUSD": 0.18, "MATICUSD": 0.85, "LINKUSD": 18.0, "DOTUSD": 9.0,
+            }
+            price = mock.get(sym, 100.0) * random.uniform(0.99, 1.01)
+            symbols.append({"symbol": sym, "price": round(price, 4), "dry_run": True})
+        else:
+            try:
+                ticker = app_state.exchange.get_ticker(sym)
+                symbols.append({
+                    "symbol": sym,
+                    "price": ticker.mark_price,
+                    "bid": ticker.bid,
+                    "ask": ticker.ask,
+                    "change_24h_pct": ticker.change_24h_pct,
+                    "volume_24h": ticker.volume_24h,
+                })
+            except Exception:
+                symbols.append({"symbol": sym, "price": None, "error": "unavailable"})
+    return {"symbols": symbols, "dry_run": dry_run}
+
+
+@app.post("/api/trade/quote")
+async def trade_quote(req: TradeRequest):
+    """
+    Preview a trade — compute entry, SL, TP, contracts, and fee breakdown
+    without placing any order.
+    """
+    symbol = req.symbol.upper()
+    watch_list = [s.upper() for s in getattr(config.trading, "watch_list", [])]
+    if watch_list and symbol not in watch_list:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Symbol {symbol} not in watch list. Available: {watch_list}",
+        )
+    if req.side not in ("buy", "sell"):
+        raise HTTPException(status_code=400, detail="side must be 'buy' or 'sell'")
+
     try:
         if config.trading.dry_run:
-            return {
-                "status": "dry_run_simulated",
-                "symbol": req.symbol, "side": req.side,
-                "size_usd": req.size_usd,
+            import random
+            mock = {
+                "BTCUSD": 65000.0, "ETHUSD": 3200.0, "SOLUSD": 150.0,
+                "BNBUSD": 420.0, "XRPUSD": 0.65,
             }
-        product_id = app_state.exchange.get_product_id(req.symbol)
-        if not product_id:
-            raise HTTPException(status_code=404, detail=f"Symbol {req.symbol} not found")
-        app_state.exchange.set_leverage(product_id, req.leverage)
-        contracts = max(int(req.size_usd * req.leverage), 1)
-        order = Order(symbol=req.symbol, side=req.side, order_type="market", size=contracts)
-        result = app_state.exchange.place_order(order, product_id)
-        return {"status": "executed", "order": result}
+            price = mock.get(symbol, 1000.0) * random.uniform(0.99, 1.01)
+        else:
+            ticker = app_state.exchange.get_ticker(symbol)
+            price = req.limit_price if req.order_type == "limit" and req.limit_price else ticker.mark_price
+
+        preview = _build_trade_preview(
+            symbol=symbol,
+            side=req.side,
+            size_usd=req.size_usd,
+            current_price=price,
+            leverage=req.leverage,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            risk_manager=app_state.risk_manager,
+        )
+        preview["order_type"] = req.order_type
+        preview["dry_run"] = config.trading.dry_run
+        return preview
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/trade")
+async def manual_trade(req: TradeRequest):
+    """
+    Manually place a trade on a crypto derivative (BTC, ETH, SOL, etc.).
+
+    Flow:
+      1. Validate symbol and side
+      2. Fetch current market price
+      3. Run hard-limit risk checks (daily loss, drawdown, open positions)
+      4. Calculate contracts and fees
+      5. Place order (or simulate in dry-run mode)
+      6. Persist to SQLite trade_log
+    """
+    from src.exchange.delta_client import Order
+
+    symbol = req.symbol.upper()
+    watch_list = [s.upper() for s in getattr(config.trading, "watch_list", [])]
+    if watch_list and symbol not in watch_list:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Symbol {symbol} not in watch list. Available: {watch_list}",
+        )
+    if req.side not in ("buy", "sell"):
+        raise HTTPException(status_code=400, detail="side must be 'buy' or 'sell'")
+    if req.order_type not in ("market", "limit"):
+        raise HTTPException(status_code=400, detail="order_type must be 'market' or 'limit'")
+    if req.order_type == "limit" and not req.limit_price:
+        raise HTTPException(status_code=400, detail="limit_price is required for limit orders")
+    max_leverage = getattr(config.trading, "leverage", 10)
+    if not (1 <= req.leverage <= max_leverage):
+        raise HTTPException(
+            status_code=400, detail=f"leverage must be between 1 and {max_leverage}"
+        )
+
+    dry_run = config.trading.dry_run
+
+    try:
+        # ── 1. Current price ─────────────────────────────────────────────────
+        if dry_run:
+            import random
+            mock = {
+                "BTCUSD": 65000.0, "ETHUSD": 3200.0, "SOLUSD": 150.0,
+                "BNBUSD": 420.0, "XRPUSD": 0.65, "AVAXUSD": 38.0,
+                "DOGEUSD": 0.18, "MATICUSD": 0.85, "LINKUSD": 18.0, "DOTUSD": 9.0,
+            }
+            current_price = mock.get(symbol, 1000.0) * random.uniform(0.99, 1.01)
+        else:
+            ticker = app_state.exchange.get_ticker(symbol)
+            current_price = (
+                req.limit_price
+                if req.order_type == "limit" and req.limit_price
+                else ticker.mark_price
+            )
+
+        # ── 2. Account state ─────────────────────────────────────────────────
+        if dry_run:
+            balance = 10000.0
+            open_positions_count = 0
+        else:
+            wallet = app_state.exchange.get_wallet_balance()
+            balance = float(wallet.get("available_balance", 0.0))
+            positions = app_state.exchange.get_positions()
+            open_positions_count = len(positions)
+
+        # ── 3. Risk evaluation (hard limits) ─────────────────────────────────
+        risk_metrics = app_state.risk_manager.evaluate(
+            signal=None,
+            account_balance=balance,
+            open_positions=open_positions_count,
+            current_price=current_price,
+        )
+        if not risk_metrics.can_trade:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Trade rejected: {risk_metrics.rejection_reason}",
+            )
+
+        # ── 4. Trade parameters ───────────────────────────────────────────────
+        preview = _build_trade_preview(
+            symbol=symbol,
+            side=req.side,
+            size_usd=req.size_usd,
+            current_price=current_price,
+            leverage=req.leverage,
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            risk_manager=app_state.risk_manager,
+        )
+
+        # ── 5. Dry-run path ───────────────────────────────────────────────────
+        if dry_run:
+            trade_id = app_state.trade_store.record(
+                symbol=symbol,
+                side=req.side,
+                size_usd=req.size_usd,
+                leverage=req.leverage,
+                entry_price=current_price,
+                fee_usd=preview["fee_usd"],
+                stop_loss_pct=req.stop_loss_pct,
+                take_profit_pct=req.take_profit_pct,
+                order_type=req.order_type,
+                dry_run=True,
+                notes="Manual trade (dry-run)",
+            )
+            return {
+                "status": "dry_run_simulated",
+                "trade_id": trade_id,
+                "risk_level": risk_metrics.risk_level,
+                **preview,
+            }
+
+        # ── 6. Live execution ─────────────────────────────────────────────────
+        product_id = app_state.exchange.get_product_id(symbol)
+        if not product_id:
+            raise HTTPException(
+                status_code=404, detail=f"Product ID not found for {symbol}"
+            )
+        app_state.exchange.set_leverage(product_id, req.leverage)
+
+        order = Order(
+            symbol=symbol,
+            side=req.side,
+            order_type=req.order_type,
+            size=preview["contracts"],
+            price=req.limit_price if req.order_type == "limit" else None,
+        )
+        result = app_state.exchange.place_order(order, product_id)
+
+        # ── 7. Persist to SQLite ──────────────────────────────────────────────
+        trade_id = app_state.trade_store.record(
+            symbol=symbol,
+            side=req.side,
+            size_usd=req.size_usd,
+            leverage=req.leverage,
+            entry_price=current_price,
+            fee_usd=preview["fee_usd"],
+            stop_loss_pct=req.stop_loss_pct,
+            take_profit_pct=req.take_profit_pct,
+            order_type=req.order_type,
+            dry_run=False,
+            notes=f"Manual trade | order_id={result.get('id', 'unknown')}",
+        )
+
+        logger.info(
+            "Manual trade placed: %s %s %s | contracts=%d | price=%.4f | fee=$%.4f",
+            req.side.upper(), symbol, req.order_type,
+            preview["contracts"], current_price, preview["fee_usd"],
+        )
+
+        return {
+            "status": "executed",
+            "trade_id": trade_id,
+            "risk_level": risk_metrics.risk_level,
+            "order": result,
+            **preview,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Manual trade error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/config")
 async def update_config(req: ConfigUpdateRequest):
@@ -965,6 +1550,7 @@ async def update_config(req: ConfigUpdateRequest):
         "leverage": config.trading.leverage,
     }
 
+
 @app.get("/api/config")
 async def get_config():
     return {
@@ -981,11 +1567,14 @@ async def get_config():
         "max_positions": config.trading.max_open_positions,
     }
 
+
 # ─────────────────────────────────────────────────────
 # Background Tasks
 # ─────────────────────────────────────────────────────
 
+
 async def _run_bot_loop():
+    app_state._loop = asyncio.get_running_loop()
     logger.info("Autonomous bot loop started")
     while app_state.bot_running:
         await _run_single_cycle()
@@ -998,12 +1587,12 @@ async def _run_bot_loop():
 
     logger.info("Bot loop stopped")
 
+
 async def _run_single_cycle():
     try:
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, app_state.orchestrator.run_cycle
-        )
+        loop = asyncio.get_running_loop()
+        app_state._loop = loop  # keep reference fresh for thread-safe broadcasts
+        result = await loop.run_in_executor(None, app_state.orchestrator.run_cycle)
         # Update portfolio
         balance = 10000.0 if config.trading.dry_run else 0
         try:
@@ -1017,8 +1606,8 @@ async def _run_single_cycle():
         # Persist decision
         try:
             if result and isinstance(result, dict):
-                action     = result.get("action", "HOLD")
-                signal     = result.get("signal", {}) or {}
+                action = result.get("action", "HOLD")
+                signal = result.get("signal", {}) or {}
                 app_state.decision_store.record_decision(
                     symbol=config.trading.symbol,
                     action=action,
@@ -1072,12 +1661,13 @@ async def _run_single_cycle():
     except Exception as e:
         logger.error(f"Bot cycle error: {e}", exc_info=True)
 
+
 @app.get("/api/history/trades")
 async def history_trades(limit: int = 50, symbol: Optional[str] = None):
     """Persisted trade history from SQLite."""
     try:
         trades = app_state.trade_store.get_recent(limit=limit, symbol=symbol)
-        stats  = app_state.trade_store.get_stats()
+        stats = app_state.trade_store.get_stats()
         return {
             "trades": trades,
             "stats": stats,
@@ -1091,8 +1681,10 @@ async def history_trades(limit: int = 50, symbol: Optional[str] = None):
 async def history_decisions(limit: int = 50, symbol: Optional[str] = None):
     """Persisted AI decision history from SQLite."""
     try:
-        decisions = app_state.decision_store.get_recent_decisions(limit=limit, symbol=symbol)
-        counts    = app_state.decision_store.get_decision_counts()
+        decisions = app_state.decision_store.get_recent_decisions(
+            limit=limit, symbol=symbol
+        )
+        counts = app_state.decision_store.get_decision_counts()
         return {
             "decisions": decisions,
             "action_counts": counts,
@@ -1107,7 +1699,7 @@ async def history_equity(limit: int = 200):
     """Persisted equity curve from SQLite (most recent first)."""
     try:
         snapshots = app_state.decision_store.get_equity_history(limit=limit)
-        latest    = app_state.decision_store.get_latest_equity()
+        latest = app_state.decision_store.get_latest_equity()
         return {
             "snapshots": snapshots,
             "latest": latest,

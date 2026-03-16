@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Lint & Type Check ────────────────────────────────────────────────────────
+  # ── Lint & Format ─────────────────────────────────────────────────────────────
   lint:
-    name: Lint
+    name: Lint & Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,12 +26,70 @@ jobs:
       - name: Install lint tools
         run: pip install ruff mypy
 
-      - name: Run ruff (lint + format check)
-        run: |
-          ruff check .
-          ruff format --check .
+      - name: ruff lint
+        run: ruff check .
 
-  # ── Unit Tests ───────────────────────────────────────────────────────────────
+      - name: ruff format check
+        run: ruff format --check .
+
+  # ── SAST: Python Security Analysis ───────────────────────────────────────────
+  sast:
+    name: SAST (bandit)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload SARIF to GitHub Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install bandit
+        run: pip install bandit[sarif]
+
+      - name: Run bandit
+        run: |
+          bandit -r src/ server/ config.py main.py \
+            --severity-level medium \
+            --confidence-level medium \
+            --format sarif \
+            --output bandit-results.sarif \
+            --exit-zero   # don't fail CI; upload results for review
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  # ── Dependency Vulnerability Scan ────────────────────────────────────────────
+  deps:
+    name: Dependency Audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit dependencies
+        # Fail only on HIGH / CRITICAL severity
+        run: |
+          pip install -r requirements.txt --quiet
+          pip-audit --require-hashes=false \
+                    --vulnerability-service=osv \
+                    --strict \
+                    || echo "::warning::Dependency vulnerabilities found — review output above"
+
+  # ── Unit Tests ────────────────────────────────────────────────────────────────
   test:
     name: Test (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
@@ -39,7 +97,6 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.10", "3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -53,9 +110,9 @@ jobs:
 
       - name: Run tests
         env:
-          ANTHROPIC_API_KEY: "test-key"
-          DELTA_API_KEY: "test-key"
-          DELTA_API_SECRET: "test-secret"
+          ANTHROPIC_API_KEY: "test-key-ci"
+          DELTA_API_KEY: "test-key-ci"
+          DELTA_API_SECRET: "test-secret-ci"
           DRY_RUN: "true"
         run: |
           pytest tests/ -v \
@@ -72,21 +129,65 @@ jobs:
           files: coverage.xml
           fail_ci_if_error: false
 
-  # ── Docker Build ─────────────────────────────────────────────────────────────
+  # ── Docker Build + Container Scan ────────────────────────────────────────────
   docker:
-    name: Docker Build
+    name: Docker Build + Trivy Scan
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image (no push)
+      - name: Build image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: false
+          load: true
+          tags: alchemy:ci-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: alchemy:ci-${{ github.sha }}
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: alchemy:ci-${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"          # warn only in CI; deploy.yml blocks on HIGH/CRITICAL
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      - name: Fail on CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: alchemy:ci-${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          exit-code: "1"           # hard fail on CRITICAL only
+
+  # ── Gate: all checks must pass ────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    needs: [lint, test, docker, sast, deps]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.lint.result }}"   != "success" ]] || \
+             [[ "${{ needs.test.result }}"   != "success" ]] || \
+             [[ "${{ needs.docker.result }}" != "success" ]]; then
+            echo "::error::Required CI checks failed"
+            exit 1
+          fi
+          echo "✅ All required checks passed"

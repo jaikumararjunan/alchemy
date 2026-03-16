@@ -2,6 +2,7 @@
 Tests for src/storage — Database, TradeStore, DecisionStore.
 Uses an in-memory SQLite database (':memory:') for isolation.
 """
+
 import pytest
 from src.storage.database import Database
 from src.storage.trade_store import TradeStore
@@ -9,6 +10,7 @@ from src.storage.decision_store import DecisionStore
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def db():
@@ -28,6 +30,7 @@ def decision_store(db):
 
 # ── Database tests ────────────────────────────────────────────────────────────
 
+
 class TestDatabase:
     def test_create_in_memory(self):
         db = Database(":memory:")
@@ -41,8 +44,10 @@ class TestDatabase:
         assert "equity_snapshots" in names
 
     def test_execute_insert_and_fetchone(self, db):
-        db.execute("INSERT INTO equity_snapshots (ts, balance, total_equity, dry_run) VALUES (?,?,?,?)",
-                   ("2026-01-01T00:00:00Z", 10000.0, 10000.0, 1))
+        db.execute(
+            "INSERT INTO equity_snapshots (ts, balance, total_equity, dry_run) VALUES (?,?,?,?)",
+            ("2026-01-01T00:00:00Z", 10000.0, 10000.0, 1),
+        )
         row = db.fetchone("SELECT balance FROM equity_snapshots")
         assert row["balance"] == 10000.0
 
@@ -57,6 +62,7 @@ class TestDatabase:
 
 # ── TradeStore tests ──────────────────────────────────────────────────────────
 
+
 class TestTradeStore:
     def test_record_returns_id(self, trade_store):
         rid = trade_store.record(symbol="BTCUSD", side="buy", size_usd=500.0)
@@ -65,13 +71,19 @@ class TestTradeStore:
 
     def test_record_with_full_params(self, trade_store):
         rid = trade_store.record(
-            symbol="ETHUSD", side="sell",
-            size_usd=300.0, leverage=5,
-            entry_price=3500.0, exit_price=3650.0,
-            pnl_usd=42.5, pnl_pct=14.17,
+            symbol="ETHUSD",
+            side="sell",
+            size_usd=300.0,
+            leverage=5,
+            entry_price=3500.0,
+            exit_price=3650.0,
+            pnl_usd=42.5,
+            pnl_pct=14.17,
             fee_usd=5.25,
-            stop_loss_pct=2.0, take_profit_pct=4.5,
-            exit_reason="tp", dry_run=True,
+            stop_loss_pct=2.0,
+            take_profit_pct=4.5,
+            exit_reason="tp",
+            dry_run=True,
         )
         assert rid > 0
 
@@ -127,9 +139,15 @@ class TestTradeStore:
 
     def test_record_fields_stored_correctly(self, trade_store):
         trade_store.record(
-            "SOLUSD", "buy", 200, leverage=10,
-            entry_price=185.5, exit_price=193.2,
-            pnl_usd=15.4, exit_reason="tp", dry_run=False,
+            "SOLUSD",
+            "buy",
+            200,
+            leverage=10,
+            entry_price=185.5,
+            exit_price=193.2,
+            pnl_usd=15.4,
+            exit_reason="tp",
+            dry_run=False,
         )
         rows = trade_store.get_recent(limit=1)
         r = rows[0]
@@ -150,6 +168,7 @@ class TestTradeStore:
 
 # ── DecisionStore tests ───────────────────────────────────────────────────────
 
+
 class TestDecisionStore:
     def test_record_decision_returns_id(self, decision_store):
         rid = decision_store.record_decision("BTCUSD", "BUY")
@@ -157,11 +176,18 @@ class TestDecisionStore:
 
     def test_record_full_decision(self, decision_store):
         rid = decision_store.record_decision(
-            symbol="BTCUSD", action="BUY", cycle=5,
-            confidence=0.78, reasoning="Strong uptrend detected",
-            emotion_score=0.62, geo_risk=0.35,
-            forecast_score=0.48, market_regime="trending",
-            adx=32.5, signal_score=0.41, dry_run=True,
+            symbol="BTCUSD",
+            action="BUY",
+            cycle=5,
+            confidence=0.78,
+            reasoning="Strong uptrend detected",
+            emotion_score=0.62,
+            geo_risk=0.35,
+            forecast_score=0.48,
+            market_regime="trending",
+            adx=32.5,
+            signal_score=0.41,
+            dry_run=True,
         )
         assert rid > 0
 
@@ -194,9 +220,13 @@ class TestDecisionStore:
 
     def test_decision_fields_stored(self, decision_store):
         decision_store.record_decision(
-            "BTCUSD", "SELL", cycle=3,
-            confidence=0.65, reasoning="Bearish divergence",
-            market_regime="volatile", adx=28.0,
+            "BTCUSD",
+            "SELL",
+            cycle=3,
+            confidence=0.65,
+            reasoning="Bearish divergence",
+            market_regime="volatile",
+            adx=28.0,
         )
         rows = decision_store.get_recent_decisions(limit=1)
         r = rows[0]
@@ -209,8 +239,11 @@ class TestDecisionStore:
 
     def test_snapshot_equity(self, decision_store):
         rid = decision_store.snapshot_equity(
-            balance=10000.0, unrealized_pnl=250.0,
-            open_positions=2, cycle=1, dry_run=True,
+            balance=10000.0,
+            unrealized_pnl=250.0,
+            open_positions=2,
+            cycle=1,
+            dry_run=True,
         )
         assert isinstance(rid, int) and rid > 0
 

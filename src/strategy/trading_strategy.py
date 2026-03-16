@@ -17,6 +17,7 @@ Brokerage awareness
   round-trip cost on margin ≈ 0.50 %.  stop_loss and take_profit levels
   are snapped to nearest pivot-point support / resistance where available.
 """
+
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime
@@ -31,9 +32,11 @@ logger = get_logger(__name__)
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TechnicalSignal:
     """Technical analysis signals derived from OHLCV data."""
+
     price: float
     sma_20: Optional[float] = None
     sma_50: Optional[float] = None
@@ -41,35 +44,38 @@ class TechnicalSignal:
     bb_upper: Optional[float] = None
     bb_lower: Optional[float] = None
     volume_ratio: float = 1.0
-    trend: str = "neutral"       # "uptrend" | "downtrend" | "neutral"
-    momentum: float = 0.0        # −1.0 to +1.0
+    trend: str = "neutral"  # "uptrend" | "downtrend" | "neutral"
+    momentum: float = 0.0  # −1.0 to +1.0
 
     # ── Forecast fields (populated by MarketForecaster) ──────────────────────
     adx: float = 0.0
-    market_regime: str = "ranging"       # "trending" | "ranging" | "volatile"
-    trend_direction: str = "neutral"     # "bullish" | "bearish" | "neutral"
-    trend_strength_label: str = "none"   # "very_strong" | "strong" | "moderate" | "weak" | "none"
+    market_regime: str = "ranging"  # "trending" | "ranging" | "volatile"
+    trend_direction: str = "neutral"  # "bullish" | "bearish" | "neutral"
+    trend_strength_label: str = (
+        "none"  # "very_strong" | "strong" | "moderate" | "weak" | "none"
+    )
     forecast_bias: str = "neutral"
     forecast_price_3: Optional[float] = None
     vwap: Optional[float] = None
     vwap_position: str = "at"
     support_levels: List[float] = field(default_factory=list)
     resistance_levels: List[float] = field(default_factory=list)
-    breakeven_move_pct: float = 0.0      # % of margin needed to cover round-trip fees
-    forecast_score: float = 0.0          # −1 → +1 composite forecast score
+    breakeven_move_pct: float = 0.0  # % of margin needed to cover round-trip fees
+    forecast_score: float = 0.0  # −1 → +1 composite forecast score
     regression_r2: float = 0.0
 
 
 @dataclass
 class TradeSignal:
     """A complete trade signal with entry, exit, and sizing parameters."""
-    action: str                       # "buy"|"sell"|"close_long"|"close_short"|"hold"
+
+    action: str  # "buy"|"sell"|"close_long"|"close_short"|"hold"
     symbol: str
-    confidence: float                 # 0.0–1.0
+    confidence: float  # 0.0–1.0
     entry_price: float
     stop_loss: float
     take_profit: float
-    position_size_multiplier: float   # 0.0–1.0
+    position_size_multiplier: float  # 0.0–1.0
     reasoning: str
     emotion_bias: str
     geo_risk_level: str
@@ -84,10 +90,10 @@ class TradeSignal:
     def risk_reward_ratio(self) -> float:
         """Gross R:R (before fees)."""
         if self.action == "buy":
-            risk   = abs(self.entry_price - self.stop_loss)
+            risk = abs(self.entry_price - self.stop_loss)
             reward = abs(self.take_profit - self.entry_price)
         elif self.action == "sell":
-            risk   = abs(self.stop_loss - self.entry_price)
+            risk = abs(self.stop_loss - self.entry_price)
             reward = abs(self.entry_price - self.take_profit)
         else:
             return 0.0
@@ -105,6 +111,7 @@ class TradeSignal:
 
 # ── Strategy engine ───────────────────────────────────────────────────────────
 
+
 class TradingStrategy:
     """
     Signal generation pipeline:
@@ -121,24 +128,24 @@ class TradingStrategy:
     """
 
     # Weighting for combined score
-    _W_EMOTION     = 0.30
-    _W_GEO         = 0.15
-    _W_TECH        = 0.25
-    _W_FORECAST    = 0.15
+    _W_EMOTION = 0.30
+    _W_GEO = 0.15
+    _W_TECH = 0.25
+    _W_FORECAST = 0.15
     _W_DERIVATIVES = 0.15
 
     def __init__(self, config):
         self.config = config
-        self.symbol           = config.trading.symbol
-        self.stop_loss_pct    = config.trading.stop_loss_pct / 100
-        self.take_profit_pct  = config.trading.take_profit_pct / 100
+        self.symbol = config.trading.symbol
+        self.stop_loss_pct = config.trading.stop_loss_pct / 100
+        self.take_profit_pct = config.trading.take_profit_pct / 100
         self.bullish_threshold = config.trading.bullish_threshold
         self.bearish_threshold = config.trading.bearish_threshold
 
         # Brokerage
         tc = config.trading
         self.taker_fee = getattr(tc, "taker_fee_rate", 0.0005)
-        self.leverage  = getattr(tc, "leverage", 5)
+        self.leverage = getattr(tc, "leverage", 5)
 
         self.forecaster = MarketForecaster(config)
         self._signal_history: List[TradeSignal] = []
@@ -162,19 +169,19 @@ class TradingStrategy:
         tech = self._calculate_technical(candles, current_price)
 
         # 2. Individual signal scores (−1 → +1 each)
-        emotion_signal     = self._score_emotion(emotion_score)
-        geo_signal         = self._score_geo(geo_impact)
-        tech_signal        = self._score_technical(tech)
-        forecast_signal    = tech.forecast_score          # already −1 → +1
-        deriv_signal       = max(-1.0, min(1.0, derivatives_score))
+        emotion_signal = self._score_emotion(emotion_score)
+        geo_signal = self._score_geo(geo_impact)
+        tech_signal = self._score_technical(tech)
+        forecast_signal = tech.forecast_score  # already −1 → +1
+        deriv_signal = max(-1.0, min(1.0, derivatives_score))
 
         # 3. Weighted combination
         combined_score = (
-            emotion_signal  * self._W_EMOTION     +
-            geo_signal      * self._W_GEO         +
-            tech_signal     * self._W_TECH        +
-            forecast_signal * self._W_FORECAST    +
-            deriv_signal    * self._W_DERIVATIVES
+            emotion_signal * self._W_EMOTION
+            + geo_signal * self._W_GEO
+            + tech_signal * self._W_TECH
+            + forecast_signal * self._W_FORECAST
+            + deriv_signal * self._W_DERIVATIVES
         )
 
         # 4. Regime-aware threshold adjustment
@@ -240,22 +247,29 @@ class TradingStrategy:
         logger.info(
             "Signal: %s | score=%.3f | conf=%.2f | gross_RR=%.2f | net_RR=%.2f "
             "| ADX=%.1f (%s) | regime=%s | forecast=%s",
-            action.upper(), combined_score, confidence,
-            signal.risk_reward_ratio, net_rr,
-            tech.adx, tech.trend_strength_label,
-            tech.market_regime, tech.forecast_bias,
+            action.upper(),
+            combined_score,
+            confidence,
+            signal.risk_reward_ratio,
+            net_rr,
+            tech.adx,
+            tech.trend_strength_label,
+            tech.market_regime,
+            tech.forecast_bias,
         )
         return signal
 
     # ── Technical calculations ────────────────────────────────────────────────
 
-    def _calculate_technical(self, candles: List[Dict], price: float) -> TechnicalSignal:
+    def _calculate_technical(
+        self, candles: List[Dict], price: float
+    ) -> TechnicalSignal:
         """Compute SMA/RSI/BB/momentum, then run the MarketForecaster."""
         if not candles or len(candles) < 5:
             return TechnicalSignal(price=price)
 
-        closes  = [float(c.get("close", c.get("c", price))) for c in candles]
-        volumes = [float(c.get("volume", c.get("v", 0)))    for c in candles]
+        closes = [float(c.get("close", c.get("c", price))) for c in candles]
+        volumes = [float(c.get("volume", c.get("v", 0))) for c in candles]
 
         # SMA
         sma_20 = statistics.mean(closes[-20:]) if len(closes) >= 20 else None
@@ -267,8 +281,8 @@ class TradingStrategy:
         # Bollinger Bands
         bb_upper = bb_lower = None
         if len(closes) >= 20:
-            m20  = statistics.mean(closes[-20:])
-            s20  = statistics.stdev(closes[-20:])
+            m20 = statistics.mean(closes[-20:])
+            s20 = statistics.stdev(closes[-20:])
             bb_upper = m20 + 2 * s20
             bb_lower = m20 - 2 * s20
 
@@ -305,19 +319,19 @@ class TradingStrategy:
 
         # Run forecaster and merge result into TechnicalSignal
         fc: ForecastResult = self.forecaster.forecast(candles, price)
-        tech.adx                 = fc.adx
-        tech.market_regime       = fc.market_regime
-        tech.trend_direction     = fc.trend_direction
+        tech.adx = fc.adx
+        tech.market_regime = fc.market_regime
+        tech.trend_direction = fc.trend_direction
         tech.trend_strength_label = fc.trend_strength_label
-        tech.forecast_bias       = fc.forecast_bias
-        tech.forecast_price_3    = fc.forecast_price_3
-        tech.vwap                = fc.vwap
-        tech.vwap_position       = fc.vwap_position
-        tech.support_levels      = fc.support_levels
-        tech.resistance_levels   = fc.resistance_levels
-        tech.breakeven_move_pct  = fc.breakeven_move_pct
-        tech.forecast_score      = fc.forecast_score
-        tech.regression_r2       = fc.regression_r2
+        tech.forecast_bias = fc.forecast_bias
+        tech.forecast_price_3 = fc.forecast_price_3
+        tech.vwap = fc.vwap
+        tech.vwap_position = fc.vwap_position
+        tech.support_levels = fc.support_levels
+        tech.resistance_levels = fc.resistance_levels
+        tech.breakeven_move_pct = fc.breakeven_move_pct
+        tech.forecast_score = fc.forecast_score
+        tech.regression_r2 = fc.regression_r2
 
         return tech
 
@@ -338,15 +352,15 @@ class TradingStrategy:
     @staticmethod
     def _score_emotion(emotion_score: EmotionScore) -> float:
         return (
-            emotion_score.crypto_specific_sentiment * 0.6 +
-            emotion_score.sentiment_score * 0.4
+            emotion_score.crypto_specific_sentiment * 0.6
+            + emotion_score.sentiment_score * 0.4
         ) * emotion_score.confidence
 
     @staticmethod
     def _score_geo(geo_impact: Dict) -> float:
-        total      = geo_impact.get("total_impact", 0.0)
+        total = geo_impact.get("total_impact", 0.0)
         risk_level = geo_impact.get("risk_level", "low")
-        dampener   = {"low": 1.0, "medium": 0.8, "high": 0.5, "critical": 0.2}
+        dampener = {"low": 1.0, "medium": 0.8, "high": 0.5, "critical": 0.2}
         return total * dampener.get(risk_level, 0.8)
 
     @staticmethod
@@ -355,23 +369,23 @@ class TradingStrategy:
 
         if tech.rsi is not None:
             rsi_signal = (50 - tech.rsi) / 50
-            score  += rsi_signal * 0.35
+            score += rsi_signal * 0.35
             weight += 0.35
 
         if tech.trend != "neutral":
-            score  += (0.5 if tech.trend == "uptrend" else -0.5) * 0.30
+            score += (0.5 if tech.trend == "uptrend" else -0.5) * 0.30
             weight += 0.30
 
         if tech.momentum != 0:
-            score  += tech.momentum * 0.20
+            score += tech.momentum * 0.20
             weight += 0.20
 
         if tech.bb_upper and tech.bb_lower:
             bb_range = tech.bb_upper - tech.bb_lower
             if bb_range > 0:
-                bb_pos    = (tech.price - tech.bb_lower) / bb_range
-                score    += (0.5 - bb_pos) * 0.15
-                weight   += 0.15
+                bb_pos = (tech.price - tech.bb_lower) / bb_range
+                score += (0.5 - bb_pos) * 0.15
+                weight += 0.15
 
         return score / max(weight, 1.0) if weight > 0 else 0.0
 
@@ -386,12 +400,12 @@ class TradingStrategy:
         Volatile             : tightest thresholds — only very clear signals.
         """
         if tech.market_regime == "trending" and tech.adx >= 35:
-            mult = 0.80    # easier to enter — strong trend is your friend
+            mult = 0.80  # easier to enter — strong trend is your friend
         elif tech.market_regime == "trending":
             mult = 0.90
         elif tech.market_regime == "volatile":
-            mult = 1.30    # very conservative in volatile markets
-        else:                           # ranging
+            mult = 1.30  # very conservative in volatile markets
+        else:  # ranging
             mult = 1.15
 
         return self.bullish_threshold * mult, self.bearish_threshold * mult
@@ -409,7 +423,7 @@ class TradingStrategy:
         has_open_position: bool,
         open_position_side: Optional[str],
     ) -> Tuple[str, float]:
-        geo_risk   = geo_impact.get("risk_level", "low")
+        geo_risk = geo_impact.get("risk_level", "low")
         confidence = abs(combined_score) * emotion_score.confidence
 
         # Hard stop in critical geo-risk (no new positions)
@@ -427,16 +441,22 @@ class TradingStrategy:
         # New position — only enter when forecast + trend agree
         if combined_score >= effective_bullish:
             # Require forecast and trend direction to align (or be neutral)
-            if tech.forecast_bias in ("bullish", "neutral") and tech.trend_direction in ("bullish", "neutral"):
+            if tech.forecast_bias in (
+                "bullish",
+                "neutral",
+            ) and tech.trend_direction in ("bullish", "neutral"):
                 return "buy", min(confidence, 1.0)
             elif tech.adx >= 35 and tech.trend_direction == "bullish":
                 # Strong trend override — trust momentum
                 return "buy", min(confidence * 0.90, 1.0)
             else:
-                return "buy", confidence * 0.65     # weaker confirmation
+                return "buy", confidence * 0.65  # weaker confirmation
 
         if combined_score <= effective_bearish:
-            if tech.forecast_bias in ("bearish", "neutral") and tech.trend_direction in ("bearish", "neutral"):
+            if tech.forecast_bias in (
+                "bearish",
+                "neutral",
+            ) and tech.trend_direction in ("bearish", "neutral"):
                 return "sell", min(confidence, 1.0)
             elif tech.adx >= 35 and tech.trend_direction == "bearish":
                 return "sell", min(confidence * 0.90, 1.0)
@@ -460,9 +480,11 @@ class TradingStrategy:
 
             # Tighten SL to nearest support above config SL
             if tech.support_levels:
-                supports_below = [s for s in tech.support_levels if s < entry_price and s > sl]
+                supports_below = [
+                    s for s in tech.support_levels if s < entry_price and s > sl
+                ]
                 if supports_below:
-                    sl = max(supports_below) * 0.9995    # just below support
+                    sl = max(supports_below) * 0.9995  # just below support
 
             # Bollinger lower as SL if closer
             if tech.bb_lower and tech.bb_lower > sl:
@@ -470,8 +492,9 @@ class TradingStrategy:
 
             # Target nearest resistance as TP (only if between entry and config TP)
             if tech.resistance_levels:
-                resistances_above = [r for r in tech.resistance_levels
-                                     if entry_price < r <= tp]
+                resistances_above = [
+                    r for r in tech.resistance_levels if entry_price < r <= tp
+                ]
                 if resistances_above:
                     tp = min(resistances_above) * 0.9998  # just below resistance
 
@@ -480,8 +503,9 @@ class TradingStrategy:
             tp = entry_price * (1 - self.take_profit_pct)
 
             if tech.resistance_levels:
-                resistances_above = [r for r in tech.resistance_levels
-                                     if r > entry_price and r < sl]
+                resistances_above = [
+                    r for r in tech.resistance_levels if r > entry_price and r < sl
+                ]
                 if resistances_above:
                     sl = min(resistances_above) * 1.0005
 
@@ -489,8 +513,9 @@ class TradingStrategy:
                 sl = tech.bb_upper * 1.0005
 
             if tech.support_levels:
-                supports_below = [s for s in tech.support_levels
-                                  if entry_price > s >= tp]
+                supports_below = [
+                    s for s in tech.support_levels if entry_price > s >= tp
+                ]
                 if supports_below:
                     tp = max(supports_below) * 1.0002
 
@@ -513,20 +538,20 @@ class TradingStrategy:
         the profit (reduces reward) and loss (increases risk).
         Fee % of price = taker_fee * 2   (same notional basis)
         """
-        fee_pct = self.taker_fee * 2   # total round-trip fee as fraction of price
+        fee_pct = self.taker_fee * 2  # total round-trip fee as fraction of price
 
         if action == "buy":
-            gross_risk   = abs(entry - sl)
+            gross_risk = abs(entry - sl)
             gross_reward = abs(tp - entry)
         elif action == "sell":
-            gross_risk   = abs(sl - entry)
+            gross_risk = abs(sl - entry)
             gross_reward = abs(entry - tp)
         else:
             return 0.0
 
         fee_dollars = entry * fee_pct
-        net_reward  = gross_reward - fee_dollars
-        net_risk    = gross_risk   + fee_dollars
+        net_reward = gross_reward - fee_dollars
+        net_risk = gross_risk + fee_dollars
 
         return round(net_reward / net_risk, 4) if net_risk > 0 else 0.0
 
@@ -536,9 +561,9 @@ class TradingStrategy:
     def _calculate_size_multiplier(
         confidence: float, geo_risk: str, emotion_confidence: float, adx: float
     ) -> float:
-        base        = confidence * emotion_confidence
+        base = confidence * emotion_confidence
         risk_factor = {"low": 1.0, "medium": 0.75, "high": 0.5, "critical": 0.25}
-        rf          = risk_factor.get(geo_risk, 0.75)
+        rf = risk_factor.get(geo_risk, 0.75)
 
         # Boost size in strong trends (more conviction)
         adx_boost = 1.0
@@ -563,7 +588,7 @@ class TradingStrategy:
             f"Action: {action.upper()} | Score: {combined_score:.3f}",
             f"Emotion: {emotion_score.dominant_emotion} (sentiment={emotion_score.sentiment_score:.2f}, conf={emotion_score.confidence:.2f})",
             f"Geo risk: {geo_impact.get('risk_level', '?')} | Events: {geo_impact.get('event_count', 0)}",
-            f"Technical: trend={tech.trend}, RSI={f'{tech.rsi:.1f}' if tech.rsi else 'N/A'}, BB_pos={f'{(tech.price-tech.bb_lower)/(tech.bb_upper-tech.bb_lower):.2f}' if tech.bb_upper and tech.bb_lower and tech.bb_upper != tech.bb_lower else 'N/A'}",
+            f"Technical: trend={tech.trend}, RSI={f'{tech.rsi:.1f}' if tech.rsi else 'N/A'}, BB_pos={f'{(tech.price - tech.bb_lower) / (tech.bb_upper - tech.bb_lower):.2f}' if tech.bb_upper and tech.bb_lower and tech.bb_upper != tech.bb_lower else 'N/A'}",
             f"Forecast: ADX={tech.adx:.1f} ({tech.trend_strength_label}) | regime={tech.market_regime} | bias={tech.forecast_bias} | VWAP={tech.vwap_position} | score={tech.forecast_score:.3f}",
             f"Break-even (fees): {tech.breakeven_move_pct:.2f}% of margin",
             f"Claude insight: {emotion_score.reasoning[:120]}",
@@ -589,7 +614,9 @@ class TradingStrategy:
         if tech.trend_strength_label in ("strong", "very_strong"):
             sources.append(f"ADX {tech.adx:.0f} ({tech.trend_direction})")
         if tech.forecast_bias != "neutral" and tech.regression_r2 > 0.3:
-            sources.append(f"LR forecast {tech.forecast_bias} (R²={tech.regression_r2:.2f})")
+            sources.append(
+                f"LR forecast {tech.forecast_bias} (R²={tech.regression_r2:.2f})"
+            )
         if tech.vwap_position in ("above", "below"):
             sources.append(f"VWAP {tech.vwap_position}")
         return sources

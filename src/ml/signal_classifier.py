@@ -17,10 +17,14 @@ Integrates:
 Produces a final SignalDecision that complements TradingStrategy with
 an ML-confidence layer.
 """
+
 import os
 import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
+
+if TYPE_CHECKING:
+    from src.ml.feature_engineer import FeatureVector
 
 import numpy as np
 
@@ -32,18 +36,18 @@ MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 SIGNAL_LABELS = {0: "HOLD", 1: "BUY", 2: "SELL"}
-SIGNAL_INT    = {"HOLD": 0, "BUY": 1, "SELL": 2}
+SIGNAL_INT = {"HOLD": 0, "BUY": 1, "SELL": 2}
 
 
 @dataclass
 class SignalDecision:
-    signal: str           # "BUY" | "SELL" | "HOLD"
-    confidence: float     # 0.0 – 1.0
+    signal: str  # "BUY" | "SELL" | "HOLD"
+    confidence: float  # 0.0 – 1.0
     prob_buy: float
     prob_sell: float
     prob_hold: float
-    ml_score: float       # directional: +1=buy, -1=sell, 0=hold
-    anomaly_risk: float   # 0.0 – 1.0 from AnomalyDetector
+    ml_score: float  # directional: +1=buy, -1=sell, 0=hold
+    anomaly_risk: float  # 0.0 – 1.0 from AnomalyDetector
     is_trained: bool
     features_used: int
     note: str = ""
@@ -89,23 +93,29 @@ class SignalClassifier:
 
     MIN_TRAIN_SAMPLES = 60
     MODEL_FILE = os.path.join(MODEL_DIR, "signal_classifier.pkl")
-    RETRAIN_INTERVAL = 600    # seconds
+    RETRAIN_INTERVAL = 600  # seconds
 
     def __init__(self):
-        self._clf         = None
-        self._scaler      = None
-        self._is_trained  = False
-        self._trained_n   = 0
+        self._clf = None
+        self._scaler = None
+        self._is_trained = False
+        self._trained_n = 0
         self._last_retrain = 0.0
         self._try_load()
-        logger.info("SignalClassifier initialised (trained=%s, n=%d)", self._is_trained, self._trained_n)
+        logger.info(
+            "SignalClassifier initialised (trained=%s, n=%d)",
+            self._is_trained,
+            self._trained_n,
+        )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def classify(
         self,
         feature_vector: "FeatureVector",
-        price_pred_probs: Optional[Tuple[float, float, float]] = None,   # (up, flat, down)
+        price_pred_probs: Optional[
+            Tuple[float, float, float]
+        ] = None,  # (up, flat, down)
         anomaly_risk: float = 0.0,
     ) -> SignalDecision:
         """Classify a single feature vector into BUY/SELL/HOLD."""
@@ -117,26 +127,26 @@ class SignalClassifier:
             return self._fallback(feature_vector, anomaly_risk)
 
         Xs = self._scaler.transform(X_aug)
-        probs = self._clf.predict_proba(Xs)[0]   # (hold, buy, sell)
+        probs = self._clf.predict_proba(Xs)[0]  # (hold, buy, sell)
 
         # Map to named probabilities
         classes = list(self._clf.classes_)
         p = {c: float(probs[i]) for i, c in enumerate(classes)}
-        p_buy  = p.get(1, 0.0)
+        p_buy = p.get(1, 0.0)
         p_sell = p.get(2, 0.0)
         p_hold = p.get(0, 0.0)
 
         # Penalise in high-anomaly environments
         if anomaly_risk > 0.5:
             dampen = 1 - (anomaly_risk - 0.5) * 0.5
-            p_buy  *= dampen
+            p_buy *= dampen
             p_sell *= dampen
-            p_hold  = 1 - p_buy - p_sell
+            p_hold = 1 - p_buy - p_sell
 
-        idx    = int(np.argmax([p_hold, p_buy, p_sell]))
+        idx = int(np.argmax([p_hold, p_buy, p_sell]))
         signal = SIGNAL_LABELS[idx]
-        conf   = float(max(p_buy, p_sell, p_hold))
-        ml_score = p_buy - p_sell   # directional: positive = buy, negative = sell
+        conf = float(max(p_buy, p_sell, p_hold))
+        ml_score = p_buy - p_sell  # directional: positive = buy, negative = sell
 
         return SignalDecision(
             signal=signal,
@@ -160,11 +170,11 @@ class SignalClassifier:
 
         try:
             from sklearn.ensemble import (
-                RandomForestClassifier, GradientBoostingClassifier,
+                RandomForestClassifier,
+                GradientBoostingClassifier,
             )
             from sklearn.linear_model import LogisticRegression
             from sklearn.preprocessing import StandardScaler
-            from sklearn.pipeline import Pipeline
             from sklearn.model_selection import cross_val_score
         except ImportError:
             return {"status": "sklearn_not_installed"}
@@ -178,16 +188,27 @@ class SignalClassifier:
         Xs = self._scaler.fit_transform(X)
 
         from sklearn.ensemble import VotingClassifier
-        rf  = RandomForestClassifier(
-            n_estimators=150, max_depth=6, min_samples_leaf=3,
-            class_weight="balanced", random_state=42, n_jobs=-1,
+
+        rf = RandomForestClassifier(
+            n_estimators=150,
+            max_depth=6,
+            min_samples_leaf=3,
+            class_weight="balanced",
+            random_state=42,
+            n_jobs=-1,
         )
-        gb  = GradientBoostingClassifier(
-            n_estimators=100, max_depth=4, learning_rate=0.05,
-            subsample=0.8, random_state=42,
+        gb = GradientBoostingClassifier(
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=42,
         )
-        lr  = LogisticRegression(
-            C=0.5, max_iter=500, multi_class="ovr", random_state=42,
+        lr = LogisticRegression(
+            C=0.5,
+            max_iter=500,
+            multi_class="ovr",
+            random_state=42,
         )
         self._clf = VotingClassifier(
             estimators=[("rf", rf), ("gb", gb), ("lr", lr)],
@@ -197,8 +218,8 @@ class SignalClassifier:
 
         cv_scores = cross_val_score(rf, Xs, y, cv=min(5, len(X) // 12 + 1))
 
-        self._is_trained   = True
-        self._trained_n    = len(X)
+        self._is_trained = True
+        self._trained_n = len(X)
         self._last_retrain = time.time()
 
         unique, counts = np.unique(y, return_counts=True)
@@ -213,7 +234,11 @@ class SignalClassifier:
             "class_distribution": dist,
             "elapsed_sec": round(elapsed, 2),
         }
-        logger.info("SignalClassifier trained: acc=%.3f in %.1fs", result["cv_accuracy"], elapsed)
+        logger.info(
+            "SignalClassifier trained: acc=%.3f in %.1fs",
+            result["cv_accuracy"],
+            elapsed,
+        )
         return result
 
     # ── Private ───────────────────────────────────────────────────────────────
@@ -238,18 +263,30 @@ class SignalClassifier:
         label = fv.label if fv.label is not None else 0
         signal = {1: "BUY", -1: "SELL", 0: "HOLD"}.get(label, "HOLD")
         return SignalDecision(
-            signal=signal, confidence=0.4,
-            prob_buy=0.333, prob_sell=0.333, prob_hold=0.334,
-            ml_score=0.0, anomaly_risk=anomaly_risk,
-            is_trained=False, features_used=len(fv.features),
+            signal=signal,
+            confidence=0.4,
+            prob_buy=0.333,
+            prob_sell=0.333,
+            prob_hold=0.334,
+            ml_score=0.0,
+            anomaly_risk=anomaly_risk,
+            is_trained=False,
+            features_used=len(fv.features),
             note="Not yet trained — showing rule-based fallback",
         )
 
     def _save(self):
         try:
             import joblib
-            joblib.dump({"clf": self._clf, "scaler": self._scaler,
-                         "trained_n": self._trained_n}, self.MODEL_FILE)
+
+            joblib.dump(
+                {
+                    "clf": self._clf,
+                    "scaler": self._scaler,
+                    "trained_n": self._trained_n,
+                },
+                self.MODEL_FILE,
+            )
         except Exception as e:
             logger.warning("Could not save SignalClassifier: %s", e)
 
@@ -258,6 +295,7 @@ class SignalClassifier:
             return
         try:
             import joblib
+
             d = joblib.load(self.MODEL_FILE)
             self._clf, self._scaler = d["clf"], d["scaler"]
             self._trained_n = d.get("trained_n", 0)

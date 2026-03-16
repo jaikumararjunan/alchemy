@@ -84,10 +84,10 @@ type-check: ## Run mypy type checker
 	mypy src/ server/ --ignore-missing-imports
 
 test: ## Run test suite
-	pytest tests/ -v
+	python -m pytest tests/ -v
 
 test-cov: ## Run tests with coverage report
-	pytest tests/ -v --cov=src --cov=server --cov-report=html --cov-report=term-missing
+	python -m pytest tests/ -v --cov=src --cov=server --cov-report=html --cov-report=term-missing
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 install: ## Install Python dependencies
@@ -116,6 +116,9 @@ deploy: ## Trigger GitHub Actions deploy (requires gh CLI)
 
 server-setup: ## Run production server setup script (requires SSH + sudo)
 	ssh -t $(DEPLOY_USER)@$(DEPLOY_HOST) "sudo bash -s" < deploy/setup.sh
+
+fresh-deploy: ## Full fresh deployment on VPS (wipe + clone + SSL + start)
+	ssh -t root@$(DEPLOY_HOST) "bash -s" < deploy/fresh-deploy.sh
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean: ## Remove build artifacts and __pycache__

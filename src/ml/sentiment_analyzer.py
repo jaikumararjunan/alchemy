@@ -14,8 +14,8 @@ Two-stage pipeline:
 Output: SentimentAnalysis dataclass with score (-1 to +1), label, confidence,
         and top keywords that drove the decision.
 """
+
 import re
-import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -30,51 +30,132 @@ logger = get_logger(__name__)
 
 CRYPTO_LEXICON: Dict[str, float] = {
     # Strongly bullish
-    "rally": 1.5, "surge": 1.5, "breakout": 1.4, "soar": 1.5,
-    "all-time high": 2.0, "ath": 2.0, "bull": 1.3, "bullish": 1.5,
-    "adoption": 1.2, "etf approved": 2.0, "etf": 1.2, "halving": 1.3,
-    "institutional": 1.1, "accumulation": 1.0, "buy": 0.8,
-    "partnership": 0.9, "upgrade": 0.8, "growth": 0.8, "gain": 0.7,
-    "mainstream": 0.8, "legal tender": 1.5, "approve": 0.9,
-    "recovery": 0.8, "rebound": 0.9, "moon": 1.2, "oversold": 0.7,
+    "rally": 1.5,
+    "surge": 1.5,
+    "breakout": 1.4,
+    "soar": 1.5,
+    "all-time high": 2.0,
+    "ath": 2.0,
+    "bull": 1.3,
+    "bullish": 1.5,
+    "adoption": 1.2,
+    "etf approved": 2.0,
+    "etf": 1.2,
+    "halving": 1.3,
+    "institutional": 1.1,
+    "accumulation": 1.0,
+    "buy": 0.8,
+    "partnership": 0.9,
+    "upgrade": 0.8,
+    "growth": 0.8,
+    "gain": 0.7,
+    "mainstream": 0.8,
+    "legal tender": 1.5,
+    "approve": 0.9,
+    "recovery": 0.8,
+    "rebound": 0.9,
+    "moon": 1.2,
+    "oversold": 0.7,
     # Mildly bullish
-    "positive": 0.5, "optimism": 0.6, "confidence": 0.4, "support": 0.3,
-    "stable": 0.2, "hodl": 0.5,
+    "positive": 0.5,
+    "optimism": 0.6,
+    "confidence": 0.4,
+    "support": 0.3,
+    "stable": 0.2,
+    "hodl": 0.5,
     # Mildly bearish
-    "concern": -0.4, "uncertainty": -0.5, "volatile": -0.4, "slowdown": -0.4,
-    "correction": -0.5, "pullback": -0.4, "overbought": -0.6,
+    "concern": -0.4,
+    "uncertainty": -0.5,
+    "volatile": -0.4,
+    "slowdown": -0.4,
+    "correction": -0.5,
+    "pullback": -0.4,
+    "overbought": -0.6,
     # Strongly bearish
-    "crash": -1.8, "collapse": -1.8, "ban": -1.5, "hack": -1.6,
-    "stolen": -1.7, "fraud": -1.8, "scam": -1.8, "rug pull": -2.0,
-    "bear": -1.2, "bearish": -1.4, "sell-off": -1.4, "dump": -1.3,
-    "regulation crackdown": -1.5, "lawsuit": -1.3, "fine": -1.0,
-    "bankruptcy": -2.0, "insolvency": -1.9, "investigation": -1.2,
-    "seizure": -1.5, "sanction": -1.4, "exploit": -1.6,
-    "vulnerability": -1.3, "delisted": -1.5, "liquidated": -1.2,
-    "plunge": -1.6, "tumble": -1.4, "tank": -1.5, "plummet": -1.7,
+    "crash": -1.8,
+    "collapse": -1.8,
+    "ban": -1.5,
+    "hack": -1.6,
+    "stolen": -1.7,
+    "fraud": -1.8,
+    "scam": -1.8,
+    "rug pull": -2.0,
+    "bear": -1.2,
+    "bearish": -1.4,
+    "sell-off": -1.4,
+    "dump": -1.3,
+    "regulation crackdown": -1.5,
+    "lawsuit": -1.3,
+    "fine": -1.0,
+    "bankruptcy": -2.0,
+    "insolvency": -1.9,
+    "investigation": -1.2,
+    "seizure": -1.5,
+    "sanction": -1.4,
+    "exploit": -1.6,
+    "vulnerability": -1.3,
+    "delisted": -1.5,
+    "liquidated": -1.2,
+    "plunge": -1.6,
+    "tumble": -1.4,
+    "tank": -1.5,
+    "plummet": -1.7,
     # Geopolitical
-    "war": -1.2, "conflict": -1.0, "inflation": -0.8, "recession": -1.1,
-    "fed rate": -0.5, "interest rate hike": -0.9, "cbdc": -0.3,
-    "sanctions": -1.2, "energy crisis": -0.8, "nuclear": -1.3,
-    "ceasefire": 0.6, "peace": 0.5, "trade deal": 0.6,
+    "war": -1.2,
+    "conflict": -1.0,
+    "inflation": -0.8,
+    "recession": -1.1,
+    "fed rate": -0.5,
+    "interest rate hike": -0.9,
+    "cbdc": -0.3,
+    "sanctions": -1.2,
+    "energy crisis": -0.8,
+    "nuclear": -1.3,
+    "ceasefire": 0.6,
+    "peace": 0.5,
+    "trade deal": 0.6,
 }
 
-NEGATION_WORDS = {"not", "no", "never", "without", "isn't", "aren't",
-                  "wasn't", "won't", "don't", "doesn't", "didn't",
-                  "cannot", "can't", "neither", "nor"}
+NEGATION_WORDS = {
+    "not",
+    "no",
+    "never",
+    "without",
+    "isn't",
+    "aren't",
+    "wasn't",
+    "won't",
+    "don't",
+    "doesn't",
+    "didn't",
+    "cannot",
+    "can't",
+    "neither",
+    "nor",
+}
 
-INTENSIFIERS = {"very": 1.5, "highly": 1.4, "extremely": 1.8, "massively": 1.6,
-                "slightly": 0.6, "somewhat": 0.7, "major": 1.3, "significant": 1.2}
+INTENSIFIERS = {
+    "very": 1.5,
+    "highly": 1.4,
+    "extremely": 1.8,
+    "massively": 1.6,
+    "slightly": 0.6,
+    "somewhat": 0.7,
+    "major": 1.3,
+    "significant": 1.2,
+}
 
 
 @dataclass
 class SentimentAnalysis:
     text: str = ""
-    score: float = 0.0              # -1.0 to +1.0
-    label: str = "neutral"          # very_negative | negative | neutral | positive | very_positive
-    confidence: float = 0.5         # 0.0 to 1.0
-    lexicon_score: float = 0.0      # raw lexicon contribution
-    ml_score: float = 0.0           # ML model contribution
+    score: float = 0.0  # -1.0 to +1.0
+    label: str = (
+        "neutral"  # very_negative | negative | neutral | positive | very_positive
+    )
+    confidence: float = 0.5  # 0.0 to 1.0
+    lexicon_score: float = 0.0  # raw lexicon contribution
+    ml_score: float = 0.0  # ML model contribution
     top_keywords: List[str] = field(default_factory=list)
     is_crypto_relevant: bool = True
 
@@ -106,15 +187,20 @@ class SentimentAnalyzer:
     def __init__(self):
         self._tfidf_vocab: Dict[str, int] = {}
         self._nb_log_priors: np.ndarray = np.zeros(5)
-        self._nb_log_likelihoods: Optional[np.ndarray] = None   # (5, vocab)
+        self._nb_log_likelihoods: Optional[np.ndarray] = None  # (5, vocab)
         self._is_trained = False
         self._train_samples = 0
         self._label_map = {
-            "very_negative": 0, "negative": 1, "neutral": 2,
-            "positive": 3, "very_positive": 4,
+            "very_negative": 0,
+            "negative": 1,
+            "neutral": 2,
+            "positive": 3,
+            "very_positive": 4,
         }
         self._rev_label = {v: k for k, v in self._label_map.items()}
-        logger.info("SentimentAnalyzer initialised (lexicon: %d terms)", len(CRYPTO_LEXICON))
+        logger.info(
+            "SentimentAnalyzer initialised (lexicon: %d terms)", len(CRYPTO_LEXICON)
+        )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -131,21 +217,21 @@ class SentimentAnalyzer:
 
         # Stage 2: ML (if trained)
         ml_score = 0.0
-        ml_conf  = 0.5
+        ml_conf = 0.5
         if self._is_trained:
             ml_probs = self._nb_predict(tokens)
             # Convert 5-class probabilities to -1..+1 score
             weights = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])
             ml_score = float(np.dot(ml_probs, weights))
-            ml_conf  = float(np.max(ml_probs))
+            ml_conf = float(np.max(ml_probs))
 
         # Blend
         if self._is_trained:
             blended = lex_norm * 0.40 + ml_score * 0.60
-            conf    = 0.4 + ml_conf * 0.6
+            conf = 0.4 + ml_conf * 0.6
         else:
             blended = lex_norm
-            conf    = min(0.5 + abs(lex_norm) * 0.5, 0.9)
+            conf = min(0.5 + abs(lex_norm) * 0.5, 0.9)
 
         label = self._score_to_label(blended)
         relevant = self._is_relevant(tokens)
@@ -173,15 +259,23 @@ class SentimentAnalyzer:
         if not results:
             return {"score": 0.0, "label": "neutral", "confidence": 0.5, "n": 0}
 
-        scores  = np.array([r.score for r in results])
-        weights = np.array([
-            (1.5 if r.is_crypto_relevant else 0.5) * r.confidence
-            for r in results
-        ]) if weight_by_relevance else np.ones(len(results))
+        scores = np.array([r.score for r in results])
+        weights = (
+            np.array(
+                [(1.5 if r.is_crypto_relevant else 0.5) * r.confidence for r in results]
+            )
+            if weight_by_relevance
+            else np.ones(len(results))
+        )
 
         total_w = weights.sum()
         if total_w == 0:
-            return {"score": 0.0, "label": "neutral", "confidence": 0.5, "n": len(results)}
+            return {
+                "score": 0.0,
+                "label": "neutral",
+                "confidence": 0.5,
+                "n": len(results),
+            }
 
         w_score = float(np.dot(scores, weights) / total_w)
         avg_conf = float(np.mean([r.confidence for r in results]))
@@ -195,8 +289,12 @@ class SentimentAnalyzer:
             "confidence": round(avg_conf, 4),
             "n": len(results),
             "label_distribution": dict(label_counts),
-            "bullish_pct": round(sum(1 for r in results if r.score > 0.1) / len(results) * 100, 1),
-            "bearish_pct": round(sum(1 for r in results if r.score < -0.1) / len(results) * 100, 1),
+            "bullish_pct": round(
+                sum(1 for r in results if r.score > 0.1) / len(results) * 100, 1
+            ),
+            "bearish_pct": round(
+                sum(1 for r in results if r.score < -0.1) / len(results) * 100, 1
+            ),
         }
 
     def train(self, texts: List[str], labels: List[str]) -> Dict:
@@ -220,8 +318,8 @@ class SentimentAnalyzer:
 
         # Count word occurrences per class (Multinomial NB with Laplace smoothing)
         n_classes = 5
-        counts   = np.ones((n_classes, V))    # Laplace smoothing
-        class_n  = np.zeros(n_classes)
+        counts = np.ones((n_classes, V))  # Laplace smoothing
+        class_n = np.zeros(n_classes)
 
         for toks, lbl in zip(all_tokens, labels):
             c = self._label_map.get(lbl, 2)
@@ -238,14 +336,16 @@ class SentimentAnalyzer:
         total = class_n.sum()
         self._nb_log_priors = np.log((class_n + 1) / (total + n_classes))
 
-        self._is_trained    = True
+        self._is_trained = True
         self._train_samples = len(texts)
         logger.info("SentimentAnalyzer trained: %d samples, vocab=%d", len(texts), V)
         return {
             "status": "trained",
             "samples": len(texts),
             "vocab_size": V,
-            "class_distribution": {self._rev_label[i]: int(class_n[i]) for i in range(n_classes)},
+            "class_distribution": {
+                self._rev_label[i]: int(class_n[i]) for i in range(n_classes)
+            },
         }
 
     def auto_train_from_emotion_history(self, history: List[Dict]) -> Dict:
@@ -279,22 +379,25 @@ class SentimentAnalyzer:
     def _tokenize(text: str) -> List[str]:
         text = text.lower()
         # Keep multi-word phrases from lexicon
-        for phrase in ["all-time high", "rug pull", "etf approved",
-                       "regulation crackdown", "interest rate hike",
-                       "legal tender", "trade deal", "fed rate"]:
+        for phrase in [
+            "all-time high",
+            "rug pull",
+            "etf approved",
+            "regulation crackdown",
+            "interest rate hike",
+            "legal tender",
+            "trade deal",
+            "fed rate",
+        ]:
             text = text.replace(phrase, phrase.replace(" ", "_"))
         words = re.findall(r"[a-z0-9_-]+", text)
         return words
 
     def _lexicon_score(self, tokens: List[str]) -> Tuple[float, List[str]]:
-        score    = 0.0
+        score = 0.0
         keywords = []
-        negate   = False
+        negate = False
         intensity = 1.0
-
-        # Also check bigrams for compound terms
-        bigrams = [f"{tokens[i]}_{tokens[i+1]}" for i in range(len(tokens) - 1)]
-        all_terms = tokens + bigrams
 
         for i, tok in enumerate(tokens):
             if tok in NEGATION_WORDS:
@@ -307,7 +410,7 @@ class SentimentAnalyzer:
             word_score = CRYPTO_LEXICON.get(tok, 0.0)
             # check bigram
             if i < len(tokens) - 1:
-                bi = f"{tok}_{tokens[i+1]}"
+                bi = f"{tok}_{tokens[i + 1]}"
                 word_score = max(word_score, CRYPTO_LEXICON.get(bi, 0.0), key=abs)
 
             if word_score != 0.0:
@@ -347,10 +450,35 @@ class SentimentAnalyzer:
     @staticmethod
     def _is_relevant(tokens: List[str]) -> bool:
         crypto_terms = {
-            "bitcoin", "btc", "ethereum", "eth", "crypto", "blockchain",
-            "defi", "nft", "altcoin", "token", "exchange", "binance",
-            "coinbase", "solana", "polygon", "ripple", "xrp", "stablecoin",
-            "usdt", "usdc", "web3", "dao", "mining", "wallet", "halving",
-            "perpetual", "futures", "leverage", "liquidation", "delta",
+            "bitcoin",
+            "btc",
+            "ethereum",
+            "eth",
+            "crypto",
+            "blockchain",
+            "defi",
+            "nft",
+            "altcoin",
+            "token",
+            "exchange",
+            "binance",
+            "coinbase",
+            "solana",
+            "polygon",
+            "ripple",
+            "xrp",
+            "stablecoin",
+            "usdt",
+            "usdc",
+            "web3",
+            "dao",
+            "mining",
+            "wallet",
+            "halving",
+            "perpetual",
+            "futures",
+            "leverage",
+            "liquidation",
+            "delta",
         }
         return any(t in crypto_terms for t in tokens)

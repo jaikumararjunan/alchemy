@@ -14,12 +14,14 @@ Greeks:
 Put/Call ratio > 1 = more puts than calls open → bearish positioning
 Put/Call ratio < 0.7 = more calls → bullish positioning
 """
+
 import math
 from dataclasses import dataclass
 from typing import Optional, List, Dict
 
 
 # ── Normal distribution helpers ──────────────────────────────────────────────
+
 
 def _phi(x: float) -> float:
     """Standard normal PDF."""
@@ -31,32 +33,36 @@ def _Phi(x: float) -> float:
     if x < 0:
         return 1.0 - _Phi(-x)
     k = 1.0 / (1.0 + 0.2316419 * x)
-    poly = k * (0.319381530 + k * (-0.356563782 + k * (1.781477937
-           + k * (-1.821255978 + k * 1.330274429))))
+    poly = k * (
+        0.319381530
+        + k * (-0.356563782 + k * (1.781477937 + k * (-1.821255978 + k * 1.330274429)))
+    )
     return 1.0 - _phi(x) * poly
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Greeks:
     """Black-Scholes option Greeks."""
-    option_type: str       # "call" or "put"
+
+    option_type: str  # "call" or "put"
     spot: float
     strike: float
     days_to_expiry: int
-    implied_vol: float     # annualized, decimal (e.g. 0.80 = 80%)
+    implied_vol: float  # annualized, decimal (e.g. 0.80 = 80%)
     risk_free_rate: float  # annualized (e.g. 0.05 = 5%)
 
     # BS outputs
     theoretical_price: float
     intrinsic_value: float
     time_value: float
-    delta: float           # 0–1 for calls, -1–0 for puts
+    delta: float  # 0–1 for calls, -1–0 for puts
     gamma: float
-    theta_daily: float     # per calendar day (negative for long)
-    vega_1pct: float       # for ±1% IV change
-    rho_1pct: float        # for ±1% rate change
+    theta_daily: float  # per calendar day (negative for long)
+    vega_1pct: float  # for ±1% IV change
+    rho_1pct: float  # for ±1% rate change
     d1: float
     d2: float
 
@@ -82,16 +88,17 @@ class Greeks:
 @dataclass
 class OptionsChainSummary:
     """Aggregate statistics from an options chain."""
+
     put_call_ratio: float
-    pc_signal: str            # "bearish" | "neutral" | "bullish"
-    pc_sentiment_score: float # -1.0 to +1.0
+    pc_signal: str  # "bearish" | "neutral" | "bullish"
+    pc_sentiment_score: float  # -1.0 to +1.0
     total_call_oi: float
     total_put_oi: float
     max_pain_strike: Optional[float]  # strike with most total OI (calls + puts)
-    iv_atm: Optional[float]           # ATM implied vol
-    iv_skew: Optional[float]          # put IV - call IV (positive = fear)
-    skew_signal: str          # "fear" | "neutral" | "greed"
-    gamma_exposure_usd: float # aggregate gamma (proxy for market maker hedging)
+    iv_atm: Optional[float]  # ATM implied vol
+    iv_skew: Optional[float]  # put IV - call IV (positive = fear)
+    skew_signal: str  # "fear" | "neutral" | "greed"
+    gamma_exposure_usd: float  # aggregate gamma (proxy for market maker hedging)
     interpretation: str
 
     def to_dict(self) -> dict:
@@ -101,7 +108,9 @@ class OptionsChainSummary:
             "pc_sentiment_score": round(self.pc_sentiment_score, 4),
             "total_call_oi": round(self.total_call_oi, 2),
             "total_put_oi": round(self.total_put_oi, 2),
-            "max_pain_strike": round(self.max_pain_strike, 0) if self.max_pain_strike else None,
+            "max_pain_strike": round(self.max_pain_strike, 0)
+            if self.max_pain_strike
+            else None,
             "iv_atm_pct": round(self.iv_atm * 100, 2) if self.iv_atm else None,
             "iv_skew_pct": round(self.iv_skew * 100, 2) if self.iv_skew else None,
             "skew_signal": self.skew_signal,
@@ -111,6 +120,7 @@ class OptionsChainSummary:
 
 
 # ── Black-Scholes Engine ──────────────────────────────────────────────────────
+
 
 class OptionsAnalyzer:
     """
@@ -126,11 +136,11 @@ class OptionsAnalyzer:
 
     def price_option(
         self,
-        option_type: str,      # "call" or "put"
+        option_type: str,  # "call" or "put"
         spot: float,
         strike: float,
         days_to_expiry: int,
-        implied_vol: float,    # annualized decimal
+        implied_vol: float,  # annualized decimal
     ) -> Greeks:
         """Compute Black-Scholes price and all Greeks."""
         T = max(days_to_expiry, 1) / 365.0
@@ -155,13 +165,12 @@ class OptionsAnalyzer:
             rho = -K * T * math.exp(-r * T) * _Phi(-d2) / 100
 
         phi_d1 = _phi(d1)
-        gamma  = phi_d1 / (S * σ * sqrt_T)
-        vega   = S * sqrt_T * phi_d1 / 100   # per 1% IV move
+        gamma = phi_d1 / (S * σ * sqrt_T)
+        vega = S * sqrt_T * phi_d1 / 100  # per 1% IV move
 
         # Theta per calendar day
-        theta_annual = (
-            -(S * phi_d1 * σ) / (2 * sqrt_T)
-            - r * K * math.exp(-r * T) * (_Phi(d2) if option_type == "call" else _Phi(-d2))
+        theta_annual = -(S * phi_d1 * σ) / (2 * sqrt_T) - r * K * math.exp(-r * T) * (
+            _Phi(d2) if option_type == "call" else _Phi(-d2)
         )
         theta_daily = theta_annual / 365.0
 
@@ -169,9 +178,11 @@ class OptionsAnalyzer:
 
         return Greeks(
             option_type=option_type,
-            spot=S, strike=K,
+            spot=S,
+            strike=K,
             days_to_expiry=days_to_expiry,
-            implied_vol=σ, risk_free_rate=r,
+            implied_vol=σ,
+            risk_free_rate=r,
             theoretical_price=round(price, 6),
             intrinsic_value=round(intrinsic, 6),
             time_value=round(time_value, 6),
@@ -180,7 +191,8 @@ class OptionsAnalyzer:
             theta_daily=round(theta_daily, 6),
             vega_1pct=round(vega, 6),
             rho_1pct=round(rho, 6),
-            d1=round(d1, 6), d2=round(d2, 6),
+            d1=round(d1, 6),
+            d2=round(d2, 6),
         )
 
     def estimate_iv(
@@ -197,13 +209,13 @@ class OptionsAnalyzer:
         Newton-Raphson IV solver.
         Returns implied vol (annualized decimal) or None if no convergence.
         """
-        σ = 0.50   # initial guess: 50% IV
+        σ = 0.50  # initial guess: 50% IV
         for _ in range(max_iter):
             g = self.price_option(option_type, spot, strike, days_to_expiry, σ)
             diff = g.theoretical_price - market_price
             if abs(diff) < tol:
                 return σ
-            vega = g.vega_1pct * 100   # vega per unit IV
+            vega = g.vega_1pct * 100  # vega per unit IV
             if abs(vega) < 1e-10:
                 break
             σ -= diff / vega
@@ -220,24 +232,29 @@ class OptionsAnalyzer:
         Each dict: {type, strike, oi, market_price, days_to_expiry}
         """
         calls = [o for o in chain if o.get("type") == "call"]
-        puts  = [o for o in chain if o.get("type") == "put"]
+        puts = [o for o in chain if o.get("type") == "put"]
 
         total_call_oi = sum(o.get("oi", 0) for o in calls)
-        total_put_oi  = sum(o.get("oi", 0) for o in puts)
+        total_put_oi = sum(o.get("oi", 0) for o in puts)
 
         pc_ratio = (total_put_oi / total_call_oi) if total_call_oi > 0 else 1.0
 
         # P/C signal
         if pc_ratio > 1.5:
-            pc_signal = "bearish"; pc_score = -0.8
+            pc_signal = "bearish"
+            pc_score = -0.8
         elif pc_ratio > 1.1:
-            pc_signal = "slightly_bearish"; pc_score = -0.4
+            pc_signal = "slightly_bearish"
+            pc_score = -0.4
         elif pc_ratio < 0.5:
-            pc_signal = "bullish"; pc_score = 0.8
+            pc_signal = "bullish"
+            pc_score = 0.8
         elif pc_ratio < 0.8:
-            pc_signal = "slightly_bullish"; pc_score = 0.4
+            pc_signal = "slightly_bullish"
+            pc_score = 0.4
         else:
-            pc_signal = "neutral"; pc_score = 0.0
+            pc_signal = "neutral"
+            pc_score = 0.0
 
         # Max pain: strike where total OI (calls above + puts below) is maximised
         all_strikes = sorted(set(o.get("strike", 0) for o in chain))
@@ -245,20 +262,24 @@ class OptionsAnalyzer:
         if all_strikes:
             best = -1e18
             for k in all_strikes:
-                call_pain = sum(o.get("oi", 0) * max(0, k - o.get("strike", 0))
-                                for o in calls)
-                put_pain  = sum(o.get("oi", 0) * max(0, o.get("strike", 0) - k)
-                                for o in puts)
+                call_pain = sum(
+                    o.get("oi", 0) * max(0, k - o.get("strike", 0)) for o in calls
+                )
+                put_pain = sum(
+                    o.get("oi", 0) * max(0, o.get("strike", 0) - k) for o in puts
+                )
                 pain = -(call_pain + put_pain)
                 if pain > best:
                     best, max_pain = pain, k
 
         # ATM IV and skew
         atm_strikes = sorted(all_strikes, key=lambda k: abs(k - spot))
-        atm_strike  = atm_strikes[0] if atm_strikes else spot
+        atm_strike = atm_strikes[0] if atm_strikes else spot
 
         def _iv_for(type_: str, strike: float) -> Optional[float]:
-            matches = [o for o in chain if o.get("type") == type_ and o.get("strike") == strike]
+            matches = [
+                o for o in chain if o.get("type") == type_ and o.get("strike") == strike
+            ]
             if not matches:
                 return None
             o = matches[0]
@@ -268,8 +289,8 @@ class OptionsAnalyzer:
             return self.estimate_iv(type_, mp, spot, strike, o.get("days_to_expiry", 7))
 
         iv_call = _iv_for("call", atm_strike)
-        iv_put  = _iv_for("put",  atm_strike)
-        iv_atm  = ((iv_call or 0) + (iv_put or 0)) / 2 if (iv_call or iv_put) else None
+        iv_put = _iv_for("put", atm_strike)
+        iv_atm = ((iv_call or 0) + (iv_put or 0)) / 2 if (iv_call or iv_put) else None
 
         iv_skew = None
         skew_signal = "neutral"
@@ -286,7 +307,7 @@ class OptionsAnalyzer:
         gamma_exp = 0.0
         for o in chain:
             dte = o.get("days_to_expiry", 7)
-            iv  = o.get("iv", iv_atm or 0.80)
+            iv = o.get("iv", iv_atm or 0.80)
             if iv and iv > 0:
                 g = self.price_option(o["type"], spot, o["strike"], dte, iv)
                 gamma_exp += g.gamma * o.get("oi", 0) * spot * spot / 100
@@ -296,7 +317,7 @@ class OptionsAnalyzer:
         if max_pain:
             parts.append(f"Max pain: ${max_pain:,.0f}.")
         if iv_atm:
-            parts.append(f"ATM IV: {iv_atm*100:.1f}%.")
+            parts.append(f"ATM IV: {iv_atm * 100:.1f}%.")
         if skew_signal == "fear":
             parts.append("Put skew elevated — market hedging downside risk.")
         elif skew_signal == "greed":

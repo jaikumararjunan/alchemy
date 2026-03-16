@@ -13,7 +13,6 @@ from pathlib import Path
 
 try:
     from docx import Document
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
     from docx.shared import Inches, Pt, RGBColor
@@ -22,6 +21,7 @@ except ImportError:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def set_cell_bg(cell, hex_color: str):
     """Set table cell background colour."""
@@ -57,13 +57,14 @@ def apply_inline_code(para, text: str):
         if not part:
             continue
         run = para.add_run(part)
-        if i % 2 == 1:   # odd indices = backtick content
+        if i % 2 == 1:  # odd indices = backtick content
             run.font.name = "Courier New"
             run.font.size = Pt(9)
             run.font.color.rgb = RGBColor(0xC9, 0x2A, 0x2A)
 
 
 # ── Main builder ──────────────────────────────────────────────────────────────
+
 
 def build_docx(md_path: Path, out_path: Path):
     md = md_path.read_text(encoding="utf-8")
@@ -73,10 +74,10 @@ def build_docx(md_path: Path, out_path: Path):
 
     # Page margins
     for section in doc.sections:
-        section.top_margin    = Inches(1.0)
+        section.top_margin = Inches(1.0)
         section.bottom_margin = Inches(1.0)
-        section.left_margin   = Inches(1.2)
-        section.right_margin  = Inches(1.2)
+        section.left_margin = Inches(1.2)
+        section.right_margin = Inches(1.2)
 
     # Default body style
     style = doc.styles["Normal"]
@@ -95,7 +96,7 @@ def build_docx(md_path: Path, out_path: Path):
             return
         para = doc.add_paragraph()
         para.paragraph_format.space_before = Pt(4)
-        para.paragraph_format.space_after  = Pt(4)
+        para.paragraph_format.space_after = Pt(4)
         run = para.add_run("\n".join(code_lines))
         run.font.name = "Courier New"
         run.font.size = Pt(9)
@@ -106,7 +107,7 @@ def build_docx(md_path: Path, out_path: Path):
         shd.set(qn("w:color"), "auto")
         shd.set(qn("w:fill"), "F5F5F5")
         pPr.append(shd)
-        para.paragraph_format.left_indent  = Inches(0.3)
+        para.paragraph_format.left_indent = Inches(0.3)
         code_lines = []
 
     def flush_table():
@@ -114,7 +115,11 @@ def build_docx(md_path: Path, out_path: Path):
         if not table_rows:
             return
         # Filter out separator rows (---|---|--)
-        data_rows = [r for r in table_rows if not all(re.match(r"^[-: ]+$", c.strip()) for c in r)]
+        data_rows = [
+            r
+            for r in table_rows
+            if not all(re.match(r"^[-: ]+$", c.strip()) for c in r)
+        ]
         if not data_rows:
             table_rows = []
             return
@@ -131,7 +136,7 @@ def build_docx(md_path: Path, out_path: Path):
                 if ri == 0:
                     cell.paragraphs[0].runs[0].bold = True
                     set_cell_bg(cell, "D9E8F5")
-        doc.add_paragraph()   # spacing
+        doc.add_paragraph()  # spacing
         table_rows = []
 
     while i < len(lines):
@@ -171,9 +176,9 @@ def build_docx(md_path: Path, out_path: Path):
         m = re.match(r"^(#{1,4})\s+(.*)", stripped)
         if m:
             level = len(m.group(1))
-            text  = m.group(2)
+            text = m.group(2)
             # Strip anchor links like {#section-id}
-            text  = re.sub(r"\{#[^}]+\}", "", text).strip()
+            text = re.sub(r"\{#[^}]+\}", "", text).strip()
             style_map = {1: "Heading 1", 2: "Heading 2", 3: "Heading 3", 4: "Heading 4"}
             para = doc.add_heading(text, level=level)
             para.style = doc.styles[style_map.get(level, "Heading 3")]
@@ -226,7 +231,7 @@ def build_docx(md_path: Path, out_path: Path):
         # Strip markdown bold/italic markers, keep inline code
         text = stripped
         text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-        text = re.sub(r"\*([^*]+)\*",   r"\1", text)
+        text = re.sub(r"\*([^*]+)\*", r"\1", text)
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
 
         para = doc.add_paragraph()
@@ -241,7 +246,7 @@ def build_docx(md_path: Path, out_path: Path):
 
 
 if __name__ == "__main__":
-    root    = Path(__file__).parent
+    root = Path(__file__).parent
     md_path = root / "DEPLOYMENT.md"
     out_path = root / "DEPLOYMENT.docx"
 

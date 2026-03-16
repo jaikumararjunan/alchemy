@@ -18,10 +18,11 @@ Metrics:
   Best / worst trade      — single best and worst PnL
   Consecutive wins/losses — longest run
 """
+
 import math
 import statistics
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from dataclasses import dataclass
+from typing import List
 
 
 @dataclass
@@ -125,15 +126,15 @@ class PerformanceCalculator:
         risk_free_rate: annualized risk-free rate (0 = assume 0%)
         periods_per_year: for 1h bars = 8760; 1d bars = 365; 5m = 105120
         """
-        self.rf  = risk_free_rate
+        self.rf = risk_free_rate
         self.ppy = periods_per_year
 
     def calculate(
         self,
-        equity_curve: List[float],        # portfolio value at each bar
-        trade_pnls_usd: List[float],      # net PnL per completed trade
-        trade_pnls_pct: List[float],      # % PnL per completed trade
-        trade_durations: List[int],       # duration in bars per trade
+        equity_curve: List[float],  # portfolio value at each bar
+        trade_pnls_usd: List[float],  # net PnL per completed trade
+        trade_pnls_pct: List[float],  # % PnL per completed trade
+        trade_durations: List[int],  # duration in bars per trade
         initial_balance: float,
         total_bars: int,
     ) -> PerformanceMetrics:
@@ -142,57 +143,73 @@ class PerformanceCalculator:
 
         # ── Returns ──────────────────────────────────────────────────────────
         total_return = (final_balance - initial_balance) / initial_balance * 100
-        trading_days = total_bars / 24.0   # assuming 1h bars
+        trading_days = total_bars / 24.0  # assuming 1h bars
         if trading_days > 0 and final_balance > 0:
-            ann_return = ((final_balance / initial_balance) ** (365.0 / trading_days) - 1) * 100
+            ann_return = (
+                (final_balance / initial_balance) ** (365.0 / trading_days) - 1
+            ) * 100
         else:
             ann_return = 0.0
 
         # ── Sharpe / Sortino ─────────────────────────────────────────────────
         if len(equity_curve) >= 2:
             bar_returns = [
-                (equity_curve[i] - equity_curve[i-1]) / equity_curve[i-1]
+                (equity_curve[i] - equity_curve[i - 1]) / equity_curve[i - 1]
                 for i in range(1, len(equity_curve))
-                if equity_curve[i-1] > 0
+                if equity_curve[i - 1] > 0
             ]
             if len(bar_returns) >= 2:
-                mean_r  = statistics.mean(bar_returns)
-                std_r   = statistics.stdev(bar_returns)
-                rf_bar  = (1 + self.rf) ** (1 / self.ppy) - 1
-                sharpe  = (mean_r - rf_bar) / std_r * math.sqrt(self.ppy) if std_r > 0 else 0.0
-                down_r  = [r for r in bar_returns if r < rf_bar]
+                mean_r = statistics.mean(bar_returns)
+                std_r = statistics.stdev(bar_returns)
+                rf_bar = (1 + self.rf) ** (1 / self.ppy) - 1
+                sharpe = (
+                    (mean_r - rf_bar) / std_r * math.sqrt(self.ppy)
+                    if std_r > 0
+                    else 0.0
+                )
+                down_r = [r for r in bar_returns if r < rf_bar]
                 down_std = statistics.stdev(down_r) if len(down_r) >= 2 else std_r
-                sortino = (mean_r - rf_bar) / down_std * math.sqrt(self.ppy) if down_std > 0 else 0.0
+                sortino = (
+                    (mean_r - rf_bar) / down_std * math.sqrt(self.ppy)
+                    if down_std > 0
+                    else 0.0
+                )
             else:
                 sharpe = sortino = 0.0
         else:
             sharpe = sortino = 0.0
 
         # ── Drawdown ─────────────────────────────────────────────────────────
-        max_dd_pct, max_dd_usd, avg_dd, recovery = self._drawdown(equity_curve, initial_balance)
+        max_dd_pct, max_dd_usd, avg_dd, recovery = self._drawdown(
+            equity_curve, initial_balance
+        )
         calmar = (ann_return / max_dd_pct) if max_dd_pct > 0 else 0.0
 
         # ── Trade stats ───────────────────────────────────────────────────────
-        wins   = [p for p in trade_pnls_usd if p > 0]
+        wins = [p for p in trade_pnls_usd if p > 0]
         losses = [p for p in trade_pnls_usd if p <= 0]
-        win_pcts  = [p for p in trade_pnls_pct if p > 0]
+        win_pcts = [p for p in trade_pnls_pct if p > 0]
         loss_pcts = [p for p in trade_pnls_pct if p <= 0]
 
         n = len(trade_pnls_usd)
         win_rate = len(wins) / n * 100 if n > 0 else 0.0
         gross_profit = sum(wins) if wins else 0.0
-        gross_loss   = abs(sum(losses)) if losses else 0.0
-        pf           = gross_profit / gross_loss if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
-        expectancy   = statistics.mean(trade_pnls_usd) if trade_pnls_usd else 0.0
+        gross_loss = abs(sum(losses)) if losses else 0.0
+        pf = (
+            gross_profit / gross_loss
+            if gross_loss > 0
+            else (999.0 if gross_profit > 0 else 0.0)
+        )
+        expectancy = statistics.mean(trade_pnls_usd) if trade_pnls_usd else 0.0
 
-        avg_win  = statistics.mean(wins)   if wins   else 0.0
+        avg_win = statistics.mean(wins) if wins else 0.0
         avg_loss = statistics.mean(losses) if losses else 0.0
-        avg_win_pct  = statistics.mean(win_pcts)  if win_pcts  else 0.0
+        avg_win_pct = statistics.mean(win_pcts) if win_pcts else 0.0
         avg_loss_pct = statistics.mean(loss_pcts) if loss_pcts else 0.0
 
-        best_usd  = max(trade_pnls_usd) if trade_pnls_usd else 0.0
+        best_usd = max(trade_pnls_usd) if trade_pnls_usd else 0.0
         worst_usd = min(trade_pnls_usd) if trade_pnls_usd else 0.0
-        best_pct  = max(trade_pnls_pct) if trade_pnls_pct else 0.0
+        best_pct = max(trade_pnls_pct) if trade_pnls_pct else 0.0
         worst_pct = min(trade_pnls_pct) if trade_pnls_pct else 0.0
 
         # ── Streaks ───────────────────────────────────────────────────────────
@@ -203,7 +220,8 @@ class PerformanceCalculator:
         recovery_f = net_profit / max_dd_usd if max_dd_usd > 0 else 0.0
 
         return PerformanceMetrics(
-            initial_balance=initial_balance, final_balance=final_balance,
+            initial_balance=initial_balance,
+            final_balance=final_balance,
             total_return_pct=round(total_return, 4),
             annualized_return_pct=round(ann_return, 4),
             sharpe_ratio=round(sharpe, 4),
@@ -259,9 +277,11 @@ class PerformanceCalculator:
         max_cw = max_cl = cw = cl = 0
         for p in pnls:
             if p > 0:
-                cw += 1; cl = 0
+                cw += 1
+                cl = 0
                 max_cw = max(max_cw, cw)
             else:
-                cl += 1; cw = 0
+                cl += 1
+                cw = 0
                 max_cl = max(max_cl, cl)
         return max_cw, max_cl

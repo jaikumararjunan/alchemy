@@ -19,8 +19,6 @@ services:
     build:
       context: .
       target: runtime
-      cache_from:
-        - alchemy:latest
     image: alchemy:latest
     container_name: alchemy
     expose:
@@ -30,6 +28,9 @@ services:
     environment:
       - DRY_RUN=${DRY_RUN:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # AUTH_PASSWORD_HASH, JWT_SECRET_KEY, TOTP_SECRET are loaded verbatim
+      # via env_file above — DO NOT add them here; Compose interpolation
+      # corrupts bcrypt hashes that contain $ characters.
     volumes:
       - alchemy_logs:/app/logs
     command: >
@@ -61,8 +62,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./ssl:/etc/ssl/alchemy:ro
+      - ${NGINX_CONF:-./deploy/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/letsencrypt:ro
       - nginx_cache:/var/cache/nginx
       - certbot_webroot:/var/www/certbot:ro
     depends_on:
@@ -122,8 +123,9 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_ROOT_URL=http://213.199.38.90/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_DOMAIN=213.199.38.90
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
@@ -133,6 +135,7 @@ services:
     restart: unless-stopped
     networks:
       - alchemy_internal
+      - alchemy_public
     logging:
       driver: "json-file"
       options:
