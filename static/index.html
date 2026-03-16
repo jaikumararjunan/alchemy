@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Alchemy — Live Trading Dashboard</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --primary: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --purple: #bc8cff;
+    --orange: #ffa657;
+    --radius: 8px;
+    --font: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+
+  /* ── Layout ──────────────────────────────────────────────────── */
+  #app { display: grid; grid-template-rows: 56px 1fr 220px; height: 100vh; gap: 0; }
+
+  /* ── Header ──────────────────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .logo { font-size: 18px; font-weight: 700; color: var(--primary); letter-spacing: -0.5px; }
+  .logo span { color: var(--text-dim); font-weight: 400; }
+
+  .symbol-bar { display: flex; gap: 6px; flex: 1; overflow-x: auto; }
+  .sym-btn {
+    padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim); cursor: pointer; font: inherit;
+    white-space: nowrap; transition: all .15s;
+  }
+  .sym-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .sym-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .sym-btn .price { font-size: 11px; opacity: .8; }
+  .sym-btn .chg.up { color: var(--green); }
+  .sym-btn .chg.dn { color: var(--red); }
+
+  .ws-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 12px;
+    background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.3);
+    font-size: 11px; color: var(--green);
+  }
+  .ws-badge.disconnected { background: rgba(248,81,73,.12); border-color: rgba(248,81,73,.3); color: var(--red); }
+  .ws-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Main area ───────────────────────────────────────────────── */
+  .main { display: grid; grid-template-columns: 1fr 320px; overflow: hidden; }
+
+  /* ── Chart panel ─────────────────────────────────────────────── */
+  .chart-panel {
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border); overflow: hidden;
+  }
+  .chart-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .chart-title { font-size: 15px; font-weight: 600; }
+  .cur-price { font-size: 22px; font-weight: 700; }
+  .cur-chg { font-size: 12px; padding: 2px 8px; border-radius: 4px; }
+  .cur-chg.up { background: rgba(63,185,80,.15); color: var(--green); }
+  .cur-chg.dn { background: rgba(248,81,73,.15); color: var(--red); }
+  .tf-btns { display: flex; gap: 4px; margin-left: auto; }
+  .tf-btn {
+    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .tf-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  #chart-container { flex: 1; position: relative; min-height: 0; }
+
+  /* ── Right panel ─────────────────────────────────────────────── */
+  .right-panel { overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+
+  .card {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-dim); margin-bottom: 10px; }
+
+  /* Sentiment gauge */
+  .sentiment-score {
+    font-size: 36px; font-weight: 700; text-align: center; line-height: 1;
+    margin: 4px 0 2px;
+  }
+  .sentiment-label { text-align: center; font-size: 12px; color: var(--text-dim); margin-bottom: 10px; }
+  .bias-badge {
+    display: inline-block; padding: 4px 12px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+  }
+  .bias-wrap { text-align: center; margin-bottom: 10px; }
+  .bias-strong_buy  { background: rgba(63,185,80,.2);  color: var(--green); }
+  .bias-buy         { background: rgba(63,185,80,.12); color: var(--green); }
+  .bias-neutral     { background: rgba(139,148,158,.15); color: var(--text-dim); }
+  .bias-sell        { background: rgba(248,81,73,.12); color: var(--red); }
+  .bias-strong_sell { background: rgba(248,81,73,.2);  color: var(--red); }
+
+  .gauge-bar { margin-bottom: 6px; }
+  .gauge-bar-label { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .gauge-track { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .gauge-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+  .fill-fear        { background: var(--red); }
+  .fill-greed       { background: var(--green); }
+  .fill-optimism    { background: var(--primary); }
+  .fill-pessimism   { background: var(--yellow); }
+  .fill-panic       { background: var(--orange); }
+  .fill-uncertainty { background: var(--purple); }
+
+  .risk-row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+  .risk-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .risk-low      { background: rgba(63,185,80,.15);  color: var(--green); }
+  .risk-medium   { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .risk-high     { background: rgba(255,166,87,.15); color: var(--orange); }
+  .risk-critical { background: rgba(248,81,73,.2);   color: var(--red); }
+
+  /* Capital */
+  .cap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cap-item { background: var(--bg); border-radius: var(--radius); padding: 8px; }
+  .cap-item .val { font-size: 16px; font-weight: 700; }
+  .cap-item .lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-top: 2px; }
+  .up { color: var(--green); }
+  .dn { color: var(--red); }
+
+  /* Signal feed */
+  .signal-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .signal-item:last-child { border-bottom: none; }
+  .sig-action {
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+    min-width: 36px; text-align: center;
+  }
+  .sig-buy  { background: rgba(63,185,80,.2); color: var(--green); }
+  .sig-sell { background: rgba(248,81,73,.2); color: var(--red); }
+  .sig-hold { background: rgba(139,148,158,.1); color: var(--text-dim); }
+  .sig-meta { flex: 1; }
+  .sig-name { font-size: 11px; font-weight: 600; }
+  .sig-detail { font-size: 10px; color: var(--text-dim); }
+  .sig-conf { font-size: 11px; font-weight: 600; }
+
+  /* ── Bottom analyses table ───────────────────────────────────── */
+  .bottom-bar {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .bottom-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+  }
+  .bottom-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-dim); }
+  #analyses-table-wrap { overflow-y: auto; flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { position: sticky; top: 0; background: var(--surface); padding: 4px 12px; text-align: left; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+  td { padding: 5px 12px; border-bottom: 1px solid rgba(48,54,61,.5); }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .score-cell { font-weight: 700; }
+  .conf-bar { display: inline-block; height: 4px; border-radius: 2px; background: var(--primary); vertical-align: middle; margin-right: 4px; }
+
+  /* ── Analyse form ────────────────────────────────────────────── */
+  .analyze-form { display: flex; gap: 8px; align-items: flex-start; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .analyze-form textarea {
+    flex: 1; resize: none; height: 48px; padding: 8px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font: inherit; font-size: 12px;
+  }
+  .analyze-form textarea:focus { outline: none; border-color: var(--primary); }
+  .analyze-form button {
+    padding: 8px 16px; border-radius: var(--radius); border: none;
+    background: var(--primary); color: #fff; cursor: pointer; font: inherit; font-size: 12px;
+    white-space: nowrap; align-self: stretch;
+  }
+  .analyze-form button:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">⚗️ Alchemy <span>/ Live</span></div>
+    <div class="symbol-bar" id="symbol-bar"></div>
+    <div class="ws-badge disconnected" id="ws-badge">
+      <div class="ws-dot"></div>
+      <span id="ws-label">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- ── Main ── -->
+  <div class="main">
+
+    <!-- Chart -->
+    <div class="chart-panel">
+      <div class="chart-toolbar">
+        <div>
+          <div class="chart-title" id="chart-symbol">BTCUSD</div>
+        </div>
+        <div>
+          <div class="cur-price" id="cur-price">—</div>
+          <span class="cur-chg" id="cur-chg"></span>
+        </div>
+        <div class="tf-btns">
+          <button class="tf-btn active" data-tf="1m">1m</button>
+          <button class="tf-btn" data-tf="5m">5m</button>
+          <button class="tf-btn" data-tf="1h">1h</button>
+        </div>
+      </div>
+      <div id="chart-container"></div>
+    </div>
+
+    <!-- Right panel -->
+    <div class="right-panel">
+
+      <!-- Sentiment -->
+      <div class="card">
+        <div class="card-title">AI Sentiment</div>
+        <div class="sentiment-score" id="sent-score" style="color:var(--text-dim)">—</div>
+        <div class="sentiment-label" id="sent-label">Awaiting analysis…</div>
+        <div class="bias-wrap"><span class="bias-badge bias-neutral" id="bias-badge">NEUTRAL</span></div>
+        <div id="emotion-bars"></div>
+        <div class="risk-row">
+          <span style="color:var(--text-dim);font-size:11px">Geopolitical Risk</span>
+          <span class="risk-badge risk-low" id="geo-risk">LOW</span>
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:var(--text-dim)" id="sent-time"></div>
+      </div>
+
+      <!-- Capital -->
+      <div class="card">
+        <div class="card-title">Capital</div>
+        <div class="cap-grid">
+          <div class="cap-item">
+            <div class="val" id="cap-total">$—</div>
+            <div class="lbl">Total</div>
+          </div>
+          <div class="cap-item">
+            <div class="val up" id="cap-profit">$—</div>
+            <div class="lbl">Net P&L</div>
+          </div>
+          <div class="cap-item">
+            <div class="val" id="cap-reinvested">$—</div>
+            <div class="lbl">Reinvested</div>
+          </div>
+          <div class="cap-item">
+            <div class="val" id="cap-winrate">—%</div>
+            <div class="lbl">Win Rate</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strategy signals -->
+      <div class="card">
+        <div class="card-title">Strategy Signals</div>
+        <div id="signal-feed">
+          <div style="color:var(--text-dim);font-size:11px">No signals yet</div>
+        </div>
+      </div>
+
+      <!-- Key events -->
+      <div class="card">
+        <div class="card-title">Key Events</div>
+        <div id="key-events" style="color:var(--text-dim);font-size:11px">—</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Bottom ── -->
+  <div class="bottom-bar">
+    <div class="analyze-form">
+      <textarea id="news-input" placeholder="Paste a news headline or article summary to run live AI sentiment analysis…"></textarea>
+      <button id="analyze-btn">Analyze</button>
+    </div>
+    <div class="bottom-header">
+      <span class="bottom-title">Recent Analyses</span>
+      <span id="analysis-count" style="font-size:11px;color:var(--text-dim)">0 records</span>
+    </div>
+    <div id="analyses-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Sentiment</th>
+            <th>Bias</th>
+            <th>Confidence</th>
+            <th>Risk</th>
+            <th>Dominant</th>
+            <th>Horizon</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody id="analyses-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const API_BASE = window.location.origin + '/api/v2';
+const WS_URL   = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/v2/ws';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let activeSymbol = 'BTCUSD';
+let ws = null;
+let prices = {};
+let candleSeries = null;
+let volumeSeries = null;
+let chart = null;
+const MAX_SIGNALS = 6;
+let signalQueue = [];
+
+// ── Chart setup ───────────────────────────────────────────────────────────────
+function initChart() {
+  const container = document.getElementById('chart-container');
+  chart = LightweightCharts.createChart(container, {
+    layout: {
+      background: { type: 'solid', color: '#0d1117' },
+      textColor: '#8b949e',
+      fontSize: 11,
+    },
+    grid: {
+      vertLines: { color: '#1c2128' },
+      horzLines: { color: '#1c2128' },
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: {
+      borderColor: '#30363d',
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    handleScroll: true,
+    handleScale: true,
+  });
+
+  candleSeries = chart.addCandlestickSeries({
+    upColor:   '#3fb950',
+    downColor: '#f85149',
+    borderUpColor:   '#3fb950',
+    borderDownColor: '#f85149',
+    wickUpColor:   '#3fb950',
+    wickDownColor: '#f85149',
+  });
+
+  volumeSeries = chart.addHistogramSeries({
+    color: '#58a6ff',
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'vol',
+    scaleMargins: { top: 0.8, bottom: 0 },
+  });
+
+  // Resize observer
+  const ro = new ResizeObserver(() => {
+    chart.resize(container.offsetWidth, container.offsetHeight);
+  });
+  ro.observe(container);
+}
+
+function loadHistory(symbol) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'get_history', symbol }));
+  }
+}
+
+function applyHistory(candles) {
+  if (!candleSeries || !candles.length) return;
+  const cs = candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+  const vs = candles.map(c => ({
+    time: c.time, value: c.volume || 0,
+    color: c.close >= c.open ? 'rgba(63,185,80,.25)' : 'rgba(248,81,73,.25)',
+  }));
+  candleSeries.setData(cs);
+  volumeSeries.setData(vs);
+  chart.timeScale().fitContent();
+}
+
+function updateLiveCandle(candle) {
+  if (!candleSeries) return;
+  candleSeries.update({ time: candle.time, open: candle.open, high: candle.high, low: candle.low, close: candle.close });
+  volumeSeries.update({
+    time: candle.time, value: candle.volume || 0,
+    color: candle.close >= candle.open ? 'rgba(63,185,80,.25)' : 'rgba(248,81,73,.25)',
+  });
+}
+
+// ── Symbol bar ────────────────────────────────────────────────────────────────
+const SYMBOLS = ['BTCUSD','ETHUSD','SOLUSD','BNBUSD','XRPUSD','AVAXUSD'];
+
+function renderSymbolBar() {
+  const bar = document.getElementById('symbol-bar');
+  bar.innerHTML = SYMBOLS.map(sym => {
+    const p = prices[sym];
+    const priceStr = p ? fmtPrice(p.price, sym) : '—';
+    const chg = p ? p.change_24h : 0;
+    const cls = chg >= 0 ? 'up' : 'dn';
+    const chgStr = p ? (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%' : '';
+    return `<button class="sym-btn${sym===activeSymbol?' active':''}" onclick="switchSymbol('${sym}')">
+      ${sym.replace('USD','')}
+      <span class="price">${priceStr}</span>
+      <span class="chg ${cls}">${chgStr}</span>
+    </button>`;
+  }).join('');
+}
+
+function switchSymbol(sym) {
+  activeSymbol = sym;
+  document.getElementById('chart-symbol').textContent = sym;
+  candleSeries && candleSeries.setData([]);
+  volumeSeries && volumeSeries.setData([]);
+  loadHistory(sym);
+  renderSymbolBar();
+  updatePriceDisplay();
+}
+
+function fmtPrice(price, sym) {
+  if (!price) return '—';
+  if (sym === 'XRPUSD' || sym === 'DOGEUSD') return '$' + price.toFixed(4);
+  if (price < 10) return '$' + price.toFixed(3);
+  return '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updatePriceDisplay() {
+  const p = prices[activeSymbol];
+  if (!p) return;
+  document.getElementById('cur-price').textContent = fmtPrice(p.price, activeSymbol);
+  const el = document.getElementById('cur-chg');
+  const chg = p.change_24h || 0;
+  el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+  el.className = 'cur-chg ' + (chg >= 0 ? 'up' : 'dn');
+}
+
+// ── Sentiment ─────────────────────────────────────────────────────────────────
+function renderSentiment(result) {
+  const score = result.sentiment_score || 0;
+  const el = document.getElementById('sent-score');
+  el.textContent = score.toFixed(2);
+  el.style.color = score > 0.1 ? 'var(--green)' : score < -0.1 ? 'var(--red)' : 'var(--yellow)';
+
+  document.getElementById('sent-label').textContent = result.dominant_emotion + ' · ' + result.impact_horizon;
+
+  const bias = result.trading_bias || 'neutral';
+  const bb = document.getElementById('bias-badge');
+  bb.textContent = bias.replace('_', ' ').toUpperCase();
+  bb.className = 'bias-badge bias-' + bias;
+
+  // Emotion bars
+  const emotions = result.emotions || {};
+  const EMOTION_KEYS = ['fear','greed','optimism','pessimism','panic','uncertainty'];
+  document.getElementById('emotion-bars').innerHTML = EMOTION_KEYS.map(k => {
+    const val = (emotions[k] || 0) * 100;
+    return `<div class="gauge-bar">
+      <div class="gauge-bar-label">
+        <span style="text-transform:capitalize;color:var(--text-dim)">${k}</span>
+        <span>${val.toFixed(0)}%</span>
+      </div>
+      <div class="gauge-track"><div class="gauge-fill fill-${k}" style="width:${val}%"></div></div>
+    </div>`;
+  }).join('');
+
+  // Geo risk
+  const risk = (result.geopolitical_risk || 'low').toLowerCase();
+  const rb = document.getElementById('geo-risk');
+  rb.textContent = risk.toUpperCase();
+  rb.className = 'risk-badge risk-' + risk;
+
+  // Key events
+  const evts = result.key_events || [];
+  document.getElementById('key-events').innerHTML = evts.length
+    ? evts.map(e => `<div style="padding:3px 0;border-bottom:1px solid var(--border);font-size:11px">• ${e}</div>`).join('')
+    : '<span style="color:var(--text-dim)">None detected</span>';
+
+  document.getElementById('sent-time').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+// ── Signals ───────────────────────────────────────────────────────────────────
+function pushSignal(signal) {
+  signalQueue.unshift(signal);
+  if (signalQueue.length > MAX_SIGNALS) signalQueue.pop();
+  renderSignals();
+}
+
+function renderSignals() {
+  const feed = document.getElementById('signal-feed');
+  if (!signalQueue.length) { feed.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No signals yet</div>'; return; }
+  feed.innerHTML = signalQueue.map(s => {
+    const action = s.action || 'hold';
+    const cls = action.includes('buy') ? 'sig-buy' : action.includes('sell') ? 'sig-sell' : 'sig-hold';
+    const conf = ((s.confidence || 0) * 100).toFixed(0);
+    const rr = s.risk_reward_ratio ? s.risk_reward_ratio.toFixed(1) : '—';
+    return `<div class="signal-item">
+      <span class="sig-action ${cls}">${action.toUpperCase()}</span>
+      <div class="sig-meta">
+        <div class="sig-name">${s.strategy_name || '—'} · ${s.symbol || ''}</div>
+        <div class="sig-detail">RR ${rr} · SL ${fmtPrice(s.stop_loss, s.symbol)} · TP ${fmtPrice(s.take_profit, s.symbol)}</div>
+      </div>
+      <span class="sig-conf" style="color:${conf>=70?'var(--green)':conf>=50?'var(--yellow)':'var(--text-dim)'}">${conf}%</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Capital ───────────────────────────────────────────────────────────────────
+function renderCapital(summary) {
+  const fmt = v => '$' + Number(v || 0).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  document.getElementById('cap-total').textContent = fmt(summary.total_capital);
+  const pnl = summary.total_net_profit || 0;
+  const pnlEl = document.getElementById('cap-profit');
+  pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl);
+  pnlEl.className = 'val ' + (pnl >= 0 ? 'up' : 'dn');
+  document.getElementById('cap-reinvested').textContent = fmt(summary.reinvested_total);
+  document.getElementById('cap-winrate').textContent = (summary.win_rate_pct || 0).toFixed(1) + '%';
+}
+
+// ── Analyses table ────────────────────────────────────────────────────────────
+function renderAnalysesTable(rows) {
+  document.getElementById('analysis-count').textContent = rows.length + ' records';
+  const tbody = document.getElementById('analyses-tbody');
+  tbody.innerHTML = rows.map((r, i) => {
+    const res = r.result || r;
+    const score = (res.sentiment_score || 0).toFixed(2);
+    const scoreColor = score > 0 ? 'var(--green)' : score < 0 ? 'var(--red)' : 'var(--yellow)';
+    const conf = ((res.confidence || 0) * 100).toFixed(0);
+    const bias = (res.trading_bias || 'neutral').replace('_',' ');
+    const biasCls = bias.includes('buy') ? 'up' : bias.includes('sell') ? 'dn' : '';
+    const ts = r.created_at || r.timestamp || '';
+    const timeStr = ts ? new Date(ts).toLocaleTimeString() : '—';
+    return `<tr>
+      <td style="color:var(--text-dim)">${r.id || (rows.length - i)}</td>
+      <td class="score-cell" style="color:${scoreColor}">${score}</td>
+      <td class="${biasCls}">${bias.toUpperCase()}</td>
+      <td><span class="conf-bar" style="width:${conf}px"></span>${conf}%</td>
+      <td><span class="risk-badge risk-${(res.geopolitical_risk||'low').toLowerCase()}">${(res.geopolitical_risk||'—').toUpperCase()}</span></td>
+      <td>${res.dominant_emotion || '—'}</td>
+      <td style="color:var(--text-dim)">${res.impact_horizon || '—'}</td>
+      <td style="color:var(--text-dim)">${timeStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function fetchRecentAnalyses() {
+  try {
+    const r = await fetch(API_BASE + '/analyses/recent?limit=20');
+    const data = await r.json();
+    if (Array.isArray(data) && data.length) renderAnalysesTable(data);
+  } catch(e) { console.warn('Failed to fetch analyses:', e); }
+}
+
+// ── Analyze form ──────────────────────────────────────────────────────────────
+document.getElementById('analyze-btn').addEventListener('click', async () => {
+  const text = document.getElementById('news-input').value.trim();
+  if (!text) return;
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true; btn.textContent = 'Analyzing…';
+  try {
+    const r = await fetch(API_BASE + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ articles: [{ title: text, summary: text, source: 'manual' }] }),
+    });
+    const data = await r.json();
+    if (data.success && data.result) {
+      renderSentiment(data.result);
+      document.getElementById('news-input').value = '';
+      fetchRecentAnalyses();
+    }
+  } catch(e) { console.error('Analyze error:', e); }
+  finally { btn.disabled = false; btn.textContent = 'Analyze'; }
+});
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function setWsStatus(connected) {
+  const badge = document.getElementById('ws-badge');
+  const label = document.getElementById('ws-label');
+  badge.className = 'ws-badge' + (connected ? '' : ' disconnected');
+  label.textContent = connected ? 'Live' : 'Connecting…';
+}
+
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setWsStatus(true);
+    loadHistory(activeSymbol);
+  };
+
+  ws.onclose = () => {
+    setWsStatus(false);
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = ({ data }) => {
+    let msg;
+    try { msg = JSON.parse(data); } catch { return; }
+
+    switch (msg.type) {
+      case 'init':
+        if (msg.prices) {
+          Object.entries(msg.prices).forEach(([sym, price]) => {
+            prices[sym] = { price, change_24h: 0 };
+          });
+          renderSymbolBar();
+          updatePriceDisplay();
+        }
+        break;
+
+      case 'ticker':
+        prices[msg.symbol] = { price: msg.price, change_24h: msg.change_24h };
+        renderSymbolBar();
+        if (msg.symbol === activeSymbol) updatePriceDisplay();
+        break;
+
+      case 'candle_history':
+        if (msg.symbol === activeSymbol) applyHistory(msg.candles);
+        break;
+
+      case 'candle_live':
+      case 'candle_closed':
+        if (msg.symbol === activeSymbol) updateLiveCandle(msg.candle);
+        break;
+
+      case 'sentiment':
+        if (msg.result) renderSentiment(msg.result);
+        fetchRecentAnalyses();
+        break;
+
+      case 'signal':
+        if (msg.signal) pushSignal(msg.signal);
+        break;
+
+      case 'capital':
+        if (msg.summary) renderCapital(msg.summary);
+        break;
+    }
+  };
+}
+
+// ── Timeframe buttons ─────────────────────────────────────────────────────────
+document.querySelectorAll('.tf-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Re-request history (different TF support can be added later)
+    loadHistory(activeSymbol);
+  });
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+initChart();
+renderSymbolBar();
+connectWS();
+fetchRecentAnalyses();
+// Refresh analyses every 30 s
+setInterval(fetchRecentAnalyses, 30000);
+</script>
+</body>
+</html>
