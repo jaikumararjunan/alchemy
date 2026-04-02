@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Secrets (NEVER commit)
+.env
+config/settings.yaml
+*.pem
+*.key
+*.secret
+
+# IB / Kite tokens
+access_token.txt
+ib_token*
+
+# Test / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# Data & Reports
+data/raw/
+data/cache/
+reports/*.png
+reports/*.html
+*.parquet
+*.feather
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Docker volumes
+.docker/

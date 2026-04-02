@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "alchemy-trading"
+version = "0.1.0"
+description = "AI-Powered Algorithmic Trading Platform — QuantInsti Integration"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Jai", email = "jai@akilamirthya.in" }]
+keywords = ["algorithmic-trading", "ai-trading", "langgraph", "litellm", "quant"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+dependencies = [
+    # AI / LLM
+    "litellm>=1.35.0",
+    "langgraph>=0.1.0",
+    "langchain>=0.2.0",
+    "langchain-core>=0.2.0",
+    "langchain-anthropic>=0.1.0",
+    "langchain-google-genai>=1.0.0",
+    # Quant analytics (QuantInsti)
+    "arch>=7.0.0",
+    "pyfolio @ git+https://github.com/QuantInsti/pyfolio.git",
+    "zipline-pipeline @ git+https://github.com/QuantInsti/zipline-pipeline.git",
+    # Data
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "yfinance>=0.2.40",
+    "redis>=5.0.0",
+    # Broker
+    "ib_insync>=0.9.86",
+    "kiteconnect>=5.0.1",
+    # Web / API
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    # ML
+    "scikit-learn>=1.5.0",
+    "xgboost>=2.0.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "structlog>=24.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "black>=24.4.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "pre-commit>=3.7.0",
+]
+ml = [
+    "tensorflow>=2.16.0",
+    "torch>=2.3.0",
+    "transformers>=4.41.0",
+]
+notebook = [
+    "jupyter>=1.0.0",
+    "matplotlib>=3.9.0",
+    "plotly>=5.22.0",
+]
+
+[project.scripts]
+alchemy = "alchemy.cli:main"
+alchemy-agent = "alchemy.agents.run:cli"
+alchemy-gateway = "alchemy.llm.gateway:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["alchemy*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "UP", "ANN", "S", "B"]
+ignore = ["ANN101", "ANN102", "S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=alchemy --cov-report=term-missing --cov-report=html"

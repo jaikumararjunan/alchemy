@@ -1,0 +1,46 @@
+# Alchemy Platform — Settings Example
+# Copy to config/settings.yaml and fill in your values
+# Or use environment variables (takes precedence)
+
+alchemy:
+  env: paper                    # development | paper | production
+  log_level: INFO
+
+llm:
+  primary_model: claude-sonnet-4-6
+  fallback_model: gpt-4o
+  gateway_url: http://localhost:4000
+  max_budget_usd: 50.0
+  temperature: 0.1
+  max_tokens: 2048
+
+ib:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+  paper_trading: true
+
+kite:
+  paper_trading: true
+
+database:
+  timescale_url: postgresql://alchemy:alchemy@localhost:5432/alchemy
+  redis_url: redis://localhost:6379/0
+  redis_ttl_seconds: 1800
+
+risk:
+  max_position_pct: 0.05
+  max_portfolio_drawdown_pct: 0.10
+  max_daily_loss_usd: 5000
+  max_open_positions: 20
+  default_stop_loss_pct: 0.02
+  default_take_profit_pct: 0.04
+  vol_scaling: true
+  max_vol_threshold: 0.40
+
+features:
+  enable_ai_agents: true
+  enable_ib_execution: false
+  enable_kite_execution: false
+  enable_pyfolio_reports: true
+  enable_garch_volatility: true

@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+  # ── Alchemy API ───────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ALCHEMY_ENV=development
+      - DB_REDIS_URL=redis://redis:6379/0
+      - DB_TIMESCALE_URL=postgresql://alchemy:alchemy@timescaledb:5432/alchemy
+      - LLM_GATEWAY_URL=http://litellm:4000
+    depends_on:
+      - redis
+      - timescaledb
+      - litellm
+    volumes:
+      - .:/app
+    command: uvicorn alchemy.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── LiteLLM Gateway ───────────────────────────────────────────────────────
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-alchemy-local}
+    volumes:
+      - ./config/litellm.yaml:/app/config.yaml
+    command: --config /app/config.yaml --port 4000
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # ── TimescaleDB ──────────────────────────────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: alchemy
+      POSTGRES_USER: alchemy
+      POSTGRES_PASSWORD: alchemy
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  redis_data:
+  timescale_data:
