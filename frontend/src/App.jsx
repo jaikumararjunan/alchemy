@@ -7,6 +7,8 @@ import CryptoPage      from '@/pages/CryptoPage'
 import RiskPage        from '@/pages/RiskPage'
 import AnalyticsPage   from '@/pages/AnalyticsPage'
 import StrategyPage    from '@/pages/StrategyPage'
+import TokenManagerPage from '@/pages/TokenManagerPage'
+import WorkflowPage    from '@/pages/WorkflowPage'
 import SettingsPage    from '@/pages/SettingsPage'
 
 export default function App() {
@@ -21,6 +23,8 @@ export default function App() {
         <Route path="risk"       element={<RiskPage />} />
         <Route path="analytics"  element={<AnalyticsPage />} />
         <Route path="strategy"   element={<StrategyPage />} />
+        <Route path="tokens"     element={<TokenManagerPage />} />
+        <Route path="workflows"  element={<WorkflowPage />} />
         <Route path="settings"   element={<SettingsPage />} />
       </Route>
     </Routes>
