@@ -79,3 +79,28 @@ See [`docs/migration/`](docs/migration/) for the full Alchemy ← QuantInsti mig
 ## License
 
 Apache 2.0 — See [LICENSE](LICENSE)
+
+## v0.2 — Frontend + Crypto Update
+
+### New: React Dashboard (`frontend/`)
+Full-featured trading dashboard built with React 18 + Vite + Tailwind CSS:
+- **Dashboard** — Live NAV chart, AI signal feed, crypto snapshot, risk footer
+- **Crypto Trading** — Delta Exchange + Binance order form, positions table, funding rates
+- **Portfolio** — Asset allocation pie, daily P&L bar chart, positions table
+- **AI Signals** — Agent runner + full signal history
+- **Risk Manager** — Emergency stop controls, drawdown monitor
+- **Analytics** — Cumulative returns vs benchmark, Sharpe/Sortino/Calmar metrics
+- **Strategy Library** — Browse and backtest strategies
+
+```bash
+cd frontend && npm install && npm run dev   # → http://localhost:3000
+```
+
+### New: Crypto Execution (`alchemy/execution/crypto/`)
+
+| Gateway | File | Exchange |
+|---------|------|----------|
+| `DeltaGateway` | `delta_gateway.py` | Delta Exchange — BTC/ETH perpetuals, options, MOVE |
+| `BinanceGateway` | `binance_gateway.py` | Binance — Spot + USD-M Futures + COIN-M |
+
+Both gateways support **paper trading mode** (default) — no real API keys needed for development.
