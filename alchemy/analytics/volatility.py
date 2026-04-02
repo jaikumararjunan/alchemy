@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import structlog
 from arch import arch_model
-from arch.univariate import ARCHModelResult
+from arch.univariate.base import ARCHModelResult
 
 log = structlog.get_logger(__name__)
 
