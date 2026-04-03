@@ -99,14 +99,16 @@ async def get_all_token_status(user: CurrentUser = Depends(get_current_user)):
     result = {}
     for ex, data in tokens.items():
         result[ex] = {
-            "exchange":      ex,
-            "status":        data.get("status","active"),
-            "paper_trading": data.get("paper_trading", True),
-            "testnet":       data.get("testnet", True),
-            "api_key":       _mask(data.get("api_key","")),
-            "has_secret":    bool(data.get("api_secret") or data.get("password")),
-            "has_totp":      bool(data.get("totp_secret")),
+            "exchange":         ex,
+            "status":           data.get("status","active"),
+            "paper_trading":    data.get("paper_trading", True),
+            "testnet":          data.get("testnet", True),
+            "api_key":          _mask(data.get("api_key","")),
+            "has_secret":       bool(data.get("api_secret") or data.get("password")),
+            "has_totp":         bool(data.get("totp_secret")),
             "has_access_token": bool(data.get("access_token")),
+            "last_test_msg":    data.get("last_test_msg",""),
+            "last_tested":      data.get("last_tested",""),
         }
     return {"tokens": result}
 
@@ -151,7 +153,9 @@ async def validate_token(exchange: str,
     if not data:
         raise HTTPException(404, "Token not registered")
     result = await _test_connection(exchange, data)
-    data["status"] = "active" if result["valid"] else "error"
+    data["status"]       = "active" if result["valid"] else "error"
+    data["last_test_msg"]= result.get("message") or result.get("error","")
+    data["last_tested"]  = __import__("datetime").datetime.utcnow().isoformat()
     _save(user.user_id, exchange, data)
     return result
 

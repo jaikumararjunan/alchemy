@@ -206,6 +206,24 @@ function ExchangeCard({id, config, status}) {
           </div>
         )}
 
+        {/* Error hint for common issues */}
+        {conn === 'error' && validateMut.data?.error && (
+          <div className="mb-2 px-3 py-2 bg-red-900/20 border border-red-500/20 rounded-xl">
+            <p className="text-xs text-red-300 leading-relaxed">{validateMut.data.error}</p>
+            {id === 'binance' && validateMut.data?.error?.includes('Futures') && (
+              <div className="mt-2 space-y-1">
+                <p className="text-[10px] text-gray-500 font-medium">How to fix:</p>
+                <ol className="text-[10px] text-gray-400 space-y-0.5 pl-3">
+                  <li>1. Go to binance.com → Profile → API Management</li>
+                  <li>2. Click your API key → Enable "Enable Futures"</li>
+                  <li>3. Click Test again</li>
+                  <li className="text-blue-400">OR: Click Edit → enable Paper/Testnet mode</li>
+                </ol>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className="flex gap-2">
           {conn === 'not_configured' ? (
