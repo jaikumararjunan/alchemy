@@ -54,20 +54,40 @@ class InMemoryRateLimiter:
 _rate_limiter = InMemoryRateLimiter()
 
 # Rate limit configs: (max_requests, window_seconds)
+# Development: very permissive — localhost is trusted
+import os as _os
+_IS_DEV = _os.environ.get("ENV","development").lower() in ("development","dev","local","test")
+
 RATE_LIMITS = {
-    "auth.login":    (5,   900),    # 5 attempts per 15 minutes
-    "auth.signup":   (3,   3600),   # 3 signups per hour per IP
-    "auth.2fa":      (10,  300),    # 10 2FA attempts per 5 minutes
-    "auth.reset":    (3,   3600),   # 3 password resets per hour
-    "api.general":   (100, 60),     # 100 API calls per minute
-    "api.trade":     (30,  60),     # 30 trade calls per minute
+    # Dev: 200 attempts per minute | Prod: 10 per 15 minutes
+    "auth.login":    (200, 60)   if _IS_DEV else (10,  900),
+    "auth.signup":   (50,  60)   if _IS_DEV else (5,   3600),
+    "auth.2fa":      (100, 60)   if _IS_DEV else (10,  300),
+    "auth.reset":    (50,  60)   if _IS_DEV else (3,   3600),
+    "api.general":   (500, 60),
+    "api.trade":     (100, 60),
 }
 
 
+def clear_rate_limit(ip: str = None) -> None:
+    """Clear all rate limit buckets (useful after lockout in dev)."""
+    if ip:
+        keys = [k for k in _rate_limiter._buckets if ip in k]
+        for k in keys:
+            _rate_limiter._buckets.pop(k, None)
+    else:
+        _rate_limiter._buckets.clear()
+
+
 def check_rate_limit(request: Request, limit_key: str) -> None:
-    """Check rate limit. Raises 429 if exceeded."""
+    """Check rate limit. Raises 429 if exceeded. Skips for localhost in dev."""
     ip = request.client.host if request.client else "unknown"
-    max_req, window = RATE_LIMITS.get(limit_key, (100, 60))
+
+    # Always allow localhost in dev mode
+    if _IS_DEV and ip in ("127.0.0.1", "::1", "localhost"):
+        return
+
+    max_req, window = RATE_LIMITS.get(limit_key, (500, 60))
     bucket_key = f"{limit_key}:{ip}"
     allowed, retry_after = _rate_limiter.is_allowed(bucket_key, max_req, window)
     if not allowed:

@@ -340,3 +340,15 @@ async def get_me(user: CurrentUser = Depends(get_current_user)):
 async def password_strength(password: str):
     errors = PasswordPolicy.validate(password)
     return {"score": PasswordPolicy.strength_score(password), "errors": errors, "valid": not errors}
+
+
+@router.post("/rate-limit/reset")
+async def reset_rate_limit(request: Request):
+    """Reset rate limits — dev only."""
+    from alchemy.core.config import get_config
+    if get_config().env not in ("development","dev","local","test"):
+        raise HTTPException(403, "Only available in development mode")
+    from alchemy.auth.middleware import clear_rate_limit
+    ip = request.client.host if request.client else None
+    clear_rate_limit(ip)
+    return {"ok": True, "message": f"Rate limit cleared for {ip}"}
