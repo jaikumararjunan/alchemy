@@ -128,7 +128,7 @@ function Invoke-Status {
     dcd ps
     Write-Host ""
     Write-Host "Resource usage:" -ForegroundColor Cyan
-    docker stats --no-stream --format "table {{.Name}}`t{{.CPUPerc}}`t{{.MemUsage}}"
+    docker stats --no-stream --format "table {{.Name}}`t{{.CPUPerc}}`t{{.MemUsage}}" 2>$null
 }
 
 function Invoke-Health {

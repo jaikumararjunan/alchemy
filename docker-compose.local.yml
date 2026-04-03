@@ -1,17 +1,11 @@
-version: "3.9"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Alchemy Trading Platform — Local Development Docker Compose
-#
-# Uses SQLite (no PostgreSQL needed) + Redis for caching
+# Alchemy Trading Platform - Local Docker Compose
+# No version field (obsolete in Docker Compose v2+)
 #
 # Quick start:
 #   docker compose -f docker-compose.local.yml up --build
 #
-# Then open: http://localhost:8000
-#   API docs: http://localhost:8000/docs
-#   Login:    admin@alchemy.in / Alchemy#Admin!2024
-# ─────────────────────────────────────────────────────────────────────────────
+# Open: http://localhost:8000
+# Login: admin@alchemy.in / Alchemy#Admin!2024
 
 networks:
   alchemy-local:
@@ -19,29 +13,10 @@ networks:
 
 volumes:
   alchemy-data:
-  redis-data:
 
 services:
 
-  # ── Redis (signal cache, rate limiting) ────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    container_name: alchemy-redis
-    restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - redis-data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - alchemy-local
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # ── Alchemy API + Frontend (all-in-one) ────────────────────────────────────
+  # All-in-one: API + React frontend (SQLite, no external DB needed)
   api:
     build:
       context: .
@@ -50,33 +25,28 @@ services:
     image: alchemy:local
     container_name: alchemy-api
     restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
     env_file:
       - .env.local
     environment:
-      # Override with container-internal values
       DATABASE_URL: sqlite+aiosqlite:////app/data/alchemy.db
-      REDIS_URL:    redis://redis:6379/0
+      # Redis disabled for local dev - uses in-memory fallback
+      REDIS_URL: ""
     ports:
       - "8000:8000"
     volumes:
-      # Persist DB, ChromaDB, vault, logs across restarts
       - alchemy-data:/app/data
-      - alchemy-data:/app/.alchemy
-      # Hot-reload Python source in dev (comment out for prod-like build)
       - ./alchemy:/app/alchemy:ro
     networks:
       - alchemy-local
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      start_period: 30s
-      retries: 3
+      interval: 20s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
 
-  # ── Frontend dev server (hot reload — use this during development) ──────────
+  # Optional: React hot-reload dev server
+  # Start with: docker compose -f docker-compose.local.yml --profile dev up
   frontend-dev:
     image: node:20-alpine
     container_name: alchemy-frontend-dev
@@ -92,4 +62,4 @@ services:
     networks:
       - alchemy-local
     profiles:
-      - dev   # Only starts with: docker compose --profile dev up
+      - dev
