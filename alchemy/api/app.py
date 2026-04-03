@@ -126,11 +126,47 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({"event":"subscribed","symbols":msg.get("symbols",[])}))
     except WebSocketDisconnect: manager.disconnect(ws)
 
-# Serve React frontend — try multiple locations (local build vs Docker)
+# Serve React frontend — try multiple locations
 import pathlib
 _base = pathlib.Path(__file__).parent.parent.parent
+_static_mounted = False
 for _candidate in [_base / "static", _base / "frontend" / "dist"]:
     if _candidate.is_dir() and (_candidate / "index.html").exists():
         app.mount("/", StaticFiles(directory=str(_candidate), html=True), name="static")
         log.info("static.mounted", path=str(_candidate))
+        _static_mounted = True
         break
+
+# If no built frontend, add helpful root redirect
+if not _static_mounted:
+    from fastapi.responses import HTMLResponse
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return HTMLResponse("""<!DOCTYPE html>
+<html><head><title>Alchemy API</title>
+<style>body{font-family:monospace;background:#0f172a;color:#e2e8f0;padding:40px;max-width:600px;margin:auto}
+h1{color:#60a5fa}a{color:#34d399}code{background:#1e293b;padding:2px 6px;border-radius:4px}
+.box{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px;margin:16px 0}
+</style></head><body>
+<h1>🔮 Alchemy Trading Platform</h1>
+<p>API is running. React frontend not built yet.</p>
+<div class="box">
+<b>Option 1 — Run frontend dev server (recommended):</b><br><br>
+<code>cd frontend</code><br>
+<code>npm install</code><br>
+<code>npm run dev</code><br><br>
+Then open: <a href="http://localhost:3000">http://localhost:3000</a>
+</div>
+<div class="box">
+<b>Option 2 — Build frontend once:</b><br><br>
+<code>cd frontend && npm install && npm run build</code><br>
+<code>cd .. && uvicorn alchemy.api.app:app --reload --port 8000</code><br><br>
+Then open: <a href="http://localhost:8000">http://localhost:8000</a>
+</div>
+<div class="box">
+<b>API endpoints available now:</b><br><br>
+<a href="/docs">📖 Swagger UI (/docs)</a><br>
+<a href="/redoc">📚 ReDoc (/redoc)</a><br>
+<a href="/health">💚 Health (/health)</a>
+</div>
+</body></html>""")
