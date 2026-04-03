@@ -11,7 +11,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 import structlog
 
 from alchemy.strategy.base import AlchemyStrategyBase, StrategyParams

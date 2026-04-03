@@ -13,7 +13,14 @@ import io
 from pathlib import Path
 from typing import Optional
 
-import pandas as pd
+try:
+    import pandas as pd
+    _PANDAS_OK = True
+except ImportError:
+    _PANDAS_OK = False
+    import structlog
+    structlog.get_logger(__name__).warning("portfolio.pandas_missing",
+        hint="pip install pandas numpy")
 import structlog
 
 log = structlog.get_logger(__name__)

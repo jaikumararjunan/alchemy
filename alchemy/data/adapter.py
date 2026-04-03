@@ -14,7 +14,10 @@ import json
 from datetime import date, datetime
 from typing import Optional
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 import structlog
 
 log = structlog.get_logger(__name__)

@@ -1,5 +1,7 @@
-# Alchemy Platform — Docker Requirements
-# Trimmed for local Docker — fast install, no optional heavy deps
+# Alchemy Platform — Local Requirements
+# Tested: Python 3.11 / 3.12 (use these — 3.13/3.14 have no wheels for numpy/scipy yet)
+#
+# Install: pip install -r requirements.docker.txt
 
 # ── Web framework ─────────────────────────────────────────────────────────────
 fastapi==0.115.0
@@ -21,30 +23,22 @@ cryptography==42.0.5
 pydantic[email]==2.7.1
 pydantic-settings==2.2.1
 
-# ── AI / LLM (lightweight) ───────────────────────────────────────────────────
-langgraph==0.1.19
+# ── AI / LLM (lightweight — no compiler needed) ───────────────────────────────
 langchain-core==0.2.7
+langgraph==0.1.19
 litellm==1.40.0
 
 # ── Notifications ─────────────────────────────────────────────────────────────
-httpx==0.27.0
-
-# ── Market Intelligence ───────────────────────────────────────────────────────
-# chromadb installed separately (large binary)
-# yt-dlp installed separately
-
-# ── Quant Analytics ──────────────────────────────────────────────────────────
-arch==6.3.0
-scipy==1.13.0
-numpy==1.26.4
-pandas==2.2.2
-matplotlib==3.9.0
-
-# ── Execution / Trading ───────────────────────────────────────────────────────
-# Exchange SDKs optional — gateways work in paper mode without them
+# httpx already listed above
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 structlog==24.1.0
 
-# ── Token vault ───────────────────────────────────────────────────────────────
-cryptography==42.0.5
+# ── Quant (OPTIONAL — install separately after core works) ───────────────────
+# These require a C compiler on Python 3.14. Use Python 3.12 or install:
+#   pip install numpy pandas scipy arch matplotlib
+# numpy==1.26.4
+# pandas==2.2.2
+# scipy==1.13.0
+# arch==6.3.0
+# matplotlib==3.9.0
