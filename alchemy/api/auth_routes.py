@@ -84,6 +84,15 @@ def _login_sync(email: str, password: str) -> dict:
         if row["status"] == "locked":
             raise ValueError("account_locked")
 
+        if row["status"] == "pending":
+            # Auto-activate in dev mode; in prod would require email verification
+            from alchemy.core.config import get_config
+            if get_config().env in ("development","dev","local","test"):
+                conn.execute("UPDATE users SET status='active', email_verified=1 WHERE email=?", (row["email"],))
+                conn.commit()
+            else:
+                raise ValueError("account_pending_verification")
+
         # Check password
         stored_hash = row["password_hash"]
         if isinstance(stored_hash, str):
@@ -206,19 +215,36 @@ async def login(req: LoginRequest, request: Request, response: Response):
 
 
 @router.post("/signup", status_code=201)
-async def signup(req: SignupRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def signup(req: SignupRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     check_rate_limit(request, "auth.signup")
     from alchemy.auth.service import AuthError
     try:
         from alchemy.auth.service import AuthService
+        from alchemy.core.config import get_config
         svc  = AuthService()
         user = await svc.signup(db, email=req.email, username=req.username,
                                 full_name=req.full_name, password=req.password)
+        # Auto-activate in dev mode (no email verification required)
+        cfg = get_config()
+        if cfg.env in ("development", "dev", "local", "test"):
+            user.status         = "active"
+            user.email_verified = True
+            log.info("auth.auto_activated", email=req.email, env=cfg.env)
         await db.commit()
-        return {"message": "Account created.", "user": user.safe_dict()}
+        # Auto-login after signup
+        tokens = await asyncio.get_event_loop().run_in_executor(
+            None, _create_tokens_sync, str(user.id), user.email, user.role
+        )
+        _set_refresh_cookie(response, tokens["refresh_token"])
+        return {
+            "message":      "Account created and signed in.",
+            "access_token": tokens["access_token"],
+            "user":         user.safe_dict(),
+        }
     except AuthError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
+        log.error("auth.signup_failed", error=str(e))
         raise HTTPException(500, f"Signup failed: {e}")
 
 

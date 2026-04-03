@@ -96,12 +96,18 @@ export default function LoginPage() {
         navigate('/dashboard')
       }
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Login failed'
-      setError(msg)
-      setAttempts(a => a + 1)
-      if (attempts >= 3) {
-        toast.error('Multiple failed attempts detected. Your account may be temporarily locked.')
+      const raw = err.response?.data?.detail || err.message || 'Login failed'
+      // Make error messages more user-friendly
+      const friendly = {
+        'invalid_credentials':           'Incorrect email or password.',
+        'account_banned':                'This account has been banned. Contact support.',
+        'account_locked':                'Account temporarily locked. Try again in 15 minutes.',
+        'account_pending_verification':  'Account pending — contact admin to activate your account.',
+        'No refresh token':              null,   // silent
       }
+      const msg = friendly[raw] ?? raw
+      if (msg) setError(msg)
+      setAttempts(a => a + 1)
     } finally {
       setLoading(false)
     }
