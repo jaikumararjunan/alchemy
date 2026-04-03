@@ -220,45 +220,97 @@ async def validate_all_tokens(user: CurrentUser = Depends(get_current_user)):
 
 
 async def _test_connection(exchange: str, data: dict) -> dict:
-    """Test live connection to exchange using stored credentials."""
-    import asyncio
-
-    if data.get("paper_trading"):
-        return {"valid": True, "exchange": exchange,
-                "message": "Paper mode — no live connection needed",
-                "mode": "paper"}
+    """
+    Test exchange connectivity.
+    Paper/testnet mode  → hit PUBLIC endpoints only (no auth, no signature)
+    Live mode           → hit AUTHENTICATED endpoints using stored key/secret
+    """
+    paper = data.get("paper_trading", True)
+    testnet = data.get("testnet", True)
+    mode = "paper" if paper else "live"
 
     try:
         if exchange == "delta":
-            from alchemy.execution.crypto.delta_gateway import DeltaGateway
-            gw = DeltaGateway(api_key=data["api_key"], api_secret=data["api_secret"],
-                              testnet_mode=data.get("testnet",True), paper_trading=False)
-            ticker = gw.get_ticker("BTCUSD")
-            return {"valid": True, "exchange": "delta",
-                    "btc_price": ticker.get("mark_price"), "mode": "live"}
+            if paper:
+                # Public tickers endpoint — no auth required
+                url = "https://testnet-api.delta.exchange" if testnet else "https://api.delta.exchange"
+                import httpx
+                r = httpx.get(f"{url}/v2/tickers", timeout=8)
+                tickers = r.json().get("result") or []
+                btc = next((t for t in tickers if "BTC" in t.get("symbol","") and "USDT" in t.get("symbol","")), None)
+                price = btc.get("mark_price", "unknown") if btc else "API reachable"
+                return {"valid": True, "exchange": "delta", "mode": mode,
+                        "message": f"Delta Exchange API reachable — BTC: ${float(price):,.2f}" if price != "API reachable" else "Delta Exchange API reachable",
+                        "testnet": testnet}
+            else:
+                from alchemy.execution.crypto.delta_gateway import DeltaGateway
+                gw = DeltaGateway(api_key=data["api_key"], api_secret=data.get("api_secret",""),
+                                  testnet_mode=testnet, paper_trading=False)
+                bal = gw.get_wallet_balance()
+                return {"valid": True, "exchange": "delta", "mode": mode,
+                        "message": "Authenticated OK", "balance": bal}
 
         elif exchange == "binance":
-            from alchemy.execution.crypto.binance_gateway import BinanceGateway
-            gw = BinanceGateway(api_key=data["api_key"], api_secret=data["api_secret"],
-                                market=data.get("market_type","futures_usdm"),
-                                paper_trading=False, testnet=data.get("testnet",True))
-            bal = gw.get_balance()
-            return {"valid": True, "exchange": "binance", "balance": bal, "mode": "live"}
+            if paper:
+                # Public ticker — no API key needed
+                import httpx
+                base = "https://testnet.binancefuture.com" if testnet else "https://fapi.binance.com"
+                r = httpx.get(f"{base}/fapi/v1/ticker/price?symbol=BTCUSDT", timeout=8)
+                price = r.json().get("price", "unknown")
+                return {"valid": True, "exchange": "binance", "mode": mode,
+                        "message": f"Binance public API reachable — BTC price: ${float(price):,.2f}",
+                        "testnet": testnet}
+            else:
+                # Live: authenticate and check account info
+                import httpx, hmac, hashlib, time
+                api_key = data.get("api_key","")
+                api_secret = data.get("api_secret","")
+                base = "https://testnet.binancefuture.com" if testnet else "https://fapi.binance.com"
+                ts = int(time.time() * 1000)
+                qs = f"timestamp={ts}"
+                sig = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+                r = httpx.get(f"{base}/fapi/v2/account?{qs}&signature={sig}",
+                              headers={"X-MBX-APIKEY": api_key}, timeout=8)
+                if r.status_code == 200:
+                    d = r.json()
+                    bal = d.get("totalWalletBalance","?")
+                    return {"valid": True, "exchange": "binance", "mode": mode,
+                            "message": f"Authenticated OK — Wallet balance: {bal} USDT"}
+                else:
+                    return {"valid": False, "exchange": "binance", "mode": mode,
+                            "error": f"Binance API error {r.status_code}: {r.text[:120]}"}
 
         elif exchange == "angel":
-            return {"valid": True, "exchange": "angel",
-                    "message": "Angel credentials saved — login via TOTP on next session",
-                    "mode": "live"}
+            # Angel always requires TOTP — just validate credentials are saved
+            required = ["api_key", "client_id", "password"]
+            missing = [k for k in required if not data.get(k)]
+            if missing:
+                return {"valid": False, "exchange": "angel",
+                        "error": f"Missing required fields: {', '.join(missing)}"}
+            return {"valid": True, "exchange": "angel", "mode": mode,
+                    "message": "Credentials saved. SmartAPI TOTP login happens at trading time."}
 
         elif exchange == "kite":
-            if not data.get("access_token"):
+            if not data.get("api_key") or not data.get("api_secret"):
                 return {"valid": False, "exchange": "kite",
-                        "error": "No access token — please complete daily Kite login",
-                        "mode": "live"}
-            return {"valid": True, "exchange": "kite", "mode": "live"}
+                        "error": "API Key and Secret are required"}
+            if not data.get("access_token"):
+                return {"valid": True, "exchange": "kite", "mode": mode,
+                        "message": "Credentials saved. Kite requires daily browser login for access token.",
+                        "warning": "No access token yet — complete Kite OAuth login"}
+            return {"valid": True, "exchange": "kite", "mode": mode,
+                    "message": "Kite credentials and access token present"}
 
     except Exception as e:
-        return {"valid": False, "exchange": exchange, "error": str(e)}
+        err = str(e)
+        if "401" in err or "403" in err:
+            hint = " — Check your API key/secret are correct and have Futures trading permission"
+        elif "timeout" in err.lower() or "connect" in err.lower():
+            hint = " — Network timeout. Check your internet connection"
+        else:
+            hint = ""
+        return {"valid": False, "exchange": exchange, "mode": mode,
+                "error": f"{err[:200]}{hint}"}
 
     return {"valid": False, "error": "Unknown exchange"}
 
