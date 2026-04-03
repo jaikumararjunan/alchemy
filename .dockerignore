@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Data / secrets
+data/
+*.db
+.env
+.env.local
+.env.production
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Dev tools
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docs (not needed in image)
+docs/
+deploy/DEPLOYMENT_GUIDE.md
+
+# Test files
+tests/

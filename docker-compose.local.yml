@@ -1,0 +1,95 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Alchemy Trading Platform — Local Development Docker Compose
+#
+# Uses SQLite (no PostgreSQL needed) + Redis for caching
+#
+# Quick start:
+#   docker compose -f docker-compose.local.yml up --build
+#
+# Then open: http://localhost:8000
+#   API docs: http://localhost:8000/docs
+#   Login:    admin@alchemy.in / Alchemy#Admin!2024
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  alchemy-local:
+    driver: bridge
+
+volumes:
+  alchemy-data:
+  redis-data:
+
+services:
+
+  # ── Redis (signal cache, rate limiting) ────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: alchemy-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - alchemy-local
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Alchemy API + Frontend (all-in-one) ────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    image: alchemy:local
+    container_name: alchemy-api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.local
+    environment:
+      # Override with container-internal values
+      DATABASE_URL: sqlite+aiosqlite:////app/data/alchemy.db
+      REDIS_URL:    redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist DB, ChromaDB, vault, logs across restarts
+      - alchemy-data:/app/data
+      - alchemy-data:/app/.alchemy
+      # Hot-reload Python source in dev (comment out for prod-like build)
+      - ./alchemy:/app/alchemy:ro
+    networks:
+      - alchemy-local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # ── Frontend dev server (hot reload — use this during development) ──────────
+  frontend-dev:
+    image: node:20-alpine
+    container_name: alchemy-frontend-dev
+    working_dir: /app
+    command: sh -c "npm install --silent && npm run dev -- --host 0.0.0.0"
+    volumes:
+      - ./frontend:/app:delegated
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    networks:
+      - alchemy-local
+    profiles:
+      - dev   # Only starts with: docker compose --profile dev up

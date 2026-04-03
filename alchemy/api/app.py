@@ -126,6 +126,11 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({"event":"subscribed","symbols":msg.get("symbols",[])}))
     except WebSocketDisconnect: manager.disconnect(ws)
 
-static_dir = os.path.join(os.path.dirname(__file__), "../../static")
-if os.path.isdir(static_dir):
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+# Serve React frontend — try multiple locations (local build vs Docker)
+import pathlib
+_base = pathlib.Path(__file__).parent.parent.parent
+for _candidate in [_base / "static", _base / "frontend" / "dist"]:
+    if _candidate.is_dir() and (_candidate / "index.html").exists():
+        app.mount("/", StaticFiles(directory=str(_candidate), html=True), name="static")
+        log.info("static.mounted", path=str(_candidate))
+        break

@@ -57,3 +57,6 @@ logs/
 *.db
 data/
 .env
+
+!.env.local
+!.env.example
