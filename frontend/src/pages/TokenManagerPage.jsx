@@ -1,257 +1,370 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
-import { ShieldCheck, ShieldAlert, RefreshCw, Trash2, Plus, Eye, EyeOff, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
+import {
+  Key, Eye, EyeOff, CheckCircle, XCircle, RefreshCw,
+  Trash2, Plus, AlertTriangle, ExternalLink, Shield,
+  Wifi, WifiOff, ChevronDown, ChevronUp, Info
+} from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
-const api = axios.create({ baseURL: '/api' })
-const getStatus    = () => api.get('/tokens/status').then(r => r.data)
-const registerToken = (data) => api.post('/tokens/register', data).then(r => r.data)
-const deregister   = (ex) => api.delete(`/tokens/${ex}`).then(r => r.data)
-const validateToken = (ex) => api.post(`/tokens/${ex}/validate`).then(r => r.data)
-const refreshToken = (ex) => api.post(`/tokens/${ex}/refresh`).then(r => r.data)
-const getHistory   = () => api.get('/tokens/history').then(r => r.data)
-
-const STATUS_META = {
-  active:     { color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30', Icon: CheckCircle,  label: 'Active'     },
-  expiring:   { color: 'text-amber-400',   bg: 'bg-amber-500/10 border-amber-500/30',     Icon: Clock,        label: 'Expiring'   },
-  expired:    { color: 'text-red-400',     bg: 'bg-red-500/10 border-red-500/30',         Icon: XCircle,      label: 'Expired'    },
-  invalid:    { color: 'text-red-400',     bg: 'bg-red-500/10 border-red-500/30',         Icon: XCircle,      label: 'Invalid'    },
-  missing:    { color: 'text-gray-500',    bg: 'bg-gray-800/50 border-gray-700',          Icon: AlertCircle,  label: 'Not Set'    },
-  refreshing: { color: 'text-blue-400',    bg: 'bg-blue-500/10 border-blue-500/30',       Icon: RefreshCw,    label: 'Refreshing' },
+const EXCHANGES = {
+  delta: {
+    name: 'Delta Exchange', logo: 'Delta', color: '#F7931A',
+    bg: 'bg-orange-900/20 border-orange-500/30',
+    description: 'Crypto derivatives — BTC, ETH futures and options',
+    paper_mode: true, docs: 'https://docs.delta.exchange',
+    fields: [
+      { key: 'api_key',    label: 'API Key',    secret: false, placeholder: 'Your Delta API Key' },
+      { key: 'api_secret', label: 'API Secret', secret: true,  placeholder: 'Your Delta API Secret' },
+    ],
+    setup_steps: [
+      'Login at delta.exchange → Account → API Keys',
+      'Click "Create New API Key"',
+      'Enable permissions: Read + Trade',
+      'Copy the API Key and API Secret here',
+    ],
+  },
+  binance: {
+    name: 'Binance', logo: 'BNB', color: '#F3BA2F',
+    bg: 'bg-yellow-900/20 border-yellow-500/30',
+    description: 'Crypto spot and futures — USDT perpetuals',
+    paper_mode: true, docs: 'https://binance-docs.github.io/apidocs',
+    fields: [
+      { key: 'api_key',    label: 'API Key',    secret: false, placeholder: 'Binance API Key' },
+      { key: 'api_secret', label: 'API Secret', secret: true,  placeholder: 'Binance Secret Key' },
+    ],
+    setup_steps: [
+      'Login at binance.com → Profile → API Management',
+      'Click "Create API" and give it a name',
+      'Enable: Reading + Futures trading',
+      'Optionally whitelist your IP address',
+      'Copy API Key and Secret Key here',
+    ],
+  },
+  angel: {
+    name: 'Angel Broking', logo: 'Angel', color: '#E53935',
+    bg: 'bg-red-900/20 border-red-500/30',
+    description: 'NSE / BSE equity, F&O, commodity — SmartAPI',
+    paper_mode: true, docs: 'https://smartapi.angelbroking.com/docs',
+    fields: [
+      { key: 'api_key',     label: 'SmartAPI Key', secret: false, placeholder: 'Your SmartAPI application key' },
+      { key: 'client_id',   label: 'Client ID',    secret: false, placeholder: 'Angel One Client ID (e.g. A123456)' },
+      { key: 'password',    label: 'Trading PIN',  secret: true,  placeholder: '4-digit trading PIN' },
+      { key: 'totp_secret', label: 'TOTP Secret',  secret: true,
+        placeholder: 'Base32 TOTP secret (from authenticator app setup)',
+        help: 'Required for Angel SmartAPI authentication' },
+    ],
+    setup_steps: [
+      'Login at smartapi.angelbroking.com and create an App',
+      'Copy your SmartAPI Key from the app dashboard',
+      'Client ID = your Angel One login ID (A123456)',
+      'Trading PIN = your 4-digit Angel One trading PIN',
+      'For TOTP: in Angel One app go to Profile → TOTP → Enable → copy the secret key shown',
+    ],
+  },
+  kite: {
+    name: 'Zerodha Kite', logo: 'Kite', color: '#387ED1',
+    bg: 'bg-blue-900/20 border-blue-500/30',
+    description: 'NSE / BSE equity, F&O — Kite Connect API',
+    paper_mode: false, docs: 'https://kite.trade/docs/connect/v3',
+    fields: [
+      { key: 'api_key',    label: 'API Key',    secret: false, placeholder: 'Kite Connect API Key' },
+      { key: 'api_secret', label: 'API Secret', secret: true,  placeholder: 'Kite Connect API Secret' },
+    ],
+    setup_steps: [
+      'Go to developers.kite.trade and create an app',
+      'Set Redirect URL: http://localhost:8000/tokens/kite/callback',
+      'Note: Kite requires daily login via browser to refresh the access token',
+      'Copy API Key and API Secret here',
+    ],
+  },
 }
 
-const EXCHANGE_META = {
-  kite:    { label: 'Zerodha Kite',    color: '#4F86C6', flag: '🇮🇳', market: 'NSE/BSE India', logo: '🔷' },
-  delta:   { label: 'Delta Exchange',  color: '#1D4ED8', flag: '🌐', market: 'Crypto Derivatives', logo: '♦️' },
-  binance: { label: 'Binance',         color: '#F59E0B', flag: '🌐', market: 'Spot + Futures', logo: '🔶' },
-  ib:      { label: 'Interactive Brokers', color: '#C62828', flag: '🇺🇸', market: 'US Equities', logo: '📊' },
-}
-
-function TokenCard({ exchange, info }) {
-  const qc = useQueryClient()
-  const meta   = STATUS_META[info.status] || STATUS_META.missing
-  const exMeta = EXCHANGE_META[exchange] || {}
-  const { Icon } = meta
-
-  const validateMut = useMutation({ mutationFn: () => validateToken(exchange),
-    onSuccess: () => { toast.success(`Validating ${exchange}…`); setTimeout(() => qc.invalidateQueries(['tokens']), 2000) } })
-  const refreshMut  = useMutation({ mutationFn: () => refreshToken(exchange),
-    onSuccess: (d) => { toast(d.ok ? `✅ ${exchange} refreshed` : `⚠️ ${exchange} needs manual refresh`); qc.invalidateQueries(['tokens']) } })
-  const deleteMut   = useMutation({ mutationFn: () => deregister(exchange),
-    onSuccess: () => { toast.success(`${exchange} token removed`); qc.invalidateQueries(['tokens']) } })
-
+function StatusBadge({ status }) {
+  const map = {
+    active:         { icon: <Wifi size={11}/>,    label: 'Live',       cls: 'text-emerald-400 bg-emerald-900/30 border-emerald-500/30' },
+    paper:          { icon: <Shield size={11}/>,  label: 'Paper',      cls: 'text-blue-400 bg-blue-900/30 border-blue-500/30' },
+    expired:        { icon: <WifiOff size={11}/>, label: 'Expired',    cls: 'text-amber-400 bg-amber-900/30 border-amber-500/30' },
+    error:          { icon: <XCircle size={11}/>, label: 'Error',      cls: 'text-red-400 bg-red-900/30 border-red-500/30' },
+    not_configured: { icon: <WifiOff size={11}/>, label: 'Not Set',    cls: 'text-gray-500 bg-gray-800 border-gray-700' },
+  }
+  const s = map[status] || map.not_configured
   return (
-    <div className={clsx('rounded-xl border p-4 space-y-3 transition-all', meta.bg)}>
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{exMeta.logo}</span>
-          <div>
-            <div className="font-semibold text-white text-sm">{exMeta.label || exchange}</div>
-            <div className="text-xs text-gray-500">{exMeta.market} {exMeta.flag}</div>
-          </div>
-        </div>
-        <div className={clsx('flex items-center gap-1.5 text-xs font-medium', meta.color)}>
-          <Icon size={13} className={info.status === 'refreshing' ? 'animate-spin' : ''} />
-          {meta.label}
-        </div>
-      </div>
-
-      {info.api_key && (
-        <div className="text-xs font-mono text-gray-400 bg-gray-900/60 rounded px-2 py-1">
-          API Key: {info.api_key}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        {info.use_count !== undefined && (
-          <div><span className="text-gray-500">Uses: </span><span className="text-white">{info.use_count}</span></div>
-        )}
-        {info.expires_at && (
-          <div><span className="text-gray-500">Expires: </span>
-            <span className={info.status === 'expiring' ? 'text-amber-400' : 'text-gray-300'}>
-              {info.seconds_to_expiry ? `${Math.round(info.seconds_to_expiry / 3600)}h` : 'N/A'}
-            </span>
-          </div>
-        )}
-        {info.paper_mode !== undefined && (
-          <div><span className="text-gray-500">Mode: </span>
-            <span className={info.paper_mode ? 'text-amber-400' : 'text-emerald-400'}>
-              {info.paper_mode ? 'Paper' : 'Live'}
-            </span>
-          </div>
-        )}
-        {info.last_error && (
-          <div className="col-span-2 text-red-400 truncate">Error: {info.last_error}</div>
-        )}
-      </div>
-
-      <div className="flex gap-1.5 pt-1">
-        <button onClick={() => validateMut.mutate()} disabled={validateMut.isPending}
-          className="flex-1 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-1">
-          <ShieldCheck size={11} /> Validate
-        </button>
-        <button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}
-          className="flex-1 py-1.5 text-xs bg-blue-800/50 hover:bg-blue-700/50 text-blue-300 rounded-lg transition-colors flex items-center justify-center gap-1">
-          <RefreshCw size={11} className={refreshMut.isPending ? 'animate-spin' : ''} /> Refresh
-        </button>
-        {info.status !== 'missing' && (
-          <button onClick={() => deleteMut.mutate()}
-            className="px-2 py-1.5 text-xs bg-red-900/30 hover:bg-red-800/50 text-red-400 rounded-lg transition-colors">
-            <Trash2 size={11} />
-          </button>
-        )}
-      </div>
-    </div>
+    <span className={clsx('flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border', s.cls)}>
+      {s.icon} {s.label}
+    </span>
   )
 }
 
-function RegisterForm({ onSuccess }) {
+function ExchangeCard({ id, config, status }) {
+  const { apiClient } = useAuth()
   const qc = useQueryClient()
-  const [form, setForm] = useState({
-    exchange: 'delta', api_key: '', api_secret: '', paper_mode: true,
-    access_token: '', testnet: true, market_type: 'futures_usdm'
-  })
-  const [showSecret, setShowSecret] = useState(false)
+  const api = apiClient()
 
-  const mut = useMutation({
-    mutationFn: () => registerToken(form),
-    onSuccess: () => { toast.success(`${form.exchange} token registered!`); qc.invalidateQueries(['tokens']); onSuccess?.() },
-    onError: (e) => toast.error(`Registration failed: ${e.message}`)
+  const [open,        setOpen]        = useState(false)
+  const [showSteps,   setShowSteps]   = useState(false)
+  const [form,        setForm]        = useState({})
+  const [showSecrets, setShowSecrets] = useState({})
+  const [paperMode,   setPaperMode]   = useState(true)
+
+  const conn = status?.status || 'not_configured'
+
+  const registerMut = useMutation({
+    mutationFn: (payload) => api.post('/tokens/register', payload).then(r => r.data),
+    onSuccess: () => {
+      toast.success(`${config.name} connected successfully!`)
+      qc.invalidateQueries(['token-status'])
+      setOpen(false); setForm({})
+    },
+    onError: (e) => toast.error(e.response?.data?.detail || `Failed to connect ${config.name}`),
   })
+
+  const validateMut = useMutation({
+    mutationFn: () => api.post(`/tokens/${id}/validate`).then(r => r.data),
+    onSuccess: (d) => {
+      if (d.valid) toast.success(`${config.name}: Connection verified!`)
+      else toast.error(`${config.name}: ${d.error || 'Validation failed'}`)
+      qc.invalidateQueries(['token-status'])
+    },
+    onError: () => toast.error(`${config.name}: Validation request failed`),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete(`/tokens/${id}`).then(r => r.data),
+    onSuccess: () => { toast.success(`${config.name} disconnected`); qc.invalidateQueries(['token-status']) },
+  })
+
+  const handleConnect = () => {
+    const missing = config.fields.filter(f => !form[f.key]?.trim())
+    if (missing.length) { toast.error(`Required: ${missing.map(f=>f.label).join(', ')}`); return }
+    registerMut.mutate({ exchange: id, paper_trading: paperMode, testnet: paperMode, ...form })
+  }
 
   return (
-    <div className="card space-y-4">
-      <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-        <Plus size={14} className="text-blue-400" /> Register Exchange Token
-      </h3>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-gray-400 mb-1 block">Exchange</label>
-          <select value={form.exchange} onChange={e => setForm(f => ({...f, exchange: e.target.value}))} className="input-field">
-            {Object.entries(EXCHANGE_META).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-gray-400 mb-1 block">Mode</label>
-          <div className="flex gap-1">
-            {[['Paper', true], ['Live', false]].map(([lbl, val]) => (
-              <button key={lbl} type="button" onClick={() => setForm(f => ({...f, paper_mode: val}))}
-                className={clsx('flex-1 py-2 text-xs font-medium rounded-lg transition-colors',
-                  form.paper_mode === val
-                    ? (val ? 'bg-amber-600/30 text-amber-400 border border-amber-500/40' : 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/40')
-                    : 'bg-gray-800 text-gray-500')}>
-                {lbl}
-              </button>
-            ))}
+    <div className={clsx('rounded-2xl border', config.bg)}>
+      <div className="p-5">
+        {/* Header row */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="px-2.5 py-1 rounded-lg text-xs font-bold"
+                 style={{ background: config.color + '22', color: config.color }}>
+              {config.logo}
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">{config.name}</h3>
+              <p className="text-xs text-gray-500">{config.description}</p>
+            </div>
           </div>
+          <StatusBadge status={conn} />
         </div>
-        <div>
-          <label className="text-xs text-gray-400 mb-1 block">API Key</label>
-          <input value={form.api_key} onChange={e => setForm(f => ({...f, api_key: e.target.value}))}
-            className="input-field font-mono text-xs" placeholder="API Key" />
+
+        {/* Buttons */}
+        <div className="flex gap-2">
+          {conn === 'not_configured' ? (
+            <button onClick={() => setOpen(o=>!o)}
+              className="flex-1 py-2 rounded-xl text-xs font-medium bg-white/10 hover:bg-white/15 text-white transition-colors flex items-center justify-center gap-1.5">
+              <Plus size={12}/> Connect
+            </button>
+          ) : (
+            <>
+              <button onClick={() => validateMut.mutate()} disabled={validateMut.isPending}
+                className="flex-1 py-2 rounded-xl text-xs font-medium bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 transition-colors flex items-center justify-center gap-1.5">
+                {validateMut.isPending ? <RefreshCw size={11} className="animate-spin"/> : <CheckCircle size={11}/>}
+                Test
+              </button>
+              <button onClick={() => setOpen(o=>!o)}
+                className="px-3 py-2 rounded-xl text-xs bg-white/10 hover:bg-white/15 text-gray-300 transition-colors">
+                Edit
+              </button>
+              <button onClick={() => confirm(`Disconnect ${config.name}?`) && deleteMut.mutate()}
+                className="px-3 py-2 rounded-xl text-xs bg-red-900/20 hover:bg-red-900/40 text-red-400 transition-colors">
+                <Trash2 size={11}/>
+              </button>
+            </>
+          )}
+          <a href={config.docs} target="_blank" rel="noopener noreferrer"
+            className="px-3 py-2 rounded-xl text-xs bg-white/5 hover:bg-white/10 text-gray-600 transition-colors">
+            <ExternalLink size={11}/>
+          </a>
         </div>
-        <div>
-          <label className="text-xs text-gray-400 mb-1 block">API Secret</label>
-          <div className="relative">
-            <input type={showSecret ? 'text' : 'password'} value={form.api_secret}
-              onChange={e => setForm(f => ({...f, api_secret: e.target.value}))}
-              className="input-field font-mono text-xs pr-8" placeholder="API Secret" />
-            <button onClick={() => setShowSecret(s => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-              {showSecret ? <EyeOff size={13}/> : <Eye size={13}/>}
+      </div>
+
+      {/* Expand: form */}
+      {open && (
+        <div className="border-t border-white/10 p-5 space-y-4">
+
+          {/* Setup steps */}
+          <div>
+            <button onClick={() => setShowSteps(s=>!s)}
+              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300">
+              <Info size={11}/>
+              {showSteps ? 'Hide' : 'Show'} setup guide
+              {showSteps ? <ChevronUp size={11}/> : <ChevronDown size={11}/>}
+            </button>
+            {showSteps && (
+              <div className="mt-2 bg-gray-900/60 rounded-xl p-3">
+                <p className="text-xs font-medium text-gray-300 mb-2">Setup steps:</p>
+                <ol className="space-y-1.5 list-decimal list-inside">
+                  {config.setup_steps.map((s,i) => (
+                    <li key={i} className="text-xs text-gray-400">{s}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
+
+          {/* Paper/Live toggle */}
+          {config.paper_mode && (
+            <div className="flex items-center justify-between p-3 rounded-xl bg-black/20">
+              <div>
+                <p className="text-xs font-medium text-white flex items-center gap-1.5">
+                  <Shield size={11} className="text-blue-400"/> Paper / Testnet Mode
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">No real money — safe for testing</p>
+              </div>
+              <button onClick={() => setPaperMode(p=>!p)}
+                className={clsx('w-10 h-5 rounded-full relative transition-colors flex-shrink-0',
+                  paperMode ? 'bg-blue-600' : 'bg-gray-700')}>
+                <span className={clsx('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform',
+                  paperMode ? 'translate-x-5' : '')}/>
+              </button>
+            </div>
+          )}
+
+          {!paperMode && (
+            <div className="flex gap-2 p-3 bg-amber-900/20 border border-amber-500/30 rounded-xl">
+              <AlertTriangle size={13} className="text-amber-400 flex-shrink-0 mt-0.5"/>
+              <p className="text-xs text-amber-300">
+                <strong>Live mode enabled.</strong> Real orders will be placed with real money. Proceed with caution.
+              </p>
+            </div>
+          )}
+
+          {/* Credential fields */}
+          {config.fields.map(field => (
+            <div key={field.key}>
+              <label className="block text-xs text-gray-400 mb-1">
+                {field.label} <span className="text-red-400">*</span>
+                {field.help && <span className="ml-2 text-gray-600 normal-case">{field.help}</span>}
+              </label>
+              <div className="relative">
+                <input
+                  type={field.secret && !showSecrets[field.key] ? 'password' : 'text'}
+                  value={form[field.key] || ''}
+                  onChange={e => setForm(f => ({...f, [field.key]: e.target.value}))}
+                  placeholder={field.placeholder}
+                  autoComplete="off" spellCheck={false}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none font-mono pr-8"
+                />
+                {field.secret && (
+                  <button type="button"
+                    onClick={() => setShowSecrets(s=>({...s,[field.key]:!s[field.key]}))}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                    {showSecrets[field.key] ? <EyeOff size={12}/> : <Eye size={12}/>}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Security note */}
+          <div className="flex gap-2 p-3 bg-gray-900/50 rounded-xl">
+            <Shield size={12} className="text-emerald-500 flex-shrink-0 mt-0.5"/>
+            <p className="text-xs text-gray-500">
+              Keys are encrypted with AES-256 and stored in your local vault. Never sent externally.
+            </p>
+          </div>
+
+          {/* Submit */}
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => { setOpen(false); setForm({}) }}
+              className="flex-1 py-2.5 rounded-xl text-xs text-gray-400 bg-gray-800 hover:bg-gray-700 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleConnect} disabled={registerMut.isPending}
+              className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-white transition-all flex items-center justify-center gap-2 hover:opacity-90"
+              style={{ background: config.color }}>
+              {registerMut.isPending ? <RefreshCw size={12} className="animate-spin"/> : <Key size={12}/>}
+              {registerMut.isPending ? 'Connecting...' : `Connect ${config.name}`}
             </button>
           </div>
         </div>
-        {form.exchange === 'kite' && (
-          <div className="col-span-2">
-            <label className="text-xs text-gray-400 mb-1 block">Access Token (optional — enter after OAuth login)</label>
-            <input value={form.access_token} onChange={e => setForm(f => ({...f, access_token: e.target.value}))}
-              className="input-field font-mono text-xs" placeholder="Daily access token" />
-          </div>
-        )}
-      </div>
-      {!form.paper_mode && (
-        <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-900/20 border border-amber-500/20 rounded-lg px-3 py-2">
-          <ShieldAlert size={12} /> Live mode — real funds will be used. Double-check credentials.
-        </div>
       )}
-      <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.api_key || !form.api_secret}
-        className="btn-primary w-full">
-        {mut.isPending ? <RefreshCw size={13} className="animate-spin inline mr-1" /> : <Plus size={13} className="inline mr-1" />}
-        Register Token
-      </button>
     </div>
   )
 }
 
 export default function TokenManagerPage() {
-  const [showForm, setShowForm] = useState(false)
-  const { data: tokens = {}, isLoading } = useQuery({ queryKey:['tokens'], queryFn: getStatus, refetchInterval: 15000 })
-  const { data: history = [] } = useQuery({ queryKey:['token-history'], queryFn: getHistory, refetchInterval: 30000 })
+  const { apiClient } = useAuth()
+  const api = apiClient()
 
-  const allExchanges = ['kite','delta','binance','ib']
-  const activeCount  = Object.values(tokens).filter(t => t.status === 'active').length
+  const { data, isLoading } = useQuery({
+    queryKey: ['token-status'],
+    queryFn: () => api.get('/tokens/status').then(r => r.data).catch(() => ({ tokens: {} })),
+    refetchInterval: 30000,
+  })
+
+  const tokens = data?.tokens || {}
+  const connected  = Object.values(tokens).filter(t => t?.status === 'active').length
+  const configured = Object.keys(tokens).length
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <ShieldCheck size={20} className="text-blue-400" /> Exchange Token Manager
+            <Key size={20} className="text-blue-400"/> Exchange Connections
           </h1>
-          <p className="text-sm text-gray-400">Manage API credentials for all connected exchanges · AES-256-GCM encrypted vault</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Connect Binance, Delta Exchange, Angel Broking or Zerodha Kite
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-gray-400">
-            <span className="text-emerald-400 font-semibold">{activeCount}</span> / {allExchanges.length} active
+        <div className="flex gap-4 text-center">
+          <div className="card px-4 py-2">
+            <div className="text-lg font-bold text-emerald-400">{connected}</div>
+            <div className="text-xs text-gray-500">Live</div>
           </div>
-          <button onClick={() => setShowForm(f => !f)} className="btn-primary text-xs">
-            <Plus size={13} className="inline mr-1" />{showForm ? 'Cancel' : 'Add Token'}
-          </button>
+          <div className="card px-4 py-2">
+            <div className="text-lg font-bold text-white">{configured}</div>
+            <div className="text-xs text-gray-500">Set up</div>
+          </div>
         </div>
       </div>
 
-      {showForm && <RegisterForm onSuccess={() => setShowForm(false)} />}
+      <div className="flex items-center gap-3 p-4 bg-emerald-900/10 border border-emerald-500/20 rounded-2xl">
+        <Shield size={18} className="text-emerald-400 flex-shrink-0"/>
+        <p className="text-sm text-gray-300">
+          <strong className="text-emerald-400">All credentials encrypted.</strong>{' '}
+          API keys are stored in your local AES-256 vault and never leave your machine.
+          Start with paper/testnet mode to trade safely.
+        </p>
+      </div>
 
-      {/* Token Cards */}
-      {isLoading
-        ? <div className="text-gray-500 text-center py-12 animate-pulse">Loading token status…</div>
-        : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {allExchanges.map(ex => (
-              <TokenCard key={ex} exchange={ex} info={tokens[ex] || { status: 'missing' }} />
-            ))}
-          </div>
-      }
-
-      {/* Refresh History */}
-      {history.length > 0 && (
-        <div className="card">
-          <h2 className="section-title">Refresh History</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead><tr className="text-gray-500 border-b border-gray-800">
-                {['Exchange','Result','Triggered By','Time','New Expiry'].map(h =>
-                  <th key={h} className="pb-2 text-left font-medium pr-4">{h}</th>)}
-              </tr></thead>
-              <tbody>
-                {history.slice(0,10).map((h, i) => (
-                  <tr key={i} className="table-row">
-                    <td className="py-2 pr-4 font-medium text-white capitalize">{h.exchange}</td>
-                    <td className="py-2 pr-4">
-                      {h.success ? <span className="text-emerald-400">✓ Success</span> : <span className="text-red-400">✗ Failed</span>}
-                    </td>
-                    <td className="py-2 pr-4 text-gray-400 capitalize">{h.triggered_by}</td>
-                    <td className="py-2 pr-4 text-gray-400">{new Date(h.timestamp).toLocaleString('en-IN')}</td>
-                    <td className="py-2 text-gray-300">{h.new_expiry ? new Date(h.new_expiry).toLocaleString('en-IN') : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {isLoading ? (
+        <div className="text-center py-16 text-gray-500 animate-pulse">Loading exchange status...</div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Object.entries(EXCHANGES).map(([id, config]) => (
+            <ExchangeCard key={id} id={id} config={config} status={tokens[id]} />
+          ))}
         </div>
       )}
+
+      <div className="card border-dashed border-gray-700/50">
+        <h3 className="text-sm font-semibold text-gray-300 mb-3">Which exchange should I use?</h3>
+        <div className="grid grid-cols-2 gap-4 text-xs text-gray-500">
+          <div>
+            <p className="text-orange-400 font-medium mb-1">Crypto trading</p>
+            <p>Delta Exchange testnet or Binance testnet — free paper trading with real market data. Enable testnet mode in the connection form.</p>
+          </div>
+          <div>
+            <p className="text-red-400 font-medium mb-1">Indian equities</p>
+            <p>Angel Broking SmartAPI (has paper mode) or Zerodha Kite (live account needed). Angel API is free; Kite costs 2000/month.</p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

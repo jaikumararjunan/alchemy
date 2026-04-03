@@ -126,7 +126,12 @@ app.include_router(intelligence_router)
 async def health():
     return {"status":"ok","version":"0.5.1","env":get_config().env}
 
+@app.get("/api/health")
+async def health_api():
+    return {"status":"ok","version":"0.5.1","env":get_config().env}
+
 @app.post("/signal")
+@app.post("/api/signal")
 async def generate_signal(req: SignalRequest, user: CurrentUser = Depends(get_current_user)):
     if not get_config().enable_ai_agents: raise HTTPException(503,"AI agents disabled")
     try:
@@ -139,16 +144,19 @@ async def generate_signal(req: SignalRequest, user: CurrentUser = Depends(get_cu
     except Exception as e: raise HTTPException(500, str(e))
 
 @app.get("/risk/status")
+@app.get("/api/risk/status")
 async def risk_status(user: CurrentUser = Depends(get_current_user)):
     from alchemy.risk.manager import RiskManager; return RiskManager().status()
 
 @app.post("/risk/emergency-stop")
+@app.post("/api/risk/emergency-stop")
 async def emergency_stop(user: CurrentUser = Depends(get_current_user)):
     from alchemy.risk.manager import RiskManager
     rm=RiskManager(); rm.trigger_emergency_stop(f"Manual by {user.email}")
     await manager.broadcast("risk_alert", rm.status()); return {"ok":True}
 
 @app.delete("/risk/emergency-stop")
+@app.delete("/api/risk/emergency-stop")
 async def clear_stop(user: CurrentUser = Depends(get_current_user)):
     from alchemy.risk.manager import RiskManager; RiskManager().reset_emergency_stop(); return {"ok":True}
 
@@ -173,6 +181,7 @@ _base = pathlib.Path(__file__).parent.parent.parent
 _static_mounted = False
 for _candidate in [_base / "static", _base / "frontend" / "dist"]:
     if _candidate.is_dir() and (_candidate / "index.html").exists():
+        # Mount static files — WebSocket routes must be registered BEFORE this
         app.mount("/", StaticFiles(directory=str(_candidate), html=True), name="static")
         log.info("static.mounted", path=str(_candidate))
         _static_mounted = True
