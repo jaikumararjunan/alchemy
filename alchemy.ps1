@@ -51,6 +51,24 @@ function Show-Help {
     Write-Host ""
 }
 
+function Invoke-Install {
+    Write-Host "Installing Python dependencies..." -ForegroundColor Cyan
+    python -m pip install --upgrade pip
+    pip install -r requirements.docker.txt
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ""
+        Write-Host "  Dependencies installed!" -ForegroundColor Green
+        Write-Host "  Now run: .\alchemy.ps1 seed" -ForegroundColor White
+    } else {
+        Write-Host "Install failed. Check output above." -ForegroundColor Red
+    }
+}
+
+function Invoke-Seed {
+    Write-Host "Creating admin user..." -ForegroundColor Cyan
+    python scripts\create_admin.py
+}
+
 function Invoke-Up {
     Write-Host "Building Alchemy (first build takes 3-5 min)..." -ForegroundColor Cyan
     dc up --build -d
@@ -190,6 +208,8 @@ switch ($Command.ToLower()) {
     "health"  { Invoke-Health }
     "backup"  { Invoke-Backup }
     "reset"   { Invoke-Reset }
+    "install" { Invoke-Install }
+    "seed"    { Invoke-Seed }
     "help"    { Show-Help }
     default {
         Write-Host "Unknown command: $Command" -ForegroundColor Red
