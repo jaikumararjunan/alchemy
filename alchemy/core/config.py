@@ -101,7 +101,7 @@ class AlchemyConfig(BaseSettings):
     admin_password: str = "Alchemy#Admin!2024"
 
     # ── Database ──────────────────────────────────────────────────────────────
-    database_url: str = "sqlite+aiosqlite:///./alchemy_dev.db"
+    database_url: str = "sqlite+aiosqlite:///./data/alchemy.db"
     redis_url:    str = ""    # Empty = use in-memory fallback
 
     # ── LLM providers ─────────────────────────────────────────────────────────

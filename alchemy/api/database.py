@@ -17,6 +17,15 @@ from sqlalchemy.pool import NullPool
 
 log = structlog.get_logger(__name__)
 
+# Create data directory if it doesn't exist
+import pathlib
+_db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
+if "sqlite" in _db_url:
+    # Extract path and create directory
+    _db_path = _db_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "").lstrip("/")
+    if _db_path and not _db_path.startswith(":"):
+        pathlib.Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
+
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "sqlite+aiosqlite:///./alchemy_dev.db"  # Dev fallback
