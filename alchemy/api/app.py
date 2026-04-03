@@ -40,15 +40,41 @@ class SignalRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app):
     log.info("alchemy.startup", version="0.5.1")
-    # DB tables
+    # DB tables + seed admin
     try:
-        from alchemy.api.database import create_tables, create_initial_admin
+        from alchemy.api.database import create_tables
+        from alchemy.users.models import User, UserStatus
+        from alchemy.auth.service import AuthService
+        from alchemy.auth.security import hash_password
+        from sqlalchemy import select
+
         await create_tables()
-        admin_email = os.environ.get("ADMIN_EMAIL","admin@alchemy.in")
-        admin_pwd   = os.environ.get("ADMIN_PASSWORD","Alchemy#SuperAdmin!2024")
-        await create_initial_admin(admin_email, admin_pwd)
+        log.info("db.tables_ready")
+
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@alchemy.in")
+        admin_pwd   = os.environ.get("ADMIN_PASSWORD", "Alchemy#Admin!2024")
+
+        from alchemy.api.database import get_session_factory
+        async with get_session_factory()() as db:
+            result  = await db.execute(select(User).where(User.email == admin_email))
+            existing = result.scalar_one_or_none()
+            if existing:
+                # Ensure admin is active with correct role
+                if existing.status != UserStatus.ACTIVE.value:
+                    existing.status = UserStatus.ACTIVE.value
+                    existing.email_verified = True
+                    await db.commit()
+                log.info("db.admin_exists", email=admin_email)
+            else:
+                svc = AuthService()
+                user = await svc.signup(db, email=admin_email, username="superadmin",
+                    full_name="Super Admin", password=admin_pwd, role="super_admin")
+                user.status = UserStatus.ACTIVE.value
+                user.email_verified = True
+                await db.commit()
+                log.info("db.admin_created", email=admin_email)
     except Exception as e:
-        log.warning("db.init_failed", error=str(e))
+        log.warning("db.init_failed", error=str(e), hint="Run: python scripts/create_admin.py")
     # Token auto-refresh
     try:
         from alchemy.tokens.manager import get_token_manager
