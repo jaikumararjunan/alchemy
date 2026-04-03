@@ -99,6 +99,21 @@ app.add_middleware(CORSMiddleware,
     allow_origins=["http://localhost:3000","http://localhost:5173","http://localhost:8000"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+from fastapi import APIRouter
+
+# Mount all routers under /api so the built React frontend works without Vite proxy
+# Routes are available at BOTH /auth/... AND /api/auth/...  (backward compat)
+api_router = APIRouter(prefix="/api")
+api_router.include_router(auth_router)
+api_router.include_router(admin_router)
+api_router.include_router(crypto_router)
+api_router.include_router(token_router)
+api_router.include_router(workflow_router)
+api_router.include_router(notification_router)
+api_router.include_router(intelligence_router)
+app.include_router(api_router)
+
+# Also keep bare routes for API clients and Swagger UI
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(crypto_router)
