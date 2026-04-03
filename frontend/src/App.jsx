@@ -45,6 +45,7 @@ export default function App() {
           <Route path="analytics"  element={<AnalyticsPage />} />
           <Route path="strategy"   element={<StrategyPage />} />
           <Route path="settings"   element={<SettingsPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
 
           {/* Admin-only routes */}
           <Route path="admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />

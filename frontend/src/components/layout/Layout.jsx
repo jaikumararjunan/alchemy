@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import {
   LayoutDashboard, Briefcase, Zap, Bitcoin, Key, GitBranch,
   ShieldAlert, BarChart3, BookOpen, Settings, Radio, AlertTriangle,
-  Shield, LogOut, User
+  Shield, LogOut, User, Bell
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -19,7 +19,8 @@ const NAV = [
   { to:'/risk',       icon:ShieldAlert,    label:'Risk',       perm: null },
   { to:'/analytics',  icon:BarChart3,      label:'Analytics',  perm: null },
   { to:'/strategy',   icon:BookOpen,       label:'Strategy',   perm: null },
-  { to:'/settings',   icon:Settings,       label:'Settings',   perm: null },
+  { to:'/settings',       icon:Settings,  label:'Settings',       perm: null },
+  { to:'/notifications',  icon:Bell,      label:'Notifications',  perm: null },
 ]
 
 const ROLE_COLOR = {

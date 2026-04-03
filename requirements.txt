@@ -82,3 +82,6 @@ asyncpg>=0.29.0
 sqlalchemy[asyncio]>=2.0.0
 email-validator>=2.1.0
 smartapi-python>=1.3.7
+
+# Notifications
+httpx>=0.27.0
