@@ -9,6 +9,18 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from alchemy.auth.middleware import get_current_user, CurrentUser
 
+def _require_live(user_id: str, exchange: str) -> dict:
+    """Raise 403 if token is in paper/testnet mode. Returns token data."""
+    from alchemy.api.token_routes import _load_token
+    data = _load_token(user_id, exchange)
+    if not data:
+        raise HTTPException(403, f"No {exchange} credentials. Connect in Tokens page first.")
+    if data.get("paper_trading", True):
+        raise HTTPException(403,
+            f"{exchange} is in PAPER mode. Switch to live mode in Tokens to place real orders.")
+    return data
+
+
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
 
@@ -102,6 +114,7 @@ async def delta_funding(symbol: str, user: CurrentUser = Depends(get_current_use
 @router.post("/delta/order")
 async def delta_place_order(req: OrderRequest,
                               user: CurrentUser = Depends(get_current_user)):
+    _require_live(user.user_id, "delta")
     try:
         gw = _delta(user.user_id)
         return gw.place_order(
@@ -115,6 +128,7 @@ async def delta_place_order(req: OrderRequest,
 
 @router.delete("/delta/orders/{symbol}")
 async def delta_cancel_all(symbol: str, user: CurrentUser = Depends(get_current_user)):
+    _require_live(user.user_id, "delta")
     try:
         return _delta(user.user_id).cancel_all_orders(symbol)
     except Exception as e:
@@ -169,6 +183,7 @@ async def binance_funding(symbol: str, user: CurrentUser = Depends(get_current_u
 @router.post("/binance/order")
 async def binance_place_order(req: OrderRequest,
                                user: CurrentUser = Depends(get_current_user)):
+    _require_live(user.user_id, "binance")
     try:
         gw = _binance(user.user_id)
         return gw.place_order(
@@ -182,6 +197,7 @@ async def binance_place_order(req: OrderRequest,
 
 @router.delete("/binance/orders/{symbol}")
 async def binance_cancel_all(symbol: str, user: CurrentUser = Depends(get_current_user)):
+    _require_live(user.user_id, "binance")
     try:
         return _binance(user.user_id).cancel_all_orders(symbol)
     except Exception as e:
@@ -190,6 +206,7 @@ async def binance_cancel_all(symbol: str, user: CurrentUser = Depends(get_curren
 
 @router.post("/binance/close/{symbol}")
 async def binance_close_position(symbol: str, user: CurrentUser = Depends(get_current_user)):
+    _require_live(user.user_id, "binance")
     try:
         return _binance(user.user_id).close_position(symbol)
     except Exception as e:
