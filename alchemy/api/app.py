@@ -300,17 +300,15 @@ if _dist:
         app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
         log.info("static.assets_mounted", path=str(_assets_dir))
 
-    # SPA: serve index.html for all non-API, non-asset paths
-    @app.get("/",              include_in_schema=False)
+    # SPA: serve index.html for ALL unmatched GET routes.
+    # FastAPI already routes /api/* before reaching this catch-all,
+    # so any path that lands here is a client-side React route → serve index.html.
+    @app.get("/",                 include_in_schema=False)
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str = ""):
-        # Don't intercept API, docs, assets
-        skip = ("api/", "auth/", "admin/", "docs", "redoc", "openapi",
-                "health", "risk/", "signal", "tokens/", "workflows/",
-                "notifications/", "intelligence/", "assets/", "crypto/")
-        if any(full_path.startswith(s) for s in skip):
-            raise HTTPException(404)
         index = _dist / "index.html"
+        if not index.exists():
+            return JSONResponse({"detail": "Frontend not built — run: cd frontend && npm run build"}, status_code=503)
         return FileResponse(str(index))
 
     log.info("static.spa_ready", dist=str(_dist))
