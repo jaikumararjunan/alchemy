@@ -1,4 +1,4 @@
-"""alchemy.api.app — FastAPI v0.3 + Token + Workflow routers"""
+"""alchemy.api.app — FastAPI v0.4 with Auth, Admin, Security middleware"""
 from __future__ import annotations
 import json, os
 from contextlib import asynccontextmanager
@@ -10,6 +10,9 @@ import structlog
 
 from alchemy.api.crypto_routes  import router  as crypto_router
 from alchemy.api.token_routes   import token_router, workflow_router
+from alchemy.api.auth_routes    import router  as auth_router
+from alchemy.api.admin_routes   import router  as admin_router
+from alchemy.auth.middleware    import SecurityHeadersMiddleware, get_current_user, CurrentUser, require_permission
 from alchemy.core.config import get_config
 from alchemy.core.state  import TradingSignal
 
@@ -35,28 +38,44 @@ class SignalRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app):
-    log.info("alchemy.startup", version="0.3.0", env=get_config().env)
-    # Start token auto-refresh background task
-    from alchemy.tokens.manager import get_token_manager
-    get_token_manager().start_auto_refresh()
+    log.info("alchemy.startup", version="0.4.0", env=get_config().env)
+    # Create DB tables on startup
+    try:
+        from alchemy.api.database import create_tables
+        await create_tables()
+    except Exception as e:
+        log.warning("db.tables_init_failed", error=str(e))
+    # Start token auto-refresh
+    try:
+        from alchemy.tokens.manager import get_token_manager
+        get_token_manager().start_auto_refresh()
+    except Exception: pass
     yield
     log.info("alchemy.shutdown")
 
-app = FastAPI(title="Alchemy Trading Platform", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Alchemy Trading Platform", version="0.4.0", lifespan=lifespan)
+
+# Security headers middleware (must be first)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS — restrict origins in production
 app.add_middleware(CORSMiddleware,
     allow_origins=["http://localhost:3000","http://localhost:5173"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+# Routers
+app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(crypto_router)
 app.include_router(token_router)
 app.include_router(workflow_router)
 
 @app.get("/health")
-async def health():
-    return {"status":"ok","version":"0.3.0","env":get_config().env}
+async def health(): return {"status":"ok","version":"0.4.0","env":get_config().env}
 
 @app.post("/signal")
-async def generate_signal(req: SignalRequest):
+async def generate_signal(req: SignalRequest,
+                           user: CurrentUser = require_permission("signals:generate")()):
     if not get_config().enable_ai_agents: raise HTTPException(503,"AI agents disabled")
     try:
         from alchemy.agents.graph import run_agent
@@ -67,21 +86,21 @@ async def generate_signal(req: SignalRequest):
     except Exception as e: raise HTTPException(500, str(e))
 
 @app.get("/risk/status")
-async def risk_status():
+async def risk_status(user: CurrentUser = require_permission("trading:read")()):
     from alchemy.risk.manager import RiskManager; return RiskManager().status()
 
 @app.post("/risk/emergency-stop")
-async def emergency_stop():
+async def emergency_stop(user: CurrentUser = require_permission("trading:write")()):
     from alchemy.risk.manager import RiskManager
-    rm = RiskManager(); rm.trigger_emergency_stop("Manual via API")
+    rm = RiskManager(); rm.trigger_emergency_stop(f"Manual via API by {user.email}")
     await manager.broadcast("risk_alert", rm.status()); return {"ok":True}
 
 @app.delete("/risk/emergency-stop")
-async def clear_stop():
+async def clear_stop(user: CurrentUser = require_permission("trading:write")()):
     from alchemy.risk.manager import RiskManager; RiskManager().reset_emergency_stop(); return {"ok":True}
 
 @app.post("/risk/block")
-async def block(body: dict):
+async def block(body: dict, user: CurrentUser = require_permission("trading:write")()):
     from alchemy.risk.manager import RiskManager; RiskManager().block_ticker(body.get("ticker","")); return {"ok":True}
 
 @app.websocket("/ws")

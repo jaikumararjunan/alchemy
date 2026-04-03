@@ -6,8 +6,22 @@ import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './styles/index.css'
 
+// Disable right-click in production to reduce info leakage
+if (import.meta.env.PROD) {
+  document.addEventListener('contextmenu', e => e.preventDefault())
+}
+
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 5_000, refetchOnWindowFocus: false } }
+  defaultOptions: {
+    queries: {
+      staleTime: 5_000,
+      refetchOnWindowFocus: false,
+      retry: (failCount, err) => {
+        if (err?.response?.status === 401) return false
+        return failCount < 2
+      }
+    }
+  }
 })
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -16,7 +30,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <App />
         <Toaster position="top-right" toastOptions={{
-          style: { background:'#1e293b', color:'#f1f5f9', border:'1px solid #334155' }
+          style: { background:'#1e293b', color:'#f1f5f9', border:'1px solid #334155' },
+          duration: 4000,
         }} />
       </BrowserRouter>
     </QueryClientProvider>
