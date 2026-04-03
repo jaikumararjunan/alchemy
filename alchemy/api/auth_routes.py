@@ -123,7 +123,8 @@ def _create_tokens_sync(user_id: str, email: str, role: str) -> dict:
     """Create JWT access token + refresh token."""
     import secrets, hashlib, jwt
 
-    secret = os.environ.get("JWT_SECRET_KEY", "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024")
+    from alchemy.core.config import get_config
+    secret = get_config().jwt_secret_key
     now    = datetime.now(timezone.utc)
     jti    = secrets.token_hex(8)
 

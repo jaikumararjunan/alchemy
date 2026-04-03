@@ -92,8 +92,8 @@ class AlchemyConfig(BaseSettings):
     project_name: str  = "alchemy"
 
     # ── Auth / Security (read from env) ──────────────────────────────────────
-    jwt_secret_key:      str  = "INSECURE_DEV_KEY_CHANGE_IN_PRODUCTION_32CH"
-    alchemy_vault_key:   str  = "INSECURE_VAULT_KEY_CHANGE_IN_PROD_32CHAR!"
+    jwt_secret_key:      str  = "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024"
+    alchemy_vault_key:   str  = "AlchemyLocalDev!Vault_Key_32chars_Min2024!!"
     alchemy_fernet_key:  str  = ""
 
     # ── Admin bootstrap ───────────────────────────────────────────────────────

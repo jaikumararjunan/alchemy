@@ -49,12 +49,14 @@ MIN_PASSWORD_LEN   = 12
 MAX_PASSWORD_LEN   = 128
 
 def _get_jwt_secret() -> str:
-    secret = os.environ.get("JWT_SECRET_KEY")
-    if not secret:
-        log.warning("security.jwt_secret_missing",
-                    msg="Set JWT_SECRET_KEY env var. Using insecure default.")
-        secret = "INSECURE_DEV_SECRET_CHANGE_IN_PRODUCTION_32CHARS"
-    return secret
+    """Single source of truth for JWT secret — always uses config."""
+    try:
+        from alchemy.core.config import get_config
+        return get_config().jwt_secret_key
+    except Exception:
+        secret = os.environ.get("JWT_SECRET_KEY", "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024")
+        log.warning("security.jwt_secret_missing", msg="Set JWT_SECRET_KEY env var.")
+        return secret
 
 def _get_fernet_key() -> Optional[bytes]:
     key = os.environ.get("ALCHEMY_FERNET_KEY")
