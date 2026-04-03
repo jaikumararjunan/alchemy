@@ -54,3 +54,6 @@ logs/
 
 # Docker volumes
 .docker/
+*.db
+data/
+.env
