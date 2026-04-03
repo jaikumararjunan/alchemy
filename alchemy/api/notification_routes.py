@@ -286,7 +286,7 @@ async def delivery_log(
 @router.post("/broadcast")
 async def broadcast(
     req:  BroadcastRequest,
-    user: CurrentUser = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN)()),
+    user: CurrentUser = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN)),
 ):
     """Admin-only: broadcast a notification to all configured channels."""
     event = NotificationEvent(
