@@ -107,18 +107,18 @@ function ChartCanvas({ candles, chartType, indicator, width }) {
   /* Y-axis ticks */
   const yTicks  = [0,1,2,3,4,5].map(i=>yMin+yRng*i/5)
 
-  /* build SVG path from value array */
+  /* build SVG path from value array — safe with 0 or 1 points */
   const mkLine = vals => {
     const pts = vals.map((v,i)=>v!=null?`${cx(i).toFixed(1)},${py(v).toFixed(1)}`:null)
     const segs=[]; let s=[]
-    for(const p of pts){if(p)s.push(p);else if(s.length){segs.push(s);s=[]}}
-    if(s.length)segs.push(s)
+    for(const p of pts){if(p)s.push(p);else if(s.length>=2){segs.push(s);s=[]} else s=[]}
+    if(s.length>=2)segs.push(s)
     return segs.map(s=>`M${s[0]}L${s.slice(1).join('L')}`).join(' ')
   }
 
   /* area fill path */
   const mkArea = vals => {
-    const valid = vals.map((v,i)=>({v,i})).filter(d=>d.v!=null)
+    const valid = vals.map((v,i)=>({v,i})).filter(d=>d.v!=null&&!isNaN(d.v))
     if(valid.length<2) return ''
     const top  = valid.map(d=>`${cx(d.i).toFixed(1)},${py(d.v).toFixed(1)}`).join('L')
     const base = `${cx(valid.at(-1).i).toFixed(1)},${py(yMin).toFixed(1)}L${cx(valid[0].i).toFixed(1)},${py(yMin).toFixed(1)}`
@@ -126,11 +126,19 @@ function ChartCanvas({ candles, chartType, indicator, width }) {
   }
 
   /* events */
-  const onWheel = e => {
+  const onWheelHandler = useCallback(e => {
     e.preventDefault()
     const factor = e.deltaY>0 ? 0.82 : 1.22
     setZoom(z=>Math.min(8, Math.max(0.15, z*factor)))
-  }
+  }, [])
+
+  /* Attach wheel listener with passive:false to allow preventDefault */
+  useEffect(()=>{
+    const el = svgRef.current
+    if(!el) return
+    el.addEventListener('wheel', onWheelHandler, {passive:false})
+    return()=>el.removeEventListener('wheel', onWheelHandler)
+  }, [onWheelHandler])
   const onMDown = e => {
     dragRef.current={x:e.clientX, pan:endHide}
   }
@@ -184,7 +192,7 @@ function ChartCanvas({ candles, chartType, indicator, width }) {
 
       <svg ref={svgRef} width={width} height={H+PT+PB}
         style={{cursor:dragRef.current?'grabbing':'crosshair'}}
-        onWheel={onWheel} onMouseDown={onMDown} onMouseMove={onMMove}
+        onMouseDown={onMDown} onMouseMove={onMMove}
         onMouseUp={onMUp} onMouseLeave={onMLeave}>
 
         <defs>
@@ -415,7 +423,11 @@ export default function LiveChart({ defaultSymbol='BTCUSDT', height=300 }) {
     if(wsRef.current){wsRef.current.close();wsRef.current=null}
 
     /* 1. Load 250 historical candles first */
-    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval.rest}&limit=250`)
+    /* Try direct first; if blocked by CSP fall back to backend proxy */
+    const klineURL = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval.rest}&limit=250`
+    const proxyURL = `/api/crypto/proxy/klines?symbol=${symbol}&interval=${interval.rest}&limit=250`
+    fetch(klineURL)
+      .catch(()=>fetch(proxyURL))
       .then(r=>r.json())
       .then(data=>{
         if(!Array.isArray(data)||!data.length) return

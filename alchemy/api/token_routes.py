@@ -224,28 +224,38 @@ async def _test_connection(exchange, data):
                 return {"valid": True, "exchange": "delta", "mode": mode, "message": "Live connection OK"}
 
         elif exchange == "binance":
+            import httpx
+            base_pub = "https://fapi.binance.com"  # always use mainnet public
             if paper:
-                import httpx
-                base = "https://testnet.binancefuture.com" if testnet else "https://fapi.binance.com"
-                r = httpx.get(f"{base}/fapi/v1/ticker/price?symbol=BTCUSDT", timeout=8)
+                r = httpx.get(f"{base_pub}/fapi/v1/ticker/price?symbol=BTCUSDT", timeout=8)
                 price = float(r.json().get("price", 0))
                 return {"valid": True, "exchange": "binance", "mode": mode,
-                        "message": f"Binance API reachable — BTC: ${price:,.2f}", "testnet": testnet}
+                        "message": f"Binance Futures API reachable — BTC: ${price:,.2f}",
+                        "testnet": testnet}
             else:
-                import httpx, hmac, hashlib, time
-                ak, sk = data.get("api_key",""), data.get("api_secret","")
+                import hmac, hashlib, time
+                ak = data.get("api_key","")
+                sk = data.get("api_secret","")
                 base = "https://testnet.binancefuture.com" if testnet else "https://fapi.binance.com"
-                ts = int(time.time()*1000)
-                qs = f"timestamp={ts}"
+                ts  = int(time.time()*1000)
+                qs  = f"timestamp={ts}"
                 sig = hmac.new(sk.encode(), qs.encode(), hashlib.sha256).hexdigest()
-                r = httpx.get(f"{base}/fapi/v2/balance?{qs}&signature={sig}",
-                              headers={"X-MBX-APIKEY": ak}, timeout=8)
+                r   = httpx.get(f"{base}/fapi/v2/balance?{qs}&signature={sig}",
+                                 headers={"X-MBX-APIKEY": ak}, timeout=8)
                 if r.status_code == 200:
-                    bal = next((b["balance"] for b in r.json() if b.get("asset")=="USDT"), "?")
+                    bal = next((b.get("balance","?") for b in r.json() if b.get("asset")=="USDT"), "?")
                     return {"valid": True, "exchange": "binance", "mode": mode,
-                            "message": f"Authenticated OK — USDT balance: {bal}"}
+                            "message": f"Live auth OK — USDT balance: {bal}"}
+                err = r.json() if r.headers.get("content-type","").startswith("application/json") else {}
+                code = err.get("code","")
+                msg  = err.get("msg", r.text[:100])
+                hint = {
+                    -2015: "API key lacks Futures permission — enable in Binance → API Management",
+                    -1022: "Invalid signature — check your API Secret",
+                    -2008: "Invalid API key format",
+                }.get(code, "Check API key and whitelist your IP in Binance settings")
                 return {"valid": False, "exchange": "binance", "mode": mode,
-                        "error": f"Binance {r.status_code}: {r.text[:120]}"}
+                        "error": f"Binance {r.status_code} ({code}): {hint}"}
 
         elif exchange == "angel":
             req = ["api_key","client_id","password"]

@@ -23,6 +23,31 @@ def _require_live(user_id: str, exchange: str) -> dict:
 
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
+# ── Proxy endpoints (CSP-safe fallback) ──────────────────────────────────────
+
+@router.get("/proxy/klines")
+async def proxy_klines(symbol: str, interval: str = "1m", limit: int = 250):
+    """Proxy Binance klines through backend (bypasses browser CSP)."""
+    import httpx
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    try:
+        r = httpx.get(url, timeout=10)
+        return r.json()
+    except Exception as e:
+        raise HTTPException(502, f"Binance proxy error: {e}")
+
+
+@router.get("/proxy/ticker/{symbol}")
+async def proxy_ticker(symbol: str):
+    """Proxy Binance ticker price through backend."""
+    import httpx
+    try:
+        r = httpx.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}", timeout=5)
+        return r.json()
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
 
 def _delta(user_id: str = None, testnet: bool = True):
     """Get Delta gateway: use user's stored token if available, else public API."""
