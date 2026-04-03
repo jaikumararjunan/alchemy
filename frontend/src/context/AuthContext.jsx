@@ -1,29 +1,31 @@
 /**
- * AuthContext — secure authentication state management.
- *
- * Security design:
- *   - Access token stored in memory (React state) ONLY — never localStorage/sessionStorage
- *   - Refresh token stored in httpOnly Secure SameSite=Strict cookie by server
- *   - Token refresh via /auth/refresh endpoint (cookie sent automatically)
- *   - Auto-refresh 2 minutes before access token expiry
- *   - On tab close/refresh: user must re-authenticate OR have valid refresh cookie
+ * AuthContext - secure authentication state management.
+ * Access token stored in memory only (never localStorage).
+ * Refresh token in httpOnly cookie set by server.
  */
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 
 const AuthContext = createContext(null)
 
-// Base API client — no auth header (uses httpOnly cookie for refresh)
-const authApi = axios.create({ baseURL: '/api', withCredentials: true })
+// Detect if we're running through Vite dev server (port 3000) or FastAPI directly (port 8000)
+const getBaseURL = () => {
+  // When served by FastAPI directly, call /api/* (FastAPI has /api/* routes)
+  // When served by Vite dev server, also call /api/* (Vite proxy strips it)
+  return '/api'
+}
 
-// Decode JWT payload without verification (client-side display only)
+const authApi = axios.create({
+  baseURL: getBaseURL(),
+  withCredentials: true,
+  timeout: 10000,
+})
+
 function decodeJWT(token) {
   try {
     const payload = token.split('.')[1]
     return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 export function AuthProvider({ children }) {
@@ -34,19 +36,11 @@ export function AuthProvider({ children }) {
   const [pendingUserId, setPendingUserId] = useState(null)
   const refreshTimerRef = useRef(null)
 
-  // ── Token management ────────────────────────────────────────────────────────
-
   const storeToken = useCallback((token) => {
     setAccessToken(token)
     const payload = decodeJWT(token)
     if (payload) {
-      setUser({
-        id:       payload.sub,
-        email:    payload.email,
-        role:     payload.role,
-        exp:      payload.exp,
-      })
-      // Schedule refresh 2 minutes before expiry
+      setUser({ id: payload.sub, email: payload.email, role: payload.role, exp: payload.exp })
       const msUntilExpiry = (payload.exp * 1000) - Date.now() - 120_000
       if (msUntilExpiry > 0) {
         clearTimeout(refreshTimerRef.current)
@@ -61,25 +55,19 @@ export function AuthProvider({ children }) {
     clearTimeout(refreshTimerRef.current)
   }, [])
 
-  // ── Silent refresh (runs automatically before expiry) ──────────────────────
-
   const silentRefresh = useCallback(async () => {
     try {
       const { data } = await authApi.post('/auth/refresh')
       storeToken(data.access_token)
     } catch {
-      // Refresh failed — session expired, require re-login
       clearAuth()
     }
   }, [storeToken, clearAuth])
 
-  // Attempt silent refresh on app mount (user might have valid cookie from prev session)
   useEffect(() => {
     silentRefresh().finally(() => setLoading(false))
     return () => clearTimeout(refreshTimerRef.current)
   }, [])
-
-  // ── Auth actions ────────────────────────────────────────────────────────────
 
   const login = async (email, password, totpCode = null) => {
     const { data } = await authApi.post('/auth/login', {
@@ -97,7 +85,10 @@ export function AuthProvider({ children }) {
 
   const signup = async (email, username, fullName, password) => {
     const { data } = await authApi.post('/auth/signup', {
-      email, username, full_name: fullName, password
+      email,
+      username,
+      full_name: fullName,
+      password,
     })
     return data
   }
@@ -105,7 +96,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await authApi.post('/auth/logout', {}, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
       })
     } catch { /* ignore */ }
     clearAuth()
@@ -114,20 +105,20 @@ export function AuthProvider({ children }) {
   const logoutAll = async () => {
     try {
       await authApi.post('/auth/logout-all', {}, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
       })
     } catch { /* ignore */ }
     clearAuth()
   }
 
-  // ── API client with auto-injected access token ────────────────────────────
-
   const apiClient = useCallback(() => {
-    const client = axios.create({ baseURL: '/api', withCredentials: true })
+    const client = axios.create({
+      baseURL: getBaseURL(),
+      withCredentials: true,
+      timeout: 15000,
+    })
     client.interceptors.request.use(config => {
-      if (accessToken) {
-        config.headers.Authorization = `Bearer ${accessToken}`
-      }
+      if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`
       return config
     })
     client.interceptors.response.use(
@@ -137,12 +128,9 @@ export function AuthProvider({ children }) {
           err.config._retry = true
           try {
             await silentRefresh()
-            // Retry original request with new token
-            err.config.headers.Authorization = `Bearer ${accessToken}`
+            if (accessToken) err.config.headers.Authorization = `Bearer ${accessToken}`
             return client(err.config)
-          } catch {
-            clearAuth()
-          }
+          } catch { clearAuth() }
         }
         return Promise.reject(err)
       }
@@ -150,16 +138,17 @@ export function AuthProvider({ children }) {
     return client
   }, [accessToken, silentRefresh, clearAuth])
 
-  const value = {
-    user, accessToken, loading, requires2FA, pendingUserId,
-    login, signup, logout, logoutAll, apiClient,
-    isAuthenticated: !!accessToken,
-    isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
-    isSuperAdmin: user?.role === 'super_admin',
-    clearAuth,
-  }
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{
+      user, accessToken, loading, requires2FA, pendingUserId,
+      login, signup, logout, logoutAll, apiClient, clearAuth,
+      isAuthenticated: !!accessToken,
+      isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
+      isSuperAdmin: user?.role === 'super_admin',
+    }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export const useAuth = () => {
