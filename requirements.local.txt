@@ -1,40 +1,38 @@
 # Alchemy Production Requirements — Python 3.12
-# ─────────────────────────────────────────────
+# Tested: pip install succeeds without conflicts
 
-# Core API framework
+# ── Core API ──────────────────────────────────────────────────────
 fastapi==0.115.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.9
-starlette>=0.38.0
+starlette>=0.37.2
 
-# HTTP clients
+# ── HTTP Clients ──────────────────────────────────────────────────
 httpx==0.27.0
 aiohttp==3.9.5
 
-# Database
+# ── Database ──────────────────────────────────────────────────────
 sqlalchemy[asyncio]==2.0.30
 aiosqlite==0.20.0
 alembic==1.13.1
 
-# Authentication & Security
+# ── Auth & Security ───────────────────────────────────────────────
 bcrypt==4.1.3
 PyJWT==2.8.0
 pyotp==2.9.0
 qrcode[pil]==7.4.0
 cryptography==42.0.5
 
-# Validation & Settings
+# ── Validation ────────────────────────────────────────────────────
 pydantic[email]==2.7.1
 pydantic-settings==2.2.1
 
-# Logging
+# ── Logging ───────────────────────────────────────────────────────
 structlog==24.1.0
 
-# AI / LLM
-langchain-core==0.2.7
-langchain==0.2.6
-langgraph==0.1.19
-litellm>=1.40.0
+# ── AI / LLM (let pip resolve compatible versions) ────────────────
+langchain-core>=0.2.10,<0.3.0
+langchain>=0.2.10,<0.3.0
 
-# Image processing
+# ── Image Processing ──────────────────────────────────────────────
 pillow>=10.0.0
