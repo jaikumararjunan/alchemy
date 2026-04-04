@@ -96,17 +96,15 @@ export default function LoginPage() {
         navigate('/dashboard')
       }
     } catch (err) {
-      const raw = err.response?.data?.detail || err.message || 'Login failed'
-      // Make error messages more user-friendly
-      const friendly = {
-        'invalid_credentials':           'Incorrect email or password.',
-        'account_banned':                'This account has been banned. Contact support.',
-        'account_locked':                'Account temporarily locked. Try again in 15 minutes.',
-        'account_pending_verification':  'Account pending — contact admin to activate your account.',
-        'No refresh token':              null,   // silent
-      }
-      const msg = friendly[raw] ?? raw
-      if (msg) setError(msg)
+      // Handle both string and {code, message} detail formats
+      const detail = err.response?.data?.detail
+      const errMsg =
+        typeof detail?.message === 'string' ? detail.message :
+        typeof detail === 'string'          ? detail :
+        err.response?.status === 429        ? 'Too many attempts. Please wait before trying again.' :
+        err.response?.status === 401        ? 'Incorrect email or password. Please try again.' :
+        'Sign in failed. Please try again.'
+      if (errMsg !== 'No refresh token') setError(errMsg)
       setAttempts(a => a + 1)
     } finally {
       setLoading(false)

@@ -71,9 +71,13 @@ export default function SignupPage() {
       navigate('/dashboard')
     } catch (err) {
       const detail = err.response?.data?.detail
-      const msg = typeof detail === 'string' ? detail
-        : detail?.message || 'Signup failed. Check your details.'
-      setError(msg)
+      const errMsg =
+        typeof detail === 'string'    ? detail :
+        typeof detail?.message === 'string' ? detail.message :
+        err.response?.status === 422  ? 'Please check your details and try again.' :
+        err.response?.status === 429  ? 'Too many attempts. Please wait a moment.' :
+        'Something went wrong. Please try again.'
+      setError(errMsg)
     } finally {
       setLoading(false)
     }

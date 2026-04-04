@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from alchemy.auth.middleware import check_rate_limit, get_current_user, CurrentUser, get_client_ip
 from alchemy.auth.security import PasswordPolicy
+from alchemy.core.messages import msg
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -217,10 +218,20 @@ async def login(req: LoginRequest, request: Request, response: Response):
         }
     except ValueError as e:
         code = str(e)
-        raise HTTPException(429 if code == "account_locked" else 401,
-                            "Invalid email or password")
+        messages = {
+            "invalid_credentials":          msg("auth_login_invalid"),
+            "account_banned":               msg("auth_login_banned"),
+            "account_locked":               msg("auth_login_locked"),
+            "account_pending_verification": msg("auth_login_pending"),
+        }
+        status_code = 429 if code == "account_locked" else 401
+        raise HTTPException(status_code, {
+            "code":    code,
+            "message": messages.get(code, msg("auth_login_invalid")),
+        })
     except Exception as e:
-        raise HTTPException(500, f"Login error: {e}")
+        log.error("auth.login_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, {"code": "server_error", "message": msg("server_error")})
 
 
 @router.post("/signup", status_code=201)
@@ -245,18 +256,36 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
             None, _create_tokens_sync, str(user.id), user.email, user.role
         )
         _set_refresh_cookie(response, tokens["refresh_token"])
+        user_data = user.safe_dict()
         return {
-            "message":      "Account created and signed in.",
+            "message":      msg("auth_signup_success", name=user.full_name.split()[0]),
             "access_token": tokens["access_token"],
-            "user":         user.safe_dict(),
+            "user":         user_data,
         }
     except AuthError as e:
-        raise HTTPException(400, {"message": str(e), "code": getattr(e, "code", "signup_error")})
+        code    = getattr(e, "code", "signup_error")
+        msg_map = {
+            "email_taken":    msg("auth_signup_email_taken"),
+            "username_taken": msg("auth_signup_username_taken", username=req.username),
+            "weak_password":  msg("auth_signup_password_weak"),
+        }
+        raise HTTPException(400, {
+            "code":    code,
+            "message": msg_map.get(code, str(e)),
+        })
     except ValueError as e:
-        raise HTTPException(422, {"message": str(e), "code": "validation_error"})
+        raise HTTPException(422, {
+            "code":    "validation_error",
+            "message": msg("auth_signup_username_invalid") if "username" in str(e).lower()
+                       else msg("auth_signup_password_weak") if "password" in str(e).lower()
+                       else str(e),
+        })
     except Exception as e:
         log.error("auth.signup_failed", error=str(e), exc_info=True)
-        raise HTTPException(500, {"message": "Signup failed. Please try again.", "code": "server_error"})
+        raise HTTPException(500, {
+            "code":    "server_error",
+            "message": msg("auth_signup_server_error"),
+        })
 
 
 @router.post("/refresh")

@@ -139,6 +139,8 @@ class User(Base):
     timezone_str      = Column(String(64),  default="Asia/Kolkata")
     preferred_exchange = Column(String(32), default="paper")
 
+    subscription = Column(String(32), nullable=False, default='free')
+
     created_at = Column(DateTime(timezone=True), default=_now_utc)
     updated_at = Column(DateTime(timezone=True), default=_now_utc, onupdate=_now_utc)
 
@@ -175,6 +177,7 @@ class User(Base):
             "preferred_exchange": self.preferred_exchange,
             "timezone_str":  self.timezone_str,
             "created_at":    self.created_at.isoformat() if self.created_at else None,
+            "subscription":  self.subscription or "free",
         }
 
 
