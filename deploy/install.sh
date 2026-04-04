@@ -207,7 +207,15 @@ services:
 DCEOF
 
 log "Building Docker image (this takes 3-5 minutes)..."
-docker compose -f docker-compose.production.yml build 2>&1 | tail -5
+log "  → Installing Node.js frontend dependencies..."
+log "  → Building React app..."
+log "  → Installing Python packages..."
+DOCKER_BUILDKIT=1 docker compose -f docker-compose.production.yml build --progress plain 2>&1 |   grep -E "Step|RUN|COPY|FROM|Successfully|error|Error|failed|warning" | tail -20 || {
+  echo ""
+  echo "Build failed. Full logs:"
+  docker compose -f docker-compose.production.yml logs
+  exit 1
+}
 log "Docker image built"
 
 docker compose -f docker-compose.production.yml up -d

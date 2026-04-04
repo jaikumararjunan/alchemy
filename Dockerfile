@@ -1,42 +1,61 @@
-# ── Stage 1: Frontend builder ────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+#  Alchemy — Multi-stage Docker build
+#  Stage 1: Build React frontend (Node 20)
+#  Stage 2: Run FastAPI backend (Python 3.12)
+# ════════════════════════════════════════════════════════════════
+
+# ── Stage 1: Frontend ─────────────────────────────────────────────
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci --silent
+
+# Copy package files first for layer caching
+COPY frontend/package.json ./
+COPY frontend/package-lock.json* ./
+
+# Install deps — use npm install as fallback if lock file missing/mismatched
+RUN npm install --legacy-peer-deps
+
+# Copy source and build
 COPY frontend/ ./
 RUN npm run build
 
-# ── Stage 2: Production app ──────────────────────────────────────
+# Verify build succeeded
+RUN test -d dist && test -f dist/index.html \
+    || (echo "ERROR: frontend build failed — dist/ missing" && exit 1)
+
+# ── Stage 2: Backend ──────────────────────────────────────────────
 FROM python:3.12-slim AS app
 WORKDIR /app
 
-# System dependencies
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libffi-dev libssl-dev curl \
+    gcc libffi-dev libssl-dev curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies
+# Python deps (cached layer)
 COPY requirements.local.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Application code
-COPY alchemy/      ./alchemy/
-COPY scripts/      ./scripts/
+# Application source
+COPY alchemy/ ./alchemy/
+COPY scripts/  ./scripts/
 
-# Frontend dist from builder
+# Frontend dist from Stage 1
 COPY --from=frontend-builder /app/frontend/dist ./static
 
-# Data directory
+# Data directory (SQLite lives here)
 RUN mkdir -p /data && chmod 777 /data
 
-# Non-root user
-RUN useradd -m -u 1000 alchemy && chown -R alchemy:alchemy /app
+# Non-root user for security
+RUN useradd -m -u 1000 alchemy \
+    && chown -R alchemy:alchemy /app
 USER alchemy
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8000/api/health || exit 1
+    CMD curl -f http://localhost:8000/api/health || exit 1
 
 CMD ["uvicorn", "alchemy.api.app:app", \
      "--host", "0.0.0.0", \

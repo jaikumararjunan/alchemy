@@ -1,44 +1,47 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.mypy_cache/
-*.egg-info/
-.eggs/
-dist/
-build/
+# Python artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+
+# Python env
 .venv/
 venv/
 env/
 
-# Node
+# Frontend source (only dist needed)
 frontend/node_modules/
-frontend/dist/
 frontend/.vite/
 
-# Data / secrets
-data/
-*.db
+# Git & IDE
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+
+# Docs & tests (not needed in container)
+docs/
+tests/
+*.md
+*.txt
+!requirements.local.txt
+
+# Secrets & local config
 .env
 .env.local
 .env.production
+data/
+*.db
 *.log
+logs/
 
-# Git
-.git/
-.gitignore
+# Deploy scripts (not needed inside container)
+deploy/
+infra/
 
-# Dev tools
-.vscode/
-.idea/
-*.swp
-*.swo
+# OS
 .DS_Store
-
-# Docs (not needed in image)
-docs/
-deploy/DEPLOYMENT_GUIDE.md
-
-# Test files
-tests/
+Thumbs.db
