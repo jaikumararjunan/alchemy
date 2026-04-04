@@ -126,3 +126,52 @@ body {
 .react-hot-toast > div {
   @apply text-sm;
 }
+
+/* ── Mobile / PWA optimizations ───────────────────────────────────────── */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* Smooth scrolling on iOS */
+.overflow-y-auto { -webkit-overflow-scrolling: touch; }
+
+/* Hardware-accelerated animations */
+.animate-slide-in {
+  animation: slideInLeft 0.2s cubic-bezier(0.32,0.72,0,1);
+  will-change: transform;
+}
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+/* Touch-friendly tap targets */
+@media (hover: none) {
+  button, a { min-height: 44px; min-width: 44px; }
+  .card { border-radius: 1.25rem; }
+}
+
+/* Responsive grid helpers */
+.responsive-grid-2 { @apply grid grid-cols-1 sm:grid-cols-2; }
+.responsive-grid-4 { @apply grid grid-cols-2 lg:grid-cols-4; }
+
+/* Performance: composite layers for animated elements */
+.animate-pulse, .animate-spin {
+  will-change: opacity, transform;
+}
+
+/* Better font rendering */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent layout shift from scrollbar */
+html { scrollbar-gutter: stable; }

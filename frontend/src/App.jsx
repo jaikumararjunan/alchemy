@@ -23,6 +23,7 @@ import SettingsPage       from '@/pages/SettingsPage'
 
 // Admin pages
 import AdminDashboard from '@/pages/admin/AdminDashboard'
+import SubscriptionPage from '@/pages/SubscriptionPage'
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="settings"      element={<SettingsPage />} />
 
           {/* Admin-only */}
+          <Route path="subscription" element={<SubscriptionPage />} />
           <Route path="admin" element={<ProtectedRoute requireAdmin><AdminDashboard /></ProtectedRoute>} />
         </Route>
 
