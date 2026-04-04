@@ -22,7 +22,18 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
-DB_PATH = Path("./data/alchemy_analytics.db")
+def _analytics_db_path() -> Path:
+    import os, re
+    url  = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
+    base = Path(re.sub(r"^sqlite(\+aiosqlite)?:///", "", url))
+    if not base.is_absolute():
+        base = Path.cwd() / base
+    # Use same directory as main DB, different filename
+    p = base.parent / "alchemy_analytics.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+DB_PATH = _analytics_db_path()
 
 
 class AnalyticsDB:

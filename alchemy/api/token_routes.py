@@ -10,9 +10,21 @@ from alchemy.auth.middleware import get_current_user, CurrentUser
 token_router    = APIRouter(prefix="/tokens",    tags=["tokens"])
 workflow_router = APIRouter(prefix="/workflows", tags=["workflows"])
 
-_DB = Path("data/alchemy.db")
+def _get_db_path() -> str:
+    """Resolve DB path from DATABASE_URL env var — same logic as auth_routes."""
+    import os, re
+    url  = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
+    path = re.sub(r"^sqlite(\+aiosqlite)?:///", "", url)
+    p    = Path(path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return str(p)
+
+_DB = Path(_get_db_path())
 
 def _conn():
+    _DB = Path(_get_db_path())
     c = sqlite3.connect(str(_DB))
     c.row_factory = sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS exchange_tokens (
