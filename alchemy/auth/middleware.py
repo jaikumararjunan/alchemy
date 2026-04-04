@@ -66,6 +66,7 @@ RATE_LIMITS = {
     "auth.reset":    (50,  60)   if _IS_DEV else (3,   3600),
     "api.general":   (500, 60),
     "api.trade":     (100, 60),
+    "auth.otp_send": (3,   600) if not _IS_DEV else (100, 60),   # 3 OTPs per 10 min
 }
 
 

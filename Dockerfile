@@ -1,89 +1,44 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Alchemy Trading Platform — Multi-Stage Dockerfile
-#
-# Stage 1: frontend-builder   — Node 20 + npm build → /app/static
-# Stage 2: api                — Python 3.12 slim + FastAPI + React static files
-#
-# Build:   docker build -t alchemy:local .
-# Run:     docker run -p 8000:8000 alchemy:local
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Stage 1 — Build React frontend
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Builder stage ─────────────────────────────────────────────────────────
 FROM node:20-alpine AS frontend-builder
-
-WORKDIR /frontend
-
-# Copy package files first for layer caching
+WORKDIR /app/frontend
 COPY frontend/package*.json ./
-
-# Install Node dependencies
-RUN npm ci --silent
-
-# Copy source and build
+RUN npm ci --production=false
 COPY frontend/ ./
 RUN npm run build
 
-# Output: /frontend/dist  (Vite default output dir)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Stage 2 — Python API + serve static files
-# ══════════════════════════════════════════════════════════════════════════════
-FROM python:3.12-slim AS api
-
-LABEL maintainer="jai@akilamirthya.in"
-LABEL org.opencontainers.image.title="Alchemy Trading Platform"
-LABEL org.opencontainers.image.version="0.6.0"
-
-# ── System deps ───────────────────────────────────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# ── App user (don't run as root) ─────────────────────────────────────────────
-RUN useradd -r -s /bin/bash -d /app alchemy
-
+# ── Python stage ──────────────────────────────────────────────────────────
+FROM python:3.12-slim AS app
 WORKDIR /app
 
-# ── Python dependencies ───────────────────────────────────────────────────────
-COPY requirements.docker.txt .
-RUN pip install --upgrade pip --no-cache-dir && \
-    pip install -r requirements.docker.txt --no-cache-dir
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libffi-dev libssl-dev curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# ── Application code ──────────────────────────────────────────────────────────
+# Python deps
+COPY requirements.local.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# App code
 COPY alchemy/ ./alchemy/
-COPY config/  ./config/
-COPY pyproject.toml .
+COPY scripts/  ./scripts/
 
-# Install the package itself
-RUN pip install -e . --no-deps --no-cache-dir
+# Frontend build from builder stage
+COPY --from=frontend-builder /app/frontend/dist ./static
 
-# ── Copy built frontend from stage 1 → serve as static files ─────────────────
-# FastAPI mounts /app/static at "/" in production
-COPY --from=frontend-builder /frontend/dist ./static/
+# Data directory
+RUN mkdir -p /data && chmod 777 /data
 
-# ── Data directory (SQLite DB, ChromaDB, logs) ────────────────────────────────
-RUN mkdir -p /app/data/logs /app/data/chromadb /app/.alchemy/vault && \
-    chown -R alchemy:alchemy /app
-
-# ── Switch to non-root user ───────────────────────────────────────────────────
+# Create non-root user
+RUN useradd -m -u 1000 alchemy && chown -R alchemy:alchemy /app
 USER alchemy
 
-# ── Port ─────────────────────────────────────────────────────────────────────
 EXPOSE 8000
 
-# ── Health check ─────────────────────────────────────────────────────────────
-HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8000/api/health || exit 1
 
-# ── Start ─────────────────────────────────────────────────────────────────────
 CMD ["uvicorn", "alchemy.api.app:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--log-level", "info", \
-     "--access-log"]
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "2", "--access-log", \
+     "--log-level", "info"]

@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alchemy-ingress
+  namespace: alchemy
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target:       /
+    nginx.ingress.kubernetes.io/proxy-read-timeout:   "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout:   "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout:"10"
+    nginx.ingress.kubernetes.io/websocket-services:   "alchemy-app"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - alchemy.yourdomain.com       # CHANGE ME
+    secretName: alchemy-tls
+  rules:
+  - host: alchemy.yourdomain.com   # CHANGE ME
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: alchemy-app
+            port:
+              number: 80

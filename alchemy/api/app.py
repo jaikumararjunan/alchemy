@@ -136,6 +136,7 @@ app = FastAPI(
 )
 
 # Middleware (order matters: added last = runs first)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -154,6 +155,8 @@ from alchemy.api.crypto_routes       import router as crypto_router
 from alchemy.api.token_routes        import token_router, workflow_router
 from alchemy.api.notification_routes import router as notification_router
 from alchemy.api.intelligence_routes import router as intelligence_router
+from alchemy.api.metrics import router as metrics_router, MetricsMiddleware
+from alchemy.api.otp_routes         import router as otp_router
 from fastapi import APIRouter
 
 # /api/* prefix  (what the built React frontend calls)
@@ -165,6 +168,8 @@ api.include_router(token_router)
 api.include_router(workflow_router)
 api.include_router(notification_router)
 api.include_router(intelligence_router)
+api.include_router(otp_router)
+app.include_router(metrics_router)
 app.include_router(api)
 
 # bare prefix  (Swagger UI + backward compat)
