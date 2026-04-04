@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from alchemy.auth.middleware import (
     SecurityHeadersMiddleware, get_current_user, CurrentUser,
 )
+from alchemy.api.metrics import router as metrics_router, MetricsMiddleware
 from alchemy.core.config import get_config
 
 log = structlog.get_logger(__name__)
@@ -155,7 +156,6 @@ from alchemy.api.crypto_routes       import router as crypto_router
 from alchemy.api.token_routes        import token_router, workflow_router
 from alchemy.api.notification_routes import router as notification_router
 from alchemy.api.intelligence_routes import router as intelligence_router
-from alchemy.api.metrics import router as metrics_router, MetricsMiddleware
 from alchemy.api.otp_routes         import router as otp_router
 from fastapi import APIRouter
 
