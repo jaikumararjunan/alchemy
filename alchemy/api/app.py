@@ -81,6 +81,15 @@ async def lifespan(app: FastAPI):
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@alchemy.in")
         admin_pwd   = os.environ.get("ADMIN_PASSWORD", "Alchemy#Admin!2024")
 
+        # Ensure admin password meets policy — append special chars if needed
+        import re as _re
+        if not _re.search(r"[!@#$%^&*]", admin_pwd):
+            admin_pwd = admin_pwd + "#Alchemy1"
+        if not _re.search(r"[A-Z]", admin_pwd):
+            admin_pwd = "A" + admin_pwd
+        if not _re.search(r"\d", admin_pwd):
+            admin_pwd = admin_pwd + "1"
+
         async with get_session_factory()() as db:
             row = await db.execute(select(User).where(User.email == admin_email))
             existing = row.scalar_one_or_none()
@@ -93,11 +102,13 @@ async def lifespan(app: FastAPI):
             else:
                 svc = AuthService()
                 user = await svc.signup(db, email=admin_email, username="superadmin",
-                    full_name="Super Admin", password=admin_pwd, role="super_admin")
+                    full_name="Super Admin", password=admin_pwd)
+                user.role = "super_admin"
                 user.status = UserStatus.ACTIVE.value
                 user.email_verified = True
+                user.subscription = "enterprise"
                 await db.commit()
-                log.info("db.admin_created", email=admin_email)
+                log.info("db.admin_created", email=admin_email, pwd_hint=admin_pwd[:4]+"***")
     except Exception as e:
         log.warning("db.init_failed", error=str(e))
 

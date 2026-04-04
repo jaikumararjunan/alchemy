@@ -79,12 +79,52 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def create_tables() -> None:
-    """Create all tables (development only — use Alembic migrations in production)."""
+    """Create all tables and apply safe migrations for missing columns."""
     from alchemy.users.models import Base
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     log.info("db.tables_created")
+
+    # Safe migrations: add missing columns without breaking existing data
+    if "sqlite" in DATABASE_URL:
+        import sqlite3, re as _re
+        db_path = _re.sub(r"^sqlite(\+aiosqlite)?:///", "", DATABASE_URL)
+        if not db_path.startswith("/"):
+            db_path = "/" + db_path
+
+        try:
+            conn2 = sqlite3.connect(db_path)
+            # audit_logs: add 'timestamp' if missing (was named 'created_at' in old schema)
+            cols = [r[1] for r in conn2.execute("PRAGMA table_info(audit_logs)").fetchall()]
+            if "timestamp" not in cols:
+                if "created_at" in cols:
+                    # rename approach: add timestamp, copy data, keep both
+                    conn2.execute("ALTER TABLE audit_logs ADD COLUMN timestamp DATETIME")
+                    conn2.execute("UPDATE audit_logs SET timestamp=created_at WHERE timestamp IS NULL")
+                else:
+                    conn2.execute("ALTER TABLE audit_logs ADD COLUMN timestamp DATETIME DEFAULT (datetime('now'))")
+                conn2.commit()
+                log.info("db.migration.audit_logs_timestamp_added")
+
+            # users: add subscription if missing
+            ucols = [r[1] for r in conn2.execute("PRAGMA table_info(users)").fetchall()]
+            if "subscription" not in ucols:
+                conn2.execute("ALTER TABLE users ADD COLUMN subscription TEXT DEFAULT 'free'")
+                conn2.execute("UPDATE users SET subscription='enterprise' WHERE role IN ('super_admin','admin')")
+                conn2.commit()
+                log.info("db.migration.users_subscription_added")
+
+            # exchange_tokens: add last_test_msg if missing
+            etcols = [r[1] for r in conn2.execute("PRAGMA table_info(exchange_tokens)").fetchall()]
+            for col, typ in [("last_test_msg","TEXT"), ("last_tested","TEXT")]:
+                if col not in etcols:
+                    conn2.execute(f"ALTER TABLE exchange_tokens ADD COLUMN {col} {typ}")
+            conn2.commit()
+            conn2.close()
+            log.info("db.migrations_complete")
+        except Exception as e:
+            log.warning("db.migration_failed", error=str(e))
 
 
 async def create_initial_admin(email: str, password: str) -> None:
