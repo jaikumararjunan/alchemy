@@ -33,7 +33,11 @@ export default function SignupPage() {
   const [error,     setError]     = useState('')
   const [success,   setSuccess]   = useState(false)
 
-  const f = (k) => (e) => setForm(p => ({...p, [k]: e.target.value}))
+  const f = (k) => (e) => {
+    let v = e.target.value
+    if (k === 'username') v = v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32)
+    setForm(p => ({...p, [k]: v}))
+  }
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -44,6 +48,8 @@ export default function SignupPage() {
     return () => clearTimeout(t)
   }, [form.password])
 
+  const usernameValid = form.username.length >= 3 && /^[a-zA-Z0-9_]{3,32}$/.test(form.username)
+
   const reqs = [
     { met: form.password.length >= 12, label: 'At least 12 characters' },
     { met: /[A-Z]/.test(form.password), label: 'One uppercase letter' },
@@ -53,18 +59,21 @@ export default function SignupPage() {
     { met: form.password === form.confirm && form.confirm.length > 0, label: 'Passwords match' },
   ]
 
-  const canSubmit = reqs.every(r => r.met) && form.email && form.username && form.fullName
+  const canSubmit = reqs.every(r => r.met) && form.email && usernameValid && form.fullName
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!canSubmit) return
     setError(''); setLoading(true)
     try {
-      await signup(form.email, form.username, form.fullName, form.password)
-      setSuccess(true)
-      toast.success('Account created! Check your email to verify.')
+      const result = await signup(form.email, form.username, form.fullName, form.password)
+      toast.success('Welcome to Alchemy! Your account is ready.')
+      navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Signup failed')
+      const detail = err.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail
+        : detail?.message || 'Signup failed. Check your details.'
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -111,7 +120,13 @@ export default function SignupPage() {
                 <label className="text-xs text-gray-400 mb-1 block">Username</label>
                 <input type="text" value={form.username} onChange={f('username')}
                   className="input-field" placeholder="trader123"
-                  pattern="^[a-zA-Z0-9_-]{3,32}$" autoComplete="username" required />
+                  autoComplete="username" required />
+                {form.username && !usernameValid && (
+                  <p className="text-xs text-red-400 mt-1">3–32 chars, letters/numbers/underscore only</p>
+                )}
+                {form.username && usernameValid && (
+                  <p className="text-xs text-emerald-500 mt-1">✓ @{form.username}</p>
+                )}
               </div>
             </div>
 

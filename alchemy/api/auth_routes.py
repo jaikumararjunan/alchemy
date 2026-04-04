@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from alchemy.auth.middleware import check_rate_limit, get_current_user, CurrentUser, get_client_ip
@@ -31,6 +31,15 @@ class SignupRequest(BaseModel):
     username:  str  = Field(..., min_length=3, max_length=32)
     full_name: str  = Field(..., min_length=2, max_length=255)
     password:  str  = Field(..., min_length=12, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def clean_username(cls, v):
+        import re as _re
+        v = v.strip()
+        if not _re.match(r'^[a-zA-Z0-9_]{3,32}$', v):
+            raise ValueError("Username must be 3-32 chars: letters, numbers, underscore only. No spaces.")
+        return v.lower()
 
 class TwoFAVerifyRequest(BaseModel):  code: str
 class TwoFADisableRequest(BaseModel): password: str
@@ -196,7 +205,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
     """Login using raw sqlite3 — bypasses SQLAlchemy ORM."""
     check_rate_limit(request, "auth.login")
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         user = await loop.run_in_executor(None, _login_sync, req.email, req.password)
         tokens = await loop.run_in_executor(None, _create_tokens_sync,
                                              user["id"], user["email"], user["role"])
@@ -232,7 +241,7 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
             log.info("auth.auto_activated", email=req.email, env=cfg.env)
         await db.commit()
         # Auto-login after signup
-        tokens = await asyncio.get_event_loop().run_in_executor(
+        tokens = await asyncio.get_running_loop().run_in_executor(
             None, _create_tokens_sync, str(user.id), user.email, user.role
         )
         _set_refresh_cookie(response, tokens["refresh_token"])
@@ -242,10 +251,12 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
             "user":         user.safe_dict(),
         }
     except AuthError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, {"message": str(e), "code": getattr(e, "code", "signup_error")})
+    except ValueError as e:
+        raise HTTPException(422, {"message": str(e), "code": "validation_error"})
     except Exception as e:
-        log.error("auth.signup_failed", error=str(e))
-        raise HTTPException(500, f"Signup failed: {e}")
+        log.error("auth.signup_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, {"message": "Signup failed. Please try again.", "code": "server_error"})
 
 
 @router.post("/refresh")
@@ -276,7 +287,7 @@ async def refresh_tokens(response: Response,
         if datetime.now(timezone.utc) >= exp:
             raise HTTPException(401, "Refresh token expired")
 
-        loop   = asyncio.get_event_loop()
+        loop   = asyncio.get_running_loop()
         tokens = await loop.run_in_executor(None, _create_tokens_sync,
                                              row["user_id"], row["email"], row["role"])
         _set_cookie(response, tokens["refresh_token"])
