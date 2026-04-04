@@ -94,21 +94,33 @@ async def lifespan(app: FastAPI):
             row = await db.execute(select(User).where(User.email == admin_email))
             existing = row.scalar_one_or_none()
             if existing:
+                # Ensure admin is active with correct role/subscription
+                changed = False
                 if existing.status != UserStatus.ACTIVE.value:
-                    existing.status = UserStatus.ACTIVE.value
-                    existing.email_verified = True
+                    existing.status = UserStatus.ACTIVE.value; changed = True
+                if not existing.email_verified:
+                    existing.email_verified = True; changed = True
+                if existing.role != "super_admin":
+                    existing.role = "super_admin"; changed = True
+                if getattr(existing, "subscription", "free") != "enterprise":
+                    existing.subscription = "enterprise"; changed = True
+                if changed:
                     await db.commit()
                 log.info("db.admin_exists", email=admin_email)
             else:
-                svc = AuthService()
-                user = await svc.signup(db, email=admin_email, username="superadmin",
-                    full_name="Super Admin", password=admin_pwd)
-                user.role = "super_admin"
-                user.status = UserStatus.ACTIVE.value
-                user.email_verified = True
-                user.subscription = "enterprise"
-                await db.commit()
-                log.info("db.admin_created", email=admin_email, pwd_hint=admin_pwd[:4]+"***")
+                try:
+                    svc = AuthService()
+                    user = await svc.signup(db, email=admin_email, username="admin",
+                        full_name="Super Admin", password=admin_pwd)
+                    user.role = "super_admin"
+                    user.status = UserStatus.ACTIVE.value
+                    user.email_verified = True
+                    user.subscription = "enterprise"
+                    await db.commit()
+                    log.info("db.admin_created", email=admin_email, pwd_hint=admin_pwd[:4]+"***")
+                except Exception as seed_err:
+                    await db.rollback()
+                    log.info("db.admin_seed_skipped", reason=str(seed_err)[:60])
     except Exception as e:
         log.warning("db.init_failed", error=str(e))
 
