@@ -13,9 +13,12 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import structlog
 from alchemy.auth.middleware import check_rate_limit, get_current_user, CurrentUser, get_client_ip
 from alchemy.auth.security import PasswordPolicy
 from alchemy.core.messages import msg
+
+log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
