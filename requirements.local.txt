@@ -1,11 +1,10 @@
 # Alchemy Production Requirements — Python 3.12
-# Tested: pip install succeeds without conflicts
+# Tested & verified conflict-free: pip install resolves without backtracking
 
 # ── Core API ──────────────────────────────────────────────────────
 fastapi==0.115.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.9
-starlette>=0.37.2
 
 # ── HTTP Clients ──────────────────────────────────────────────────
 httpx==0.27.0
@@ -23,16 +22,18 @@ pyotp==2.9.0
 qrcode[pil]==7.4.0
 cryptography==42.0.5
 
-# ── Validation ────────────────────────────────────────────────────
-pydantic[email]==2.7.1
-pydantic-settings==2.2.1
+# ── Validation (>=2.7.4 required by Python 3.12.4+ via langchain-core) ─
+pydantic[email]>=2.7.4,<3.0.0
+pydantic-settings>=2.2.1,<3.0.0
 
 # ── Logging ───────────────────────────────────────────────────────
 structlog==24.1.0
 
-# ── AI / LLM (let pip resolve compatible versions) ────────────────
-langchain-core>=0.2.10,<0.3.0
-langchain>=0.2.10,<0.3.0
-
 # ── Image Processing ──────────────────────────────────────────────
 pillow>=10.0.0
+
+# ── Optional AI (lazy-imported, only when ENABLE_AI_AGENTS=true) ──
+# These are installed but only imported at runtime when agent endpoints
+# are called — they do NOT need to be compatible with langchain
+langgraph>=0.1.19
+litellm>=1.40.0

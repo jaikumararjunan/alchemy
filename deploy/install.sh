@@ -236,10 +236,22 @@ server {
     listen 80;
     server_name ${SERVER_NAME};
 
-    # Security headers
+    # ── Security Headers ───────────────────────────────────────
     add_header X-Frame-Options DENY always;
     add_header X-Content-Type-Options nosniff always;
-    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # ── Hide server version ─────────────────────────────────────
+    server_tokens off;
+
+    # ── Request size limits ─────────────────────────────────────
+    client_max_body_size 10m;
+    client_body_timeout  30s;
+    client_header_timeout 30s;
+    keepalive_timeout 75s;
 
     # Gzip
     gzip on;
