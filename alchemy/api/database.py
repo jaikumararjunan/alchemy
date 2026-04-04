@@ -21,10 +21,20 @@ log = structlog.get_logger(__name__)
 import pathlib
 _db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
 if "sqlite" in _db_url:
-    # Extract path and create directory
-    _db_path = _db_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "").lstrip("/")
+    import re as _re
+    # Handle both relative (sqlite:///./path) and absolute (sqlite:////abs/path)
+    _db_path = _re.sub(r"^sqlite(\+aiosqlite)?:///", "", _db_url)
+    # If it started with 4 slashes, path is absolute — add the slash back
+    if _db_url.count("/") >= 4 and not _db_path.startswith("/"):
+        _db_path = "/" + _db_path
     if _db_path and not _db_path.startswith(":"):
-        pathlib.Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
+        _parent = pathlib.Path(_db_path).parent
+        _parent.mkdir(parents=True, exist_ok=True)
+        # Make directory writable
+        try:
+            _parent.chmod(0o777)
+        except Exception:
+            pass
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",

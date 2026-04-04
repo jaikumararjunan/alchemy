@@ -177,8 +177,10 @@ log "Environment file created at $APP_DIR/.env.production"
 header "Step 7/10: Docker Build & Deploy"
 cd "$APP_DIR"
 
+# Fix data dir permissions before starting
+mkdir -p "${DATA_DIR}" && chmod 777 "${DATA_DIR}"
+
 cat > "$APP_DIR/docker-compose.production.yml" << DCEOF
-version: '3.9'
 services:
   app:
     build:
@@ -190,15 +192,15 @@ services:
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////data/alchemy.db
     volumes:
-      - ${DATA_DIR}:/data
+      - ${DATA_DIR}:/data:rw
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 90s
     logging:
       driver: json-file
       options:
