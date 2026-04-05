@@ -1,4 +1,5 @@
 name: CD
+
 on:
   push:
     branches: [main]
@@ -16,20 +17,26 @@ jobs:
     environment:
       name: production
       url: https://akilamirthya.in
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run tests first
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Run tests before deploy
         run: |
-          pip install -r requirements.local.txt pytest pytest-asyncio
+          pip install -r requirements.local.txt pytest pytest-asyncio pytest-cov -q
           pytest tests/unit/ -q
         env:
-          JWT_SECRET_KEY: cd_predeploy_jwt_key_minimum_32_chars!!
-          ALCHEMY_VAULT_KEY: cd_predeploy_vault_key_min_32_chars!
+          JWT_SECRET_KEY: "cd_predeploy_jwt_key_minimum_32_chars_here!!"
+          ALCHEMY_VAULT_KEY: "cd_predeploy_vault_key_minimum_32chars_here!"
           DATABASE_URL: sqlite+aiosqlite:///./predeploy.db
           ADMIN_EMAIL: admin@alchemy.in
           ADMIN_PASSWORD: "CDTest#Admin!2024"
-          ENV: test
+          ENV: development
 
       - name: Setup SSH
         run: |
@@ -45,12 +52,12 @@ jobs:
           ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=no \
               -o ConnectTimeout=30 \
-              "${{ vars.VPS_USER || 'root' }}@${{ secrets.VPS_HOST }}" << REMOTE
+              "root@${{ secrets.VPS_HOST }}" << REMOTE
           set -euo pipefail
           cd /opt/alchemy
           echo "Deploying ${{ github.sha }} by ${{ github.actor }}"
           git fetch origin main && git reset --hard origin/main
-          BUILD_OPT=\$([ "$FORCE" = "true" ] && echo "--no-cache" || echo "")
+          BUILD_OPT=\$([ "\$FORCE" = "true" ] && echo "--no-cache" || echo "")
           docker compose -f docker-compose.production.yml build \$BUILD_OPT
           docker compose -f docker-compose.production.yml up -d --remove-orphans
           for i in \$(seq 1 18); do
@@ -59,9 +66,14 @@ jobs:
             sleep 5
           done
           docker image prune -f --filter "until=24h" || true
-          echo "✅ Deploy complete"
+          echo "Deploy complete"
           REMOTE
 
-      - name: Cleanup SSH
+      - name: Verify production
+        run: |
+          sleep 10
+          curl -sf https://akilamirthya.in/api/health && echo "Live!"
+
+      - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/deploy_key
