@@ -189,6 +189,6 @@ async def system_stats(db:AsyncSession=Depends(get_db), admin:CurrentUser=Depend
     risk_evts=(await db.execute(select(func.count(AuditLog.id)).where(AuditLog.risk_score>=60).where(AuditLog.timestamp>day_ago))).scalar()
     try:
         from alchemy.tokens.manager import get_token_manager; broker_status=get_token_manager().status()
-    except: broker_status={}
+    except Exception: broker_status={}
     return {"users":{"total":total,"active":active},"sessions":{"active":sessions},
             "security_24h":{"failed_logins":failed,"high_risk_events":risk_evts},"broker_connections":broker_status}

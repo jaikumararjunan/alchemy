@@ -169,7 +169,7 @@ async def validate_token(exchange: str,
     result = await _test_connection(exchange, data)
     data["status"]       = "active" if result["valid"] else "error"
     data["last_test_msg"]= result.get("message") or result.get("error","")
-    data["last_tested"]  = __import__("datetime").datetime.utcnow().isoformat()
+    data["last_tested"]  = __import__("datetime").datetime.now(timezone.utc).isoformat()
     _save(user.user_id, exchange, data)
     return result
 

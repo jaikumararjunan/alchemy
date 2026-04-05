@@ -7,10 +7,10 @@ Maps to AI-in-Trading-Workflow/gemini_fullstack_langgraph/state.py pattern.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, field_serializer, Field
 
 
 # ── Signal Types ──────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ class AlchemyTradingState(BaseModel):
     ticker: str = Field(..., description="Instrument symbol, e.g. 'RELIANCE' or 'AAPL'")
     market: MarketType = Field(default="NSE", description="Exchange for this instrument")
     broker: BrokerType = Field(default="PAPER", description="Execution broker")
-    run_id: str = Field(default_factory=lambda: datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
+    run_id: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"))
 
     # ── Market Data ─────────────────────────────────────────────────────────
     price_data: dict = Field(default_factory=dict,
@@ -76,21 +76,20 @@ class AlchemyTradingState(BaseModel):
     # ── Audit ─────────────────────────────────────────────────────────────
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict()
 
     def is_actionable(self) -> bool:
         """Returns True if the state has a tradeable signal."""
         return self.signal in ("BUY", "SELL") and self.position_pct is not None
 
     def add_error(self, msg: str) -> None:
-        self.errors.append(f"[{datetime.utcnow().isoformat()}] {msg}")
+        self.errors.append(f"[{datetime.now(timezone.utc).isoformat()}] {msg}")
 
     def add_warning(self, msg: str) -> None:
-        self.warnings.append(f"[{datetime.utcnow().isoformat()}] {msg}")
+        self.warnings.append(f"[{datetime.now(timezone.utc).isoformat()}] {msg}")
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")
@@ -109,7 +108,7 @@ class TradingSignal:
     forecast_vol: float
     reasoning: str
     run_id: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
         return {
