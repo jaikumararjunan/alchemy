@@ -1,166 +1,70 @@
-# 🔮 Alchemy — AI-Powered Algorithmic Trading Platform
+# 🔮 Alchemy — AI Trading Platform
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Tests](https://github.com/jaikumararjunan/alchemy/actions/workflows/ci.yml/badge.svg)](https://github.com/jaikumararjunan/alchemy/actions)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-134%20passing-green)](tests/)
+[![Python](https://img.shields.io/badge/python-3.12-blue)](requirements.local.txt)
+[![License](https://img.shields.io/badge/license-proprietary-red)](#)
 
-> Production-grade, AI-native algorithmic trading platform integrating the full QuantInsti open-source ecosystem with LangGraph multi-agent orchestration, LiteLLM-powered LLM routing, and institutional-quality analytics.
+**Production:** https://akilamirthya.in
+
+AI-powered algorithmic trading platform connecting Binance, Delta Exchange, Angel Broking, and Zerodha Kite — with real-time charts, ML strategy generation, emotional intelligence engine, and single-click VPS deployment.
 
 ---
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ALCHEMY PLATFORM                          │
-│                                                             │
-│  Presentation ── React Dashboard  │  pyfolio Tear Sheets    │
-│  AI Agents    ── LangGraph        │  LiteLLM Gateway        │
-│  Strategy     ── Blueshift SDK    │  Zipline Pipeline       │
-│  Analytics    ── pyfolio + ARCH   │  quantrautil Data       │
-│  Execution    ── IB Controller    │  Kite Connect (NSE)     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Modules
-
-| Module | QuantInsti Source | Purpose |
-|--------|------------------|---------|
-| `alchemy/agents` | AI-in-Trading-Workflow | LangGraph multi-agent orchestration |
-| `alchemy/llm` | litellm (fork) | Unified LLM gateway (Claude/GPT/Gemini) |
-| `alchemy/strategy` | blueshift-developer-kit | Strategy factory + templates |
-| `alchemy/pipeline` | zipline-pipeline | Factor-based universe screening |
-| `alchemy/analytics` | pyfolio + arch | Portfolio analytics + volatility |
-| `alchemy/data` | quantrautil | Market data adapter (NSE/US) |
-| `alchemy/execution` | ib-controller + kiteconnect3 | Broker execution gateways |
-| `alchemy/risk` | Live-Algo-Trading-Setups | Risk management engine |
 
 ## Quick Start
 
 ```bash
-# 1. Clone
-git clone https://github.com/jaikumararjunan/alchemy.git
-cd alchemy
+git clone https://github.com/jaikumararjunan/alchemy.git && cd alchemy
+py -3.12 -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.local.txt
+cd frontend && npm install && npm run build && cd ..
+uvicorn alchemy.api.app:app --host 0.0.0.0 --port 8000 --reload
+```
+Open http://localhost:8000 · Login: `admin@alchemy.in` / `Alchemy#Admin!2024`
 
-# 2. Setup environment
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+## Documentation
 
-# 3. Configure
-cp config/settings.example.yaml config/settings.yaml
-# Edit config/settings.yaml with your API keys
+| Document | Description |
+|----------|-------------|
+| [CLAUDE.md](CLAUDE.md) | AI assistant context — read first before any changes |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Complete deployment guide with version details |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and upgrade notes |
+| [SETUP_NOTIFICATIONS.md](SETUP_NOTIFICATIONS.md) | Gmail, Telegram, WhatsApp setup |
+| [RESEARCH.md](RESEARCH.md) | Enhancement roadmap from world-class research |
 
-# 4. Start LiteLLM Gateway
-python -m alchemy.llm.gateway --port 4000
+## Architecture
 
-# 5. Run agent (paper mode)
-python -m alchemy.agents.run --ticker RELIANCE --mode paper
+```
+Backend:  FastAPI 0.115 + Python 3.12 (async throughout)
+Frontend: React 18 + Vite 5 + TailwindCSS (mobile-first)
+Database: SQLite (dev) / PostgreSQL (prod) via SQLAlchemy async
+Auth:     JWT + bcrypt-12 + TOTP 2FA + Email OTP
+Deploy:   Docker + Nginx + Let's Encrypt + Systemd
+Monitor:  Prometheus + Grafana + Alertmanager
 ```
 
-## UML Architecture Diagrams
+## Features
 
-All diagrams are in [`docs/uml/`](docs/uml/).
+- **4 Exchanges:** Binance, Delta Exchange, Angel Broking, Zerodha Kite
+- **Real-time Charts:** SVG candlestick with RSI, MACD, BB, EMA indicators  
+- **AI Strategies:** Scalping, Momentum, Breakout, News-Driven
+- **Emotional Intelligence:** Fear & Greed index with 5 market regimes
+- **Security:** AES-256-GCM vault, 2FA enforcement, credential stuffing detection
+- **Alerts:** Telegram, WhatsApp, Gmail notifications
+- **Admin Panel:** User management, audit logs, subscription control
+- **Subscription Plans:** Free / Pro ₹2,999 / Team ₹9,999 / Enterprise
 
-| Diagram | Description |
-|---------|-------------|
-| [System Context](docs/uml/01_system_context.png) | C4 L1 — Alchemy in ecosystem |
-| [Component Architecture](docs/uml/02_component_architecture.png) | C4 L2 — Five-layer decomposition |
-| [Sequence Diagram](docs/uml/03_sequence_diagram.png) | AI agent trade lifecycle |
-| [Class Diagram](docs/uml/04_class_diagram.png) | Core integration classes |
-| [Integration Matrix](docs/uml/05_integration_architecture.png) | Module-wise mapping |
-| [Migration Roadmap](docs/uml/06_migration_roadmap.png) | 10-week phased plan |
-| [Deployment Architecture](docs/uml/07_deployment.png) | AWS cloud deployment |
+## Security
 
-## Migration Document
+- All exchange API keys encrypted with AES-256-GCM
+- TOTP 2FA required for exchange credential management
+- Credential stuffing detection (>20 login attempts = block)
+- Complete audit log of all user actions
+- Rate limiting per endpoint (production) with dev bypass
 
-See [`docs/migration/`](docs/migration/) for the full Alchemy ← QuantInsti migration specification.
-
-## License
-
-Apache 2.0 — See [LICENSE](LICENSE)
-
-## v0.2 — Frontend + Crypto Update
-
-### New: React Dashboard (`frontend/`)
-Full-featured trading dashboard built with React 18 + Vite + Tailwind CSS:
-- **Dashboard** — Live NAV chart, AI signal feed, crypto snapshot, risk footer
-- **Crypto Trading** — Delta Exchange + Binance order form, positions table, funding rates
-- **Portfolio** — Asset allocation pie, daily P&L bar chart, positions table
-- **AI Signals** — Agent runner + full signal history
-- **Risk Manager** — Emergency stop controls, drawdown monitor
-- **Analytics** — Cumulative returns vs benchmark, Sharpe/Sortino/Calmar metrics
-- **Strategy Library** — Browse and backtest strategies
+## Tests
 
 ```bash
-cd frontend && npm install && npm run dev   # → http://localhost:3000
-```
-
-### New: Crypto Execution (`alchemy/execution/crypto/`)
-
-| Gateway | File | Exchange |
-|---------|------|----------|
-| `DeltaGateway` | `delta_gateway.py` | Delta Exchange — BTC/ETH perpetuals, options, MOVE |
-| `BinanceGateway` | `binance_gateway.py` | Binance — Spot + USD-M Futures + COIN-M |
-
-Both gateways support **paper trading mode** (default) — no real API keys needed for development.
-
-## v0.3 — Token Management + Order Workflow
-
-### Exchange Token Manager (`alchemy/tokens/`)
-
-Secure, encrypted credential management for all exchange connections:
-
-| Exchange | Token Type | Auth Method | Refresh |
-|----------|-----------|-------------|---------|
-| Zerodha Kite | OAuth access token | Daily (6am IST) | Playwright/manual |
-| Delta Exchange | API key + secret | HMAC-SHA256 per request | 90-day rotation |
-| Binance | API key + secret | X-MBX-APIKEY + HMAC | Manual rotation |
-| Interactive Brokers | TWS session | TCP connection | Session reconnect |
-
-Tokens stored in AES-256-GCM encrypted vault (`~/.alchemy/vault/`).
-
-### Order Workflow Engine (`alchemy/workflows/`)
-
-LangGraph state machine with 9 nodes for every buy/sell order:
-
-```
-PENDING → SIGNAL_VALIDATED → RISK_CHECKED → TOKEN_VERIFIED
-       → ROUTED → PLACED → MONITORING → FILLED → SETTLED
-```
-
-Smart Order Router selects best exchange by fee, spread, token validity, and native listing.
-
-```python
-from alchemy.workflows.engine import buy, sell
-
-# Execute through full workflow pipeline
-result = await buy("BTCUSD", exchange="auto", quantity=1, leverage=5)
-print(result.status, result.fill_price, result.routed_to)
-```
-
-### New REST API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/tokens/register` | Register exchange credentials |
-| `GET`  | `/tokens/status` | All token statuses (secrets redacted) |
-| `POST` | `/tokens/{ex}/validate` | Validate against live API |
-| `POST` | `/tokens/{ex}/refresh` | Manual token refresh |
-| `POST` | `/workflows/buy` | Execute buy through full pipeline |
-| `POST` | `/workflows/sell` | Execute sell through full pipeline |
-| `GET`  | `/workflows/route-preview` | Preview smart routing |
-| `GET`  | `/workflows/states` | State machine definition |
-
-### New UML Diagrams (`docs/workflows/`)
-
-1. `01_workflow_state_machine.png` — Full state machine + retry loop
-2. `02_buy_sell_sequence.png` — End-to-end buy/sell sequence  
-3. `03_token_lifecycle.png` — Token types, vault encryption, status states
-4. `04_smart_router.png` — Router decision flow
-
-### Test Coverage
-
-```bash
-python3 -m pytest tests/unit/ -v   # 62 tests · 100% pass rate
+python3 -m pytest tests/unit/ --no-cov -q
+# 134 passed
 ```

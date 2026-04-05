@@ -27,7 +27,8 @@ from fastapi.staticfiles import StaticFiles
 from alchemy.auth.middleware import (
     SecurityHeadersMiddleware, get_current_user, CurrentUser,
 )
-from alchemy.api.metrics import router as metrics_router, MetricsMiddleware
+from alchemy.api.metrics     import router as metrics_router, MetricsMiddleware
+from alchemy.api.audit_routes  import router as audit_router
 from alchemy.core.config import get_config
 
 log = structlog.get_logger(__name__)
@@ -65,7 +66,7 @@ manager = ConnectionManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("alchemy.startup", version="0.6.0")
+    log.info("alchemy.startup", version="0.7.0")
 
     # 1. Database tables + admin seed
     try:
@@ -153,7 +154,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Alchemy Trading Platform",
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -193,6 +194,7 @@ api.include_router(notification_router)
 api.include_router(intelligence_router)
 api.include_router(otp_router)
 app.include_router(metrics_router)
+api.include_router(audit_router)
 app.include_router(api)
 
 # bare prefix  (Swagger UI + backward compat)
@@ -210,7 +212,7 @@ app.include_router(intelligence_router)
 @app.get("/health",      tags=["core"])
 @app.get("/api/health",  tags=["core"])
 async def health():
-    return {"status": "ok", "version": "0.6.0", "env": get_config().env}
+    return {"status": "ok", "version": "0.7.0", "env": get_config().env}
 
 
 @app.get("/risk/status",      tags=["risk"])

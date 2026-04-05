@@ -17,6 +17,7 @@ import structlog
 from alchemy.auth.middleware import check_rate_limit, get_current_user, CurrentUser, get_client_ip
 from alchemy.auth.security import PasswordPolicy
 from alchemy.core.messages import msg
+from alchemy.auth.guards import check_credential_stuffing
 
 log = structlog.get_logger(__name__)
 
@@ -208,6 +209,8 @@ async def get_db():
 async def login(req: LoginRequest, request: Request, response: Response):
     """Login using raw sqlite3 — bypasses SQLAlchemy ORM."""
     check_rate_limit(request, "auth.login")
+    ip = request.client.host if request.client else "unknown"
+    check_credential_stuffing(ip)
     try:
         loop = asyncio.get_running_loop()
         user = await loop.run_in_executor(None, _login_sync, req.email, req.password)

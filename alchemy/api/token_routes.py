@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from alchemy.auth.middleware import get_current_user, CurrentUser
+from alchemy.auth.guards import require_2fa, audit_action
 
 token_router    = APIRouter(prefix="/tokens",    tags=["tokens"])
 workflow_router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -79,7 +80,8 @@ class UpdateKiteTokenRequest(BaseModel):
 
 @token_router.post("/register")
 async def register_token(req: RegisterRequest,
-                          user: CurrentUser = Depends(get_current_user)):
+                          user: CurrentUser = Depends(get_current_user),
+                          _2fa: CurrentUser = Depends(require_2fa)):
     if req.exchange not in ("delta","binance","angel","kite","ib"):
         raise HTTPException(400, f"Unknown exchange: {req.exchange}")
     if not req.api_key:
