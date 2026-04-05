@@ -33,7 +33,6 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import structlog
-from langgraph.graph import END, StateGraph
 
 from alchemy.tokens.manager import TokenManager, get_token_manager
 from alchemy.tokens.models import ExchangeID
@@ -480,6 +479,7 @@ class OrderWorkflowEngine:
     # ── Graph builder ─────────────────────────────────────────────────────────
 
     def _build_graph(self) -> Any:
+        from langgraph.graph import END, StateGraph  # lazy — optional dep
         g = StateGraph(dict)
 
         g.add_node("validate_signal",  validate_signal_node)

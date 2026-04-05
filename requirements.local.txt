@@ -36,6 +36,8 @@ pillow>=10.0.0
 # langgraph and litellm are NOT required for tests or basic operation
 # Install with: pip install langgraph>=0.1.19 litellm>=1.40.0
 
-# ── Scientific (required by tests) ───────────────────────────────────────────
+# ── Scientific (required by tests + volatility engine) ──────────────────────
 numpy>=1.26.0
 pandas>=2.2.0
+arch>=7.0.0
+matplotlib>=3.8.0
