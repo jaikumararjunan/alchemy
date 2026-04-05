@@ -33,6 +33,13 @@ from alchemy.notifications.models import (
 
 log = structlog.get_logger(__name__)
 
+import os as _os
+
+def _base_url() -> str:
+    domain = _os.environ.get("DOMAIN", "localhost:8000")
+    proto  = "https" if "." in domain and not domain.startswith("localhost") else "http"
+    return f"{proto}://{domain}"
+
 
 class TelegramProvider(BaseNotificationProvider):
     """
@@ -200,13 +207,13 @@ class TelegramProvider(BaseNotificationProvider):
         keyboards = {
             EventType.RISK_EMERGENCY_STOP: [[
                 {"text": "🔓 Clear Stop", "callback_data": "risk:clear_stop"},
-                {"text": "📊 Dashboard", "url": "http://localhost:3000/risk"},
+                {"text": "📊 Dashboard", "url": f"{_base_url()}/risk"},
             ]],
             EventType.SIGNAL_BUY: [[
-                {"text": "📈 View Signal", "url": "http://localhost:3000/signals"},
+                {"text": "📈 View Signal", "url": f"{_base_url()}/signals"},
             ]],
             EventType.ORDER_FILLED: [[
-                {"text": "📋 View Portfolio", "url": "http://localhost:3000/portfolio"},
+                {"text": "📋 View Portfolio", "url": f"{_base_url()}/portfolio"},
             ]],
         }
         return keyboards.get(event.event_type, [])
