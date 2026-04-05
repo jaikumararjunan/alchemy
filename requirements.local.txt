@@ -32,8 +32,10 @@ structlog==24.1.0
 # ── Image Processing ──────────────────────────────────────────────
 pillow>=10.0.0
 
-# ── Optional AI (lazy-imported, only when ENABLE_AI_AGENTS=true) ──
-# These are installed but only imported at runtime when agent endpoints
-# are called — they do NOT need to be compatible with langchain
-langgraph>=0.1.19
-litellm>=1.40.0
+# ── Optional AI (lazy-imported — install separately if needed) ───────────────
+# langgraph and litellm are NOT required for tests or basic operation
+# Install with: pip install langgraph>=0.1.19 litellm>=1.40.0
+
+# ── Scientific (required by tests) ───────────────────────────────────────────
+numpy>=1.26.0
+pandas>=2.2.0
