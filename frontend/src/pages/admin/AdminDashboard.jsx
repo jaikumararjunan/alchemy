@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import {
   Users, ShieldAlert, Activity, Search, UserX, UserCheck,
-  RefreshCw, Eye, Ban, Unlock, ChevronDown, AlertTriangle,
+  RefreshCw, Eye, Ban, Unlock, Trash2, ChevronDown, AlertTriangle, CreditCard,
   BarChart3, Server, Globe
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -87,12 +87,27 @@ function UserRow({ user, onAction }) {
                     <Unlock size={11} /> Unlock
                   </button>
                 )}
+                {user.role !== 'super_admin' && (
+                  <button onClick={() => { onAction('delete', user.id); setOpen(false) }}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/40 rounded-lg w-full">
+                    <Trash2 size={11} /> Delete User
+                  </button>
+                )}
                 {user.status !== 'banned' && (
                   <button onClick={() => { onAction('ban', user.id); setOpen(false) }}
                     className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-400 hover:bg-gray-700">
                     <Ban size={11} /> Ban User
                   </button>
                 )}
+                <div className="border-t border-gray-800 my-1"/>
+                <div className="px-3 py-1 text-[10px] text-gray-600 uppercase tracking-wider">Set Plan</div>
+                {['free','pro','team','enterprise'].map(plan => (
+                  <button key={plan} onClick={() => { subMut.mutate({id:user.id, plan}); setOpen(false) }}
+                    className={clsx('flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-800 rounded-lg w-full capitalize',
+                      user.subscription === plan ? 'text-blue-400 font-semibold' : 'text-gray-300')}>
+                    <CreditCard size={11} /> {plan} {user.subscription === plan ? '✓' : ''}
+                  </button>
+                ))}
                 <button onClick={() => { onAction('revoke_sessions', user.id); setOpen(false) }}
                   className="flex items-center gap-2 w-full px-3 py-2 text-xs text-amber-400 hover:bg-gray-700">
                   <RefreshCw size={11} /> Revoke Sessions
@@ -133,6 +148,17 @@ export default function AdminDashboard() {
     enabled: tab === 'audit',
   })
 
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/admin/users/${id}`).then(r=>r.data),
+    onSuccess: () => { toast.success('User permanently deleted'); qc.invalidateQueries(['admin-users']) },
+    onError: (e) => toast.error(e.response?.data?.detail?.message || 'Delete failed'),
+  })
+
+  const subMut = useMutation({
+    mutationFn: ({id, plan}) => api.patch(`/admin/users/${id}/subscription?plan=${plan}`).then(r=>r.data),
+    onSuccess: (d) => { toast.success(d.message); qc.invalidateQueries(['admin-users']) },
+  })
+
   const banMut = useMutation({
     mutationFn: (id) => api.post(`/admin/users/${id}/ban`).then(r=>r.data),
     onSuccess: () => { toast.success('User banned'); qc.invalidateQueries(['admin-users']) },
@@ -148,6 +174,7 @@ export default function AdminDashboard() {
   })
 
   const handleAction = (action, userId) => {
+    if (action === 'delete')         { if (window.confirm('Permanently delete this user and all their data? This cannot be undone.')) deleteMut.mutate(userId) }
     if (action === 'ban')            banMut.mutate(userId)
     else if (action === 'unlock')    unlockMut.mutate(userId)
     else if (action === 'revoke_sessions') revokeMut.mutate(userId)

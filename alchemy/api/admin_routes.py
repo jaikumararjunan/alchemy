@@ -90,6 +90,70 @@ async def unlock_user(user_id:str, db:AsyncSession=Depends(get_db), admin:Curren
     user.status="active"; user.failed_login_count=0; user.locked_until=None
     await db.commit(); return {"message":f"{user.email} unlocked"}
 
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, db: AsyncSession = Depends(get_db),
+                      admin: CurrentUser = Depends(_require_admin())):
+    """Permanently delete a user and all their data."""
+    from sqlalchemy import select, delete as sql_delete
+    from alchemy.users.models import User, UserSession, AuditLog
+    from uuid import UUID
+    import sqlite3, os, json
+
+    if user_id == admin.user_id:
+        raise HTTPException(400, "Cannot delete your own account")
+
+    uid = UUID(user_id)
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    email = user.email
+    # Prevent deleting super_admin
+    if user.role == "super_admin":
+        raise HTTPException(403, "Cannot delete super_admin accounts")
+
+    # Delete sessions and audit logs first (FK constraints)
+    await db.execute(sql_delete(UserSession).where(UserSession.user_id == uid))
+    await db.execute(sql_delete(AuditLog).where(AuditLog.user_id == uid))
+    await db.delete(user)
+    await db.commit()
+
+    # Also delete exchange tokens from SQLite (stored separately)
+    try:
+        from alchemy.api.token_routes import _get_db_path
+        db_path = _get_db_path()
+        conn = sqlite3.connect(db_path)
+        conn.execute("DELETE FROM exchange_tokens WHERE user_id=?", (user_id,))
+        conn.commit(); conn.close()
+    except Exception:
+        pass
+
+    import structlog
+    structlog.get_logger().info("admin.user_deleted", email=email, by=admin.email)
+    return {"message": f"User {email} permanently deleted", "deleted": True}
+
+
+@router.patch("/users/{user_id}/subscription")
+async def update_subscription(user_id: str, plan: str,
+                               db: AsyncSession = Depends(get_db),
+                               admin: CurrentUser = Depends(_require_admin())):
+    """Change a user's subscription plan."""
+    from sqlalchemy import select
+    from alchemy.users.models import User
+    from uuid import UUID
+    valid = {"free", "pro", "team", "enterprise"}
+    if plan not in valid:
+        raise HTTPException(400, f"Plan must be one of: {', '.join(valid)}")
+    result = await db.execute(select(User).where(User.id == UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user: raise HTTPException(404, "User not found")
+    user.subscription = plan
+    await db.commit()
+    return {"message": f"Subscription updated to {plan}", "user": user.safe_dict()}
+
+
 @router.delete("/users/{user_id}/sessions")
 async def revoke_sessions(user_id:str, db:AsyncSession=Depends(get_db), admin:CurrentUser=Depends(_require_admin())):
     from alchemy.auth.service import AuthService
