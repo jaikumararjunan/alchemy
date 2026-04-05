@@ -87,7 +87,7 @@ class AlchemyConfig(BaseSettings):
     )
 
     # ── Core ─────────────────────────────────────────────────────────────────
-    env:          Literal["development", "paper", "production"] = "paper"
+    env:          Literal["development", "paper", "production", "test"] = "paper"
     log_level:    str  = "INFO"        # Accept any case — normalised below
     project_name: str  = "alchemy"
 
