@@ -1,0 +1,67 @@
+name: CD
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: Force no-cache rebuild
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://akilamirthya.in
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests first
+        run: |
+          pip install -r requirements.local.txt pytest pytest-asyncio
+          pytest tests/unit/ -q
+        env:
+          JWT_SECRET_KEY: cd_predeploy_jwt_key_minimum_32_chars!!
+          ALCHEMY_VAULT_KEY: cd_predeploy_vault_key_min_32_chars!
+          DATABASE_URL: sqlite+aiosqlite:///./predeploy.db
+          ADMIN_EMAIL: admin@alchemy.in
+          ADMIN_PASSWORD: "CDTest#Admin!2024"
+          ENV: test
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy to VPS
+        env:
+          FORCE: ${{ inputs.force_rebuild || 'false' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              "${{ vars.VPS_USER || 'root' }}@${{ secrets.VPS_HOST }}" << REMOTE
+          set -euo pipefail
+          cd /opt/alchemy
+          echo "Deploying ${{ github.sha }} by ${{ github.actor }}"
+          git fetch origin main && git reset --hard origin/main
+          BUILD_OPT=\$([ "$FORCE" = "true" ] && echo "--no-cache" || echo "")
+          docker compose -f docker-compose.production.yml build \$BUILD_OPT
+          docker compose -f docker-compose.production.yml up -d --remove-orphans
+          for i in \$(seq 1 18); do
+            curl -sf http://127.0.0.1:8000/api/health && echo " healthy" && break
+            [ \$i -eq 18 ] && { docker compose -f docker-compose.production.yml logs --tail=40; exit 1; }
+            sleep 5
+          done
+          docker image prune -f --filter "until=24h" || true
+          echo "✅ Deploy complete"
+          REMOTE
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
