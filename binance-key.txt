@@ -1,0 +1,54 @@
+API Key - VCE13XjO4XKUFYRWoWsbDUcGOEYep8SeSwXrEIy9lWWJ6P9KLupUkBNJUbs6Fxoq
+Secret Key - apXZhmQ6bvzGZItceUV3nOmvRno1YoxB6Su6KEMxxYGhZUWlSjzx7Xu40eO9WoWF
+
+github - PAToken = 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
+
+
+curl -fsSL \
+  -H "Authorization: token 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" \
+  "https://raw.githubusercontent.com/jaikumararjunan/alchemy/main/deploy/install.sh" \
+  -o install.sh && \
+  DOMAIN=akilamirthya.in \
+  ADMIN_EMAIL=a.jaikumar.coimbatore@gmail.com \
+  GH_TOKEN=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 \
+  bash install.sh
+  
+ADMIN_EMAIL=a.jaikumar.coimbatore@gmail.com
+ADMIN_PASSWORD=epFtq5dLFWAcrwWK
+
+Telegram BOT Token
+8671456576:AAEi75U6MboYMsbPk-DRp5JZNNnzffpO6x8
+
+
+Generating public/private ed25519 key pair.
+Your identification has been saved in /root/.ssh/alchemy_deploy
+Your public key has been saved in /root/.ssh/alchemy_deploy.pub
+The key fingerprint is:
+SHA256:NNbwcb9a6eSldDYsCFx0s2X0OqRNw2n+NKZxjz1FeoU alchemy-github-deploy
+The key's randomart image is:
++--[ED25519 256]--+
+|        . oo.o.+ |
+|        .+.o.o=o.|
+|        +oo  .E +|
+|       o .. .B.B.|
+|        S  ..o%*B|
+|             B*%=|
+|            ..=.+|
+|                .|
+|                 |
++----[SHA256]-----+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Copy this PRIVATE KEY into GitHub Secret VPS_SSH_KEY:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACArXquSl97RMacf9hJ6jM7eci7PjKN0mucnS9+3iOaVWQAAAJgg18LYINfC
+2AAAAAtzc2gtZWQyNTUxOQAAACArXquSl97RMacf9hJ6jM7eci7PjKN0mucnS9+3iOaVWQ
+AAAECug8eeU41HM3sB6XIcFZ+ow3+DL84ms1kFwRC2SViORCteq5KX3tExpx/2EnqMzt5y
+Ls+Mo3Sa5ydL37eI5pVZAAAAFWFsY2hlbXktZ2l0aHViLWRlcGxveQ==
+-----END OPENSSH PRIVATE KEY-----
+root@vmi3098933:/opt/alchemy# alchemy-update
+
+
+  
