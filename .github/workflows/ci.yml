@@ -1,20 +1,25 @@
-
 name: CI
+
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "feature/**", "fix/**"]
   pull_request:
     branches: [main]
+
 jobs:
   test:
+    name: Backend Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.12", cache: pip}
-      # CHANGE 1: Add pytest-cov to the pip install line
-      - run: pip install -r requirements.local.txt pytest pytest-asyncio pytest-cov
-      - run: pytest tests/unit/ -q
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.local.txt pytest pytest-asyncio pytest-cov
+      - name: Run unit tests
+        run: pytest tests/unit/ -q
         env:
           JWT_SECRET_KEY: ci_test_jwt_secret_key_minimum_32_chars!!
           ALCHEMY_VAULT_KEY: ci_vault_key_minimum_32_chars_here!!
@@ -22,11 +27,20 @@ jobs:
           ADMIN_EMAIL: admin@alchemy.in
           ADMIN_PASSWORD: "CITest#Admin!2024"
           ENV: development
+
   frontend:
+    name: Frontend Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: {node-version: "20", cache: npm, cache-dependency-path: frontend/package-lock.json}
-      - run: cd frontend && npm ci && npm run build
-      - run: test -f frontend/dist/index.html
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: cd frontend && npm ci
+      - name: Build
+        run: cd frontend && npm run build
+      - name: Verify output
+        run: test -f frontend/dist/index.html && echo "Build OK"
