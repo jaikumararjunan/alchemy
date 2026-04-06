@@ -14,7 +14,6 @@ const STRATEGY_OPTIONS = [
   { id: 'scalping',       label: 'Scalping',        desc: '1-5m tight stops', color: 'text-amber-400' },
   { id: 'momentum',       label: 'Momentum',        desc: 'Trend + EMA crossover', color: 'text-blue-400' },
   { id: 'breakout',       label: 'Breakout',        desc: 'Volume-confirmed', color: 'text-emerald-400' },
-  { id: 'mean_reversion', label: 'Mean Reversion',  desc: 'BB + RSI reversal', color: 'text-purple-400' },
 ]
 
 const SYMBOL_OPTIONS = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT']
