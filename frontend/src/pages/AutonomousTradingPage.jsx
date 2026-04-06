@@ -173,7 +173,7 @@ export default function AutonomousTradingPage() {
   // Combine WS signals with history
   const allSignals = [...wsSignals.map(s => s), ...history]
     .reduce((acc, s) => {
-      const data = s.event === 'autonomous_signal' ? s : s
+      const data = s.event === 'autonomous_signal' ? (s.data ?? s) : s
       if (!acc.find(x => x.id === data.id)) acc.push(data)
       return acc
     }, [])
@@ -365,7 +365,7 @@ export default function AutonomousTradingPage() {
             ))}
           </div>
           <div className="card overflow-hidden">
-            <LiveChart defaultSymbol={chartSymbol} height={300}/>
+            <LiveChart key={chartSymbol} defaultSymbol={chartSymbol} height={300}/>
           </div>
         </div>
 
