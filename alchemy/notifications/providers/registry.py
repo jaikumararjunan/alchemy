@@ -124,11 +124,11 @@ def _bootstrap_providers() -> None:
     doesn't prevent others from loading.
     """
     providers_to_load = [
-        ("alchemy.notifications.providers.telegram", "TelegramProvider"),
-        ("alchemy.notifications.providers.whatsapp", "WhatsAppProvider"),
-        ("alchemy.notifications.providers.sms",      "SMSProvider"),
+        ("alchemy.notifications.providers.telegram",       "TelegramProvider"),
+        ("alchemy.notifications.providers.whatsapp",       "WhatsAppProvider"),
+        ("alchemy.notifications.providers.sms",            "SMSProvider"),
+        ("alchemy.notifications.providers.email_provider", "EmailProvider"),
         # ── Add new providers here ──────────────────────────────────────────
-        # ("alchemy.notifications.providers.email",   "EmailProvider"),
         # ("alchemy.notifications.providers.slack",   "SlackProvider"),
         # ("alchemy.notifications.providers.discord", "DiscordProvider"),
         # ("alchemy.notifications.providers.webhook", "WebhookProvider"),
