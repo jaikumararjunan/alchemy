@@ -232,8 +232,9 @@ class EmailProvider(BaseNotificationProvider):
             ) and v is not None
         }
         def _esc(text: str) -> str:
-            """Escape curly braces so str.format() doesn't choke on user content."""
-            return text.replace("{", "&#123;").replace("}", "&#125;")
+            """HTML-escape and escape curly braces so str.format() doesn't choke on user content."""
+            import html as _html
+            return _html.escape(str(text)).replace("{", "&#123;").replace("}", "&#125;")
 
         data_rows_html = ""
         if important:
