@@ -25,7 +25,7 @@ uvicorn alchemy.api.app:app --host 0.0.0.0 --port 8000 --reload
 alchemy/
 ├── api/
 │   ├── app.py              ← FastAPI app, lifespan, WS routing (WS BEFORE StaticFiles)
-│   ├── auth_routes.py      ← Login/signup/refresh — uses RAW sqlite3 (not ORM)
+│   ├── auth_routes.py      ← Login/signup/refresh — uses AuthService + SQLAlchemy ORM
 │   ├── admin_routes.py     ← User management, audit logs, stats
 │   ├── token_routes.py     ← Exchange credentials (SQLite + AES-256-GCM vault)
 │   ├── crypto_routes.py    ← Binance/Delta market data + orders
@@ -75,7 +75,7 @@ frontend/src/
 - **Production DB path:** `/data/alchemy.db` (Docker volume: `/var/lib/alchemy → /data`)
 - **All modules MUST read `DATABASE_URL` env var** — never hardcode `data/alchemy.db`
 - `database.py create_tables()` runs auto-migrations on startup (ALTER TABLE ADD COLUMN)
-- `auth_routes.py` uses raw `sqlite3` for login (bypasses ORM for performance)
+- `auth_routes.py` delegates to `AuthService` (SQLAlchemy async ORM) for all auth operations
 - `token_routes.py` uses raw `sqlite3` for exchange tokens
 
 ### Auth Flow

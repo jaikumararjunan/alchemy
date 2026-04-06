@@ -133,21 +133,33 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
             user.email_verified = True
             log.info("auth.auto_activated", email=req.email, env=cfg.env)
 
+        # Persist user to DB before attempting auto-login so the account
+        # is saved even if login fails (e.g. pending status in production).
+        await db.commit()
+
         # Auto-login after signup
         ip = request.client.host if request.client else "unknown"
         ua = request.headers.get("user-agent", "")
-        result = await svc.login(
-            db, email=req.email, password=req.password,
-            ip_address=ip, user_agent=ua,
-        )
-        await db.commit()
-        _set_cookie(response, result["refresh_token"])
-        user_data = user.safe_dict()
-        return {
-            "message":      msg("auth_signup_success", name=user.full_name.split()[0]),
-            "access_token": result["access_token"],
-            "user":         user_data,
-        }
+        try:
+            result = await svc.login(
+                db, email=req.email, password=req.password,
+                ip_address=ip, user_agent=ua,
+            )
+            await db.commit()
+            _set_cookie(response, result["refresh_token"])
+            return {
+                "message":      msg("auth_signup_success", name=user.full_name.split()[0]),
+                "access_token": result["access_token"],
+                "user":         user.safe_dict(),
+            }
+        except AuthError:
+            # In production/paper mode the user is still pending email
+            # verification, so auto-login will be rejected.  Return a
+            # success response asking them to verify their email.
+            return {
+                "message": "Account created. Please check your email to verify your account before signing in.",
+                "user":    user.safe_dict(),
+            }
     except AuthError as e:
         code    = getattr(e, "code", "signup_error")
         msg_map = {
