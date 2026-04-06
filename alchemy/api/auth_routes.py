@@ -101,6 +101,9 @@ async def login(req: LoginRequest, request: Request, response: Response,
             "user":         result["user"],
         }
     except AuthError as e:
+        # Persist failed-login counter / lockout changes so brute-force
+        # protection actually works across requests.
+        await db.commit()
         code = getattr(e, "code", "auth_error")
         messages = {
             "invalid_credentials":          msg("auth_login_invalid"),
@@ -211,9 +214,12 @@ async def logout(response: Response, db: AsyncSession = Depends(get_db),
     """Invalidate current session."""
     _clear_cookie(response)
     if refresh_token:
-        svc = AuthService()
-        await svc.logout(db, refresh_token, user.user_id)
-        await db.commit()
+        try:
+            svc = AuthService()
+            await svc.logout(db, refresh_token, user.user_id)
+            await db.commit()
+        except Exception:
+            pass  # Best-effort — cookie is already cleared
     return {"message": "Logged out"}
 
 
@@ -222,9 +228,12 @@ async def logout_all(response: Response, db: AsyncSession = Depends(get_db),
                       user: CurrentUser = Depends(get_current_user)):
     """Revoke ALL sessions for a user."""
     _clear_cookie(response)
-    svc = AuthService()
-    await svc.logout_all(db, user.user_id)
-    await db.commit()
+    try:
+        svc = AuthService()
+        await svc.logout_all(db, user.user_id)
+        await db.commit()
+    except Exception:
+        pass  # Best-effort — cookie is already cleared
     return {"message": "Logged out from all devices"}
 
 
