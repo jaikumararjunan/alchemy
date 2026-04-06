@@ -231,19 +231,24 @@ class EmailProvider(BaseNotificationProvider):
                 "pnl", "confidence", "status", "workflow_id",
             ) and v is not None
         }
+        def _esc(text: str) -> str:
+            """Escape curly braces so str.format() doesn't choke on user content."""
+            return text.replace("{", "&#123;").replace("}", "&#125;")
+
         data_rows_html = ""
         if important:
             data_rows_html = '<div style="margin-top:16px">'
             for k, v in list(important.items())[:8]:
                 label = k.replace("_", " ").title()
                 val = f"${v:,.2f}" if isinstance(v, float) else str(v)
-                data_rows_html += DATA_ROW.format(key=label, value=val)
+                data_rows_html += DATA_ROW.format(key=_esc(label), value=_esc(val))
             data_rows_html += "</div>"
 
+        clean_title = event.title.replace("🟢", "").replace("🔴", "").replace("🟡", "").strip()
         html = ALERT_HTML.format(
             severity_emoji=emoji,
-            title=event.title.replace("🟢", "").replace("🔴", "").replace("🟡", "").strip(),
-            message=event.message,
+            title=_esc(clean_title),
+            message=_esc(event.message),
             data_rows=data_rows_html,
             timestamp=event.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
         )

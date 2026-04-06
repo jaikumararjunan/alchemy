@@ -316,7 +316,7 @@ export default function AutonomousTradingPage() {
                   <span className="text-xs text-gray-400">Auto-Execute</span>
                   {autoExecute && (
                     <div className="flex items-center gap-1 text-[10px] text-amber-400">
-                      <AlertTriangle size={9}/> Real orders will be placed
+                      <AlertTriangle size={9}/> Paper orders will be simulated
                     </div>
                   )}
                 </div>
