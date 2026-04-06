@@ -84,7 +84,7 @@ def _login_sync(email: str, password: str) -> dict:
     try:
         row = conn.execute(
             "SELECT id, email, username, full_name, password_hash, role, status, "
-            "email_verified, failed_login_count, locked_until, totp_enabled "
+            "email_verified, failed_login_count, locked_until, totp_enabled, subscription "
             "FROM users WHERE LOWER(email)=LOWER(?)",
             (email.strip(),)
         ).fetchone()
@@ -137,12 +137,13 @@ def _login_sync(email: str, password: str) -> dict:
             "role":     row["role"],
             "status":   row["status"],
             "totp_enabled": bool(row["totp_enabled"]),
+            "subscription": row["subscription"] or "free",
         }
     finally:
         conn.close()
 
 
-def _create_tokens_sync(user_id: str, email: str, role: str) -> dict:
+def _create_tokens_sync(user_id: str, email: str, role: str, subscription: str = "free") -> dict:
     """Create JWT access token + refresh token."""
     import secrets, hashlib, jwt
 
@@ -155,6 +156,7 @@ def _create_tokens_sync(user_id: str, email: str, role: str) -> dict:
         "sub":   user_id,
         "email": email,
         "role":  role,
+        "subscription": subscription,
         "jti":   jti,
         "iat":   now,
         "exp":   now + timedelta(minutes=15),
@@ -215,7 +217,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
         loop = asyncio.get_running_loop()
         user = await loop.run_in_executor(None, _login_sync, req.email, req.password)
         tokens = await loop.run_in_executor(None, _create_tokens_sync,
-                                             user["id"], user["email"], user["role"])
+                                             user["id"], user["email"], user["role"], user.get("subscription", "free"))
         _set_cookie(response, tokens["refresh_token"])
         return {
             "access_token": tokens["access_token"],
@@ -306,7 +308,7 @@ async def refresh_tokens(response: Response,
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute("""
-            SELECT s.user_id, u.email, u.role, s.expires_at
+            SELECT s.user_id, u.email, u.role, u.subscription, s.expires_at
             FROM user_sessions s JOIN users u ON s.user_id=u.id
             WHERE s.refresh_token_hash=? AND s.is_active=1
         """, (hashed,)).fetchone()
@@ -324,7 +326,7 @@ async def refresh_tokens(response: Response,
 
         loop   = asyncio.get_running_loop()
         tokens = await loop.run_in_executor(None, _create_tokens_sync,
-                                             row["user_id"], row["email"], row["role"])
+                                             row["user_id"], row["email"], row["role"], row["subscription"] or "free")
         _set_cookie(response, tokens["refresh_token"])
         return {"access_token": tokens["access_token"], "token_type": "bearer"}
     except HTTPException:
@@ -405,7 +407,8 @@ async def reset_password(req: PasswordResetConfirmRequest, db: AsyncSession = De
 
 @router.get("/me")
 async def get_me(user: CurrentUser = Depends(get_current_user)):
-    return {"user_id": user.user_id, "email": user.email, "role": user.role}
+    return {"user_id": user.user_id, "email": user.email, "role": user.role,
+            "subscription": getattr(user, "subscription", None) or "free"}
 
 
 @router.get("/password/strength")

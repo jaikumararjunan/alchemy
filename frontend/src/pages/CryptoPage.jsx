@@ -34,7 +34,7 @@ function MultiTicker({ onSelect, selected }) {
   }, [])
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+    <div className="flex gap-2 overflow-x-auto pb-2">
       {TICKER_SYMBOLS.map(sym => {
         const t  = tickers[sym]
         const up = (t?.changePct ?? 0) >= 0
