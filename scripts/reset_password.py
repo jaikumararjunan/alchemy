@@ -28,8 +28,8 @@ if not db_path:
 
 print(f"Database: {db_path}")
 
-ADMIN_EMAIL    = "admin@alchemy.in"
-ADMIN_PASSWORD = "Alchemy#Admin!2024"
+ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "admin@alchemy.in")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Alchemy#Admin!2024")
 
 # Install bcrypt if needed
 try:

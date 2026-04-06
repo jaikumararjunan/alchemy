@@ -148,6 +148,26 @@ class AuthService:
                 "account_locked"
             )
 
+        # Pending users: auto-activate in dev, reject in production
+        if user.status == UserStatus.PENDING.value:
+            from alchemy.core.config import get_config
+            if get_config().env in ("development", "dev", "local", "test"):
+                user.status = UserStatus.ACTIVE.value
+                user.email_verified = True
+                await self._log(db, user_id=str(user.id), action="auth.login",
+                                status="success", ip_address=ip_address,
+                                detail={"reason": "pending_auto_activated"})
+                log.info("auth.pending_auto_activated", user_id=str(user.id))
+            else:
+                await self._log(db, user_id=str(user.id), action="auth.login",
+                                status="blocked", ip_address=ip_address,
+                                detail={"reason": "account_pending_verification"})
+                raise AuthError(
+                    "Your account is pending email verification. "
+                    "Please check your inbox and verify your email before signing in.",
+                    "account_pending_verification"
+                )
+
         if not password_ok:
             should_lock = user.increment_failed_logins(MAX_FAILED_LOGINS)
             if should_lock:

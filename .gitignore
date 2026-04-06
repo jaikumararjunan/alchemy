@@ -59,4 +59,13 @@ data/
 .env
 
 !.env.local
-!.env.examplefrontend/node_modules/
+!.env.example
+
+# Node (never commit node_modules)
+frontend/node_modules/
+node_modules/
+
+# API key files (NEVER commit)
+binance-key.txt
+*-key.txt
+*-secret.txt
