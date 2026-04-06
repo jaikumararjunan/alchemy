@@ -170,11 +170,17 @@ export default function AutonomousTradingPage() {
     )
   }
 
-  // Combine WS signals with history
-  const allSignals = [...wsSignals.map(s => s), ...history]
+  // Combine WS signals with history, dedup by id
+  // WS messages have shape { event, ...fields } (broadcast spreads data at top level)
+  const allSignals = [...wsSignals, ...history]
     .reduce((acc, s) => {
-      const data = s.event === 'autonomous_signal' ? (s.data ?? s) : s
-      if (!acc.find(x => x.id === data.id)) acc.push(data)
+      // Strip the 'event' key so signal cards see only trade fields
+      if (s.event) {
+        const { event, ...rest } = s
+        if (!acc.find(x => x.id === rest.id)) acc.push(rest)
+      } else {
+        if (!acc.find(x => x.id === s.id)) acc.push(s)
+      }
       return acc
     }, [])
     .slice(0, 30)
