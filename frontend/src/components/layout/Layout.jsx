@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Briefcase, Zap, Bitcoin, Key, GitBranch,
   ShieldAlert, BarChart3, BookOpen, Settings, Bell, Shield,
   LogOut, Radio, AlertTriangle, Menu, X, ChevronRight,
-  TrendingUp, Star,
+  TrendingUp, Star, Bot,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -16,6 +16,7 @@ const NAV = [
   { to:'/portfolio',     icon:Briefcase,       label:'Portfolio',     group:'main' },
   { to:'/crypto',        icon:Bitcoin,         label:'Crypto',        group:'main' },
   { to:'/signals',       icon:Zap,             label:'AI Signals',    group:'trade' },
+  { to:'/autonomous',    icon:Bot,             label:'Auto Trade',    group:'trade' },
   { to:'/strategy',      icon:BookOpen,        label:'Strategy',      group:'trade' },
   { to:'/analytics',     icon:BarChart3,       label:'Analytics',     group:'trade' },
   { to:'/risk',          icon:ShieldAlert,     label:'Risk',          group:'trade' },

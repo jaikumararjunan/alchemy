@@ -178,10 +178,11 @@ class TokenVault:
             return f.read()
 
     def _get_or_create_salt(self) -> bytes:
-        if SALT_FILE.exists():
-            return SALT_FILE.read_bytes()
+        salt_path = self._vault_dir / ".salt"
+        if salt_path.exists():
+            return salt_path.read_bytes()
         salt = os.urandom(32)
-        SALT_FILE.write_bytes(salt)
+        salt_path.write_bytes(salt)
         return salt
 
     def _get_master_key(self) -> str:

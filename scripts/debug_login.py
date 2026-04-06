@@ -2,15 +2,17 @@
 Debug login failure - runs synchronously, no async needed.
 Run: python scripts\debug_login.py
 """
-import sqlite3, sys, os
+import os
+import sqlite3
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 DB = PROJECT_ROOT / "data" / "alchemy.db"
-EMAIL    = "admin@alchemy.in"
-PASSWORD = "Alchemy#Admin!2024"
+EMAIL    = os.environ.get("ADMIN_EMAIL", "admin@alchemy.in")
+PASSWORD = os.environ.get("ADMIN_PASSWORD", "Alchemy#Admin!2024")
 
 print(f"DB path : {DB}")
 print(f"DB exists: {DB.exists()}")

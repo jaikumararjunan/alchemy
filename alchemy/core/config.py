@@ -82,6 +82,7 @@ class AlchemyConfig(BaseSettings):
         env_file=(".env.local", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
+        populate_by_name=True,
         # Allow extra env vars (exchange keys, etc.) without crashing
         extra="ignore",
     )
@@ -91,14 +92,29 @@ class AlchemyConfig(BaseSettings):
     log_level:    str  = "INFO"        # Accept any case — normalised below
     project_name: str  = "alchemy"
 
-    # ── Auth / Security (read from env) ──────────────────────────────────────
-    jwt_secret_key:      str  = "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024"
-    alchemy_vault_key:   str  = "AlchemyLocalDev!Vault_Key_32chars_Min2024!!"
+    # ── Auth / Security (read from env — MUST override in production) ────────
+    jwt_secret_key:      str  = Field(
+        default="AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024",
+        alias="JWT_SECRET_KEY",
+        description="MUST be overridden via JWT_SECRET_KEY env var in production",
+    )
+    alchemy_vault_key:   str  = Field(
+        default="AlchemyLocalDev!Vault_Key_32chars_Min2024!!",
+        alias="ALCHEMY_VAULT_KEY",
+        description="MUST be overridden via ALCHEMY_VAULT_KEY env var in production",
+    )
     alchemy_fernet_key:  str  = ""
 
     # ── Admin bootstrap ───────────────────────────────────────────────────────
-    admin_email:    str = "admin@alchemy.in"
-    admin_password: str = "Alchemy#Admin!2024"
+    admin_email:    str = Field(
+        default="admin@alchemy.in",
+        alias="ADMIN_EMAIL",
+    )
+    admin_password: str = Field(
+        default="Alchemy#Admin!2024",
+        alias="ADMIN_PASSWORD",
+        description="MUST be overridden via ADMIN_PASSWORD env var in production",
+    )
 
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "sqlite+aiosqlite:////data/alchemy.db"

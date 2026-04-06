@@ -1,12 +1,12 @@
 """
-alchemy.api.auth_routes - simplified login using raw sqlite3 to bypass ORM issues
+alchemy.api.auth_routes
+=======================
+Authentication endpoints — login, signup, refresh, logout, 2FA, password reset.
+
+All database operations use SQLAlchemy async sessions via AuthService.
 """
 from __future__ import annotations
-import asyncio
-import os
-import sqlite3
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
@@ -18,6 +18,7 @@ from alchemy.auth.middleware import check_rate_limit, get_current_user, CurrentU
 from alchemy.auth.security import PasswordPolicy
 from alchemy.core.messages import msg
 from alchemy.auth.guards import check_credential_stuffing
+from alchemy.auth.service import AuthService, AuthError
 
 log = structlog.get_logger(__name__)
 
@@ -208,24 +209,36 @@ async def get_db():
 # ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 
 @router.post("/login")
-async def login(req: LoginRequest, request: Request, response: Response):
-    """Login using raw sqlite3 — bypasses SQLAlchemy ORM."""
+async def login(req: LoginRequest, request: Request, response: Response,
+                db: AsyncSession = Depends(get_db)):
+    """Authenticate user with email + password (+ optional TOTP)."""
     check_rate_limit(request, "auth.login")
     ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")
     check_credential_stuffing(ip)
     try:
-        loop = asyncio.get_running_loop()
-        user = await loop.run_in_executor(None, _login_sync, req.email, req.password)
-        tokens = await loop.run_in_executor(None, _create_tokens_sync,
-                                             user["id"], user["email"], user["role"], user.get("subscription", "free"))
-        _set_cookie(response, tokens["refresh_token"])
+        svc = AuthService()
+        result = await svc.login(
+            db, email=req.email, password=req.password,
+            ip_address=ip, user_agent=ua, totp_code=req.totp_code,
+        )
+        await db.commit()
+
+        # If 2FA is required, return early without tokens
+        if result.get("requires_2fa"):
+            return result
+
+        _set_cookie(response, result["refresh_token"])
         return {
-            "access_token": tokens["access_token"],
+            "access_token": result["access_token"],
             "token_type":   "bearer",
-            "user":         user,
+            "user":         result["user"],
         }
-    except ValueError as e:
-        code = str(e)
+    except AuthError as e:
+        # Persist failed-login counter / lockout changes so brute-force
+        # protection actually works across requests.
+        await db.commit()
+        code = getattr(e, "code", "auth_error")
         messages = {
             "invalid_credentials":          msg("auth_login_invalid"),
             "account_banned":               msg("auth_login_banned"),
@@ -235,7 +248,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
         status_code = 429 if code == "account_locked" else 401
         raise HTTPException(status_code, {
             "code":    code,
-            "message": messages.get(code, msg("auth_login_invalid")),
+            "message": messages.get(code, str(e)),
         })
     except Exception as e:
         log.error("auth.login_failed", error=str(e), exc_info=True)
@@ -245,9 +258,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
 @router.post("/signup", status_code=201)
 async def signup(req: SignupRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     check_rate_limit(request, "auth.signup")
-    from alchemy.auth.service import AuthError
     try:
-        from alchemy.auth.service import AuthService
         from alchemy.core.config import get_config
         svc  = AuthService()
         user = await svc.signup(db, email=req.email, username=req.username,
@@ -258,18 +269,34 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
             user.status         = "active"
             user.email_verified = True
             log.info("auth.auto_activated", email=req.email, env=cfg.env)
+
+        # Persist user to DB before attempting auto-login so the account
+        # is saved even if login fails (e.g. pending status in production).
         await db.commit()
+
         # Auto-login after signup
-        tokens = await asyncio.get_running_loop().run_in_executor(
-            None, _create_tokens_sync, str(user.id), user.email, user.role
-        )
-        _set_refresh_cookie(response, tokens["refresh_token"])
-        user_data = user.safe_dict()
-        return {
-            "message":      msg("auth_signup_success", name=user.full_name.split()[0]),
-            "access_token": tokens["access_token"],
-            "user":         user_data,
-        }
+        ip = request.client.host if request.client else "unknown"
+        ua = request.headers.get("user-agent", "")
+        try:
+            result = await svc.login(
+                db, email=req.email, password=req.password,
+                ip_address=ip, user_agent=ua,
+            )
+            await db.commit()
+            _set_cookie(response, result["refresh_token"])
+            return {
+                "message":      msg("auth_signup_success", name=user.full_name.split()[0]),
+                "access_token": result["access_token"],
+                "user":         user.safe_dict(),
+            }
+        except AuthError:
+            # In production/paper mode the user is still pending email
+            # verification, so auto-login will be rejected.  Return a
+            # success response asking them to verify their email.
+            return {
+                "message": "Account created. Please check your email to verify your account before signing in.",
+                "user":    user.safe_dict(),
+            }
     except AuthError as e:
         code    = getattr(e, "code", "signup_error")
         msg_map = {
@@ -297,83 +324,66 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
 
 
 @router.post("/refresh")
-async def refresh_tokens(response: Response,
+async def refresh_tokens(response: Response, db: AsyncSession = Depends(get_db),
                           refresh_token: Optional[str] = Cookie(None, alias="refresh_token")):
+    """Exchange a valid refresh token for a new access + refresh token pair."""
     if not refresh_token:
         raise HTTPException(401, "No refresh token")
     try:
-        import hashlib, sqlite3
-        hashed = hashlib.sha256(refresh_token.encode()).hexdigest()
-        db_path = _get_db_path()
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("""
-            SELECT s.user_id, u.email, u.role, u.subscription, s.expires_at
-            FROM user_sessions s JOIN users u ON s.user_id=u.id
-            WHERE s.refresh_token_hash=? AND s.is_active=1
-        """, (hashed,)).fetchone()
-        conn.close()
-
-        if not row:
-            raise HTTPException(401, "Invalid refresh token")
-
-        # Check expiry
-        exp = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
-        if exp.tzinfo is None:
-            exp = exp.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) >= exp:
-            raise HTTPException(401, "Refresh token expired")
-
-        loop   = asyncio.get_running_loop()
-        tokens = await loop.run_in_executor(None, _create_tokens_sync,
-                                             row["user_id"], row["email"], row["role"], row["subscription"] or "free")
-        _set_cookie(response, tokens["refresh_token"])
-        return {"access_token": tokens["access_token"], "token_type": "bearer"}
-    except HTTPException:
-        raise
+        svc = AuthService()
+        result = await svc.refresh_tokens(db, refresh_token)
+        await db.commit()
+        _set_cookie(response, result["refresh_token"])
+        return {"access_token": result["access_token"], "token_type": "bearer"}
+    except AuthError:
+        raise HTTPException(401, "Invalid or expired refresh token")
     except Exception as e:
         raise HTTPException(401, f"Refresh failed: {e}")
 
 
 @router.post("/logout")
-async def logout(response: Response, user: CurrentUser = Depends(get_current_user),
+async def logout(response: Response, db: AsyncSession = Depends(get_db),
+                  user: CurrentUser = Depends(get_current_user),
                   refresh_token: Optional[str] = Cookie(None, alias="refresh_token")):
+    """Invalidate current session."""
     _clear_cookie(response)
     if refresh_token:
-        import hashlib, sqlite3
-        hashed = hashlib.sha256(refresh_token.encode()).hexdigest()
         try:
-            conn = sqlite3.connect(_get_db_path())
-            conn.execute("UPDATE user_sessions SET is_active=0 WHERE refresh_token_hash=?", (hashed,))
-            conn.commit(); conn.close()
-        except Exception: pass
+            svc = AuthService()
+            await svc.logout(db, refresh_token, user.user_id)
+            await db.commit()
+        except Exception:
+            pass  # Best-effort — cookie is already cleared
     return {"message": "Logged out"}
 
 
 @router.post("/logout-all")
-async def logout_all(response: Response, user: CurrentUser = Depends(get_current_user)):
+async def logout_all(response: Response, db: AsyncSession = Depends(get_db),
+                      user: CurrentUser = Depends(get_current_user)):
+    """Revoke ALL sessions for a user."""
     _clear_cookie(response)
     try:
-        conn = sqlite3.connect(_get_db_path())
-        conn.execute("UPDATE user_sessions SET is_active=0 WHERE user_id=?", (user.user_id,))
-        conn.commit(); conn.close()
-    except Exception: pass
+        svc = AuthService()
+        await svc.logout_all(db, user.user_id)
+        await db.commit()
+    except Exception:
+        pass  # Best-effort — cookie is already cleared
     return {"message": "Logged out from all devices"}
 
 
 @router.post("/2fa/setup")
 async def setup_2fa(db: AsyncSession = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
-    from alchemy.auth.service import AuthService
-    data = await AuthService().setup_2fa(db, user.user_id); await db.commit(); return data
+    svc = AuthService()
+    data = await svc.setup_2fa(db, user.user_id); await db.commit(); return data
 
 
 @router.post("/2fa/verify")
 async def verify_2fa(req: TwoFAVerifyRequest, request: Request,
                       db: AsyncSession = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     check_rate_limit(request, "auth.2fa")
-    from alchemy.auth.service import AuthService, AuthError
     try:
-        await AuthService().verify_and_enable_2fa(db, user.user_id, req.code); await db.commit()
+        svc = AuthService()
+        await svc.verify_and_enable_2fa(db, user.user_id, req.code); await db.commit()
         return {"message": "2FA enabled", "enabled": True}
     except AuthError as e: raise HTTPException(400, str(e))
 
@@ -381,9 +391,9 @@ async def verify_2fa(req: TwoFAVerifyRequest, request: Request,
 @router.post("/2fa/disable")
 async def disable_2fa(req: TwoFADisableRequest, db: AsyncSession = Depends(get_db),
                        user: CurrentUser = Depends(get_current_user)):
-    from alchemy.auth.service import AuthService, AuthError
     try:
-        await AuthService().disable_2fa(db, user.user_id, req.password); await db.commit()
+        svc = AuthService()
+        await svc.disable_2fa(db, user.user_id, req.password); await db.commit()
         return {"message": "2FA disabled"}
     except AuthError as e: raise HTTPException(400, str(e))
 
@@ -391,16 +401,16 @@ async def disable_2fa(req: TwoFADisableRequest, db: AsyncSession = Depends(get_d
 @router.post("/password/reset-request")
 async def request_reset(req: PasswordResetRequest, request: Request, db: AsyncSession = Depends(get_db)):
     check_rate_limit(request, "auth.reset")
-    from alchemy.auth.service import AuthService
-    await AuthService().request_password_reset(db, req.email); await db.commit()
+    svc = AuthService()
+    await svc.request_password_reset(db, req.email); await db.commit()
     return {"message": "If that email exists, a reset link has been sent."}
 
 
 @router.post("/password/reset")
 async def reset_password(req: PasswordResetConfirmRequest, db: AsyncSession = Depends(get_db)):
-    from alchemy.auth.service import AuthService, AuthError
     try:
-        await AuthService().reset_password(db, req.token, req.new_password); await db.commit()
+        svc = AuthService()
+        await svc.reset_password(db, req.token, req.new_password); await db.commit()
         return {"message": "Password reset. Please login."}
     except AuthError as e: raise HTTPException(400, str(e))
 

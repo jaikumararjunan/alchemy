@@ -24,14 +24,14 @@ class TestProviderRegistry:
     def test_get_missing_returns_none(self):
         from alchemy.notifications.providers.registry import registry
         from alchemy.notifications.models import ProviderType
-        p = registry.get(ProviderType.EMAIL)  # not registered
+        p = registry.get(ProviderType.SLACK)  # not registered
         assert p is None
 
     def test_get_or_raise_missing(self):
         from alchemy.notifications.providers.registry import registry
         from alchemy.notifications.models import ProviderType
         with pytest.raises(ValueError, match="No provider"):
-            registry.get_or_raise(ProviderType.EMAIL)
+            registry.get_or_raise(ProviderType.SLACK)
 
     def test_provider_metadata_has_config_fields(self):
         from alchemy.notifications.providers.registry import registry

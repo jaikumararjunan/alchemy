@@ -135,15 +135,17 @@ async def confirm_2fa_setup(req: Setup2FARequest,
         raise HTTPException(400, "Setup session expired. Start over.")
 
     secret = entry[0]  # plain secret stored directly
-    if not TOTPManager.verify_code(secret, req.totp_code):
+    if not TOTPManager.verify(secret, req.totp_code):
         raise HTTPException(400, "Invalid code. Check your authenticator app.")
 
     # Activate 2FA in database
     import sqlite3
     from alchemy.api.auth_routes import _get_db_path
+    from alchemy.auth.security import get_encryptor
+    enc = get_encryptor()
     conn = sqlite3.connect(_get_db_path())
-    conn.execute("UPDATE users SET totp_enabled=1, totp_secret=? WHERE id=?",
-                 (secret, user.user_id))
+    conn.execute("UPDATE users SET totp_enabled=1, totp_secret_enc=? WHERE id=?",
+                 (enc.encrypt(secret), user.user_id))
     conn.commit(); conn.close()
 
     # Clean up pending
@@ -169,16 +171,23 @@ async def disable_2fa(req: Setup2FARequest,
     from alchemy.api.auth_routes import _get_db_path
 
     conn = sqlite3.connect(_get_db_path())
-    row  = conn.execute("SELECT totp_secret FROM users WHERE id=?", (user.user_id,)).fetchone()
+    row  = conn.execute("SELECT totp_secret_enc FROM users WHERE id=?", (user.user_id,)).fetchone()
     if not row or not row[0]:
         conn.close()
         raise HTTPException(400, "2FA is not enabled on this account.")
 
-    if not TOTPManager.verify_code(row[0], req.totp_code):
+    from alchemy.auth.security import get_encryptor
+    enc = get_encryptor()
+    try:
+        decrypted_secret = enc.decrypt(row[0])
+    except Exception:
+        conn.close()
+        raise HTTPException(500, "Failed to decrypt TOTP secret.")
+    if not TOTPManager.verify(decrypted_secret, req.totp_code):
         conn.close()
         raise HTTPException(400, "Invalid TOTP code.")
 
-    conn.execute("UPDATE users SET totp_enabled=0, totp_secret=NULL WHERE id=?", (user.user_id,))
+    conn.execute("UPDATE users SET totp_enabled=0, totp_secret_enc=NULL WHERE id=?", (user.user_id,))
     conn.commit(); conn.close()
     log.info("2fa.disabled", user_id=user.user_id)
     return {"disabled": True, "message": "2FA disabled."}
