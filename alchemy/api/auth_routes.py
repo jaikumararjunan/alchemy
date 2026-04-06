@@ -55,6 +55,140 @@ class PasswordResetConfirmRequest(BaseModel):
     new_password: str = Field(..., min_length=12)
 
 
+def _get_db_path() -> str:
+    """Find the SQLite database file."""
+    url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
+    path = url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+    if path.startswith("./") or path.startswith(".\\"):
+        path = path[2:]
+    # Make absolute relative to CWD
+    abs_path = Path(path)
+    if not abs_path.is_absolute():
+        abs_path = Path.cwd() / abs_path
+    return str(abs_path)
+
+
+def _login_sync(email: str, password: str) -> dict:
+    """
+    Login using raw sqlite3 + bcrypt — bypasses SQLAlchemy entirely.
+    Runs in a thread executor to avoid blocking the event loop.
+    """
+    import bcrypt
+
+    db_path = _get_db_path()
+
+    if not Path(db_path).exists():
+        raise ValueError(f"Database not found: {db_path}. Run: python scripts\\reset_password.py")
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, email, username, full_name, password_hash, role, status, "
+            "email_verified, failed_login_count, locked_until, totp_enabled, subscription "
+            "FROM users WHERE LOWER(email)=LOWER(?)",
+            (email.strip(),)
+        ).fetchone()
+
+        if not row:
+            raise ValueError("invalid_credentials")
+
+        if row["status"] == "banned":
+            raise ValueError("account_banned")
+
+        if row["status"] == "locked":
+            raise ValueError("account_locked")
+
+        if row["status"] == "pending":
+            # Auto-activate in dev mode; in prod would require email verification
+            from alchemy.core.config import get_config
+            if get_config().env in ("development","dev","local","test"):
+                conn.execute("UPDATE users SET status='active', email_verified=1 WHERE email=?", (row["email"],))
+                conn.commit()
+            else:
+                raise ValueError("account_pending_verification")
+
+        # Check password
+        stored_hash = row["password_hash"]
+        if isinstance(stored_hash, str):
+            stored_hash = stored_hash.encode("utf-8")
+
+        ok = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
+        if not ok:
+            # Increment failed count
+            conn.execute(
+                "UPDATE users SET failed_login_count=failed_login_count+1 WHERE email=?",
+                (row["email"],)
+            )
+            conn.commit()
+            raise ValueError("invalid_credentials")
+
+        # Reset failed count + update last login
+        conn.execute(
+            "UPDATE users SET failed_login_count=0, last_login_at=? WHERE email=?",
+            (datetime.now(timezone.utc).isoformat(), row["email"])
+        )
+        conn.commit()
+
+        return {
+            "id":       row["id"],
+            "email":    row["email"],
+            "username": row["username"],
+            "full_name":row["full_name"],
+            "role":     row["role"],
+            "status":   row["status"],
+            "totp_enabled": bool(row["totp_enabled"]),
+            "subscription": row["subscription"] or "free",
+        }
+    finally:
+        conn.close()
+
+
+def _create_tokens_sync(user_id: str, email: str, role: str, subscription: str = "free") -> dict:
+    """Create JWT access token + refresh token."""
+    import secrets, hashlib, jwt
+
+    from alchemy.core.config import get_config
+    secret = get_config().jwt_secret_key
+    now    = datetime.now(timezone.utc)
+    jti    = secrets.token_hex(8)
+
+    access_token = jwt.encode({
+        "sub":   user_id,
+        "email": email,
+        "role":  role,
+        "subscription": subscription,
+        "jti":   jti,
+        "iat":   now,
+        "exp":   now + timedelta(minutes=15),
+        "type":  "access",
+    }, secret, algorithm="HS256")
+
+    raw_refresh = secrets.token_urlsafe(48)
+    hashed_refresh = hashlib.sha256(raw_refresh.encode()).hexdigest()
+
+    # Store session in DB
+    db_path = _get_db_path()
+    session_id = str(__import__("uuid").uuid4())
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO user_sessions
+            (id, user_id, refresh_token_hash, access_jti, is_active, created_at, expires_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+        """, (
+            session_id, user_id, hashed_refresh, jti,
+            now.isoformat(),
+            (now + timedelta(days=7)).isoformat()
+        ))
+        conn.commit()
+    except Exception:
+        pass  # Session storage is best-effort
+    finally:
+        conn.close()
+
+    return {"access_token": access_token, "refresh_token": raw_refresh}
+
 
 def _set_cookie(response: Response, token: str) -> None:
     response.set_cookie(
@@ -283,7 +417,8 @@ async def reset_password(req: PasswordResetConfirmRequest, db: AsyncSession = De
 
 @router.get("/me")
 async def get_me(user: CurrentUser = Depends(get_current_user)):
-    return {"user_id": user.user_id, "email": user.email, "role": user.role}
+    return {"user_id": user.user_id, "email": user.email, "role": user.role,
+            "subscription": getattr(user, "subscription", None) or "free"}
 
 
 @router.get("/password/strength")

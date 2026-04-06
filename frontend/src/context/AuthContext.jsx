@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
     setAccessToken(token)
     const p = decodeJWT(token)
     if (p) {
-      setUser({ id: p.sub, email: p.email, role: p.role, exp: p.exp })
+      setUser({ id: p.sub, email: p.email, role: p.role, subscription: p.subscription || 'free', exp: p.exp })
       const ms = (p.exp * 1000) - Date.now() - 90_000   // refresh 90s before expiry
       clearTimeout(refreshTimer.current)
       if (ms > 0) refreshTimer.current = setTimeout(doRefresh, ms)
