@@ -339,24 +339,30 @@ class AutonomousTradingEngine:
                 record.execution_error = f"Unsupported exchange: {self.exchange}"
                 return
 
+            loop = asyncio.get_running_loop()
             if self.exchange == "binance":
                 side = "BUY" if record.direction == "long" else "SELL"
-                result = gw.place_order(
+                result = await loop.run_in_executor(None, lambda: gw.place_order(
                     symbol=record.symbol,
                     side=side,
                     quantity=0.001,  # Minimum size for safety
                     order_type="MARKET",
-                )
+                ))
             else:
                 side = "buy" if record.direction == "long" else "sell"
-                result = gw.place_order(
+                result = await loop.run_in_executor(None, lambda: gw.place_order(
                     symbol=record.symbol,
                     side=side,
                     size=1,  # Minimum contracts for safety
                     order_type="market_order",
-                )
+                ))
             record.executed = True
-            record.execution_price = float(result.get("fill_price", record.entry_price))
+            # Binance returns "avgPrice"/"price", Delta returns "avg_fill_price"
+            fill = (result.get("avgPrice")
+                    or result.get("avg_fill_price")
+                    or result.get("price")
+                    or record.entry_price)
+            record.execution_price = float(fill)
             record.status = "executed"
             self._total_executed += 1
 
