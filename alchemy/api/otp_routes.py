@@ -135,7 +135,7 @@ async def confirm_2fa_setup(req: Setup2FARequest,
         raise HTTPException(400, "Setup session expired. Start over.")
 
     secret = entry[0]  # plain secret stored directly
-    if not TOTPManager.verify_code(secret, req.totp_code):
+    if not TOTPManager.verify(secret, req.totp_code):
         raise HTTPException(400, "Invalid code. Check your authenticator app.")
 
     # Activate 2FA in database
@@ -174,7 +174,7 @@ async def disable_2fa(req: Setup2FARequest,
         conn.close()
         raise HTTPException(400, "2FA is not enabled on this account.")
 
-    if not TOTPManager.verify_code(row[0], req.totp_code):
+    if not TOTPManager.verify(row[0], req.totp_code):
         conn.close()
         raise HTTPException(400, "Invalid TOTP code.")
 
