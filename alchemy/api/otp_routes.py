@@ -178,7 +178,12 @@ async def disable_2fa(req: Setup2FARequest,
 
     from alchemy.auth.security import get_encryptor
     enc = get_encryptor()
-    if not TOTPManager.verify(enc.decrypt(row[0]), req.totp_code):
+    try:
+        decrypted_secret = enc.decrypt(row[0])
+    except Exception:
+        conn.close()
+        raise HTTPException(500, "Failed to decrypt TOTP secret.")
+    if not TOTPManager.verify(decrypted_secret, req.totp_code):
         conn.close()
         raise HTTPException(400, "Invalid TOTP code.")
 
