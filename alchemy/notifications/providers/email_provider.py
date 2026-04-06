@@ -173,7 +173,7 @@ class EmailProvider(BaseNotificationProvider):
             msg.attach(MIMEText(html_body, "html"))
 
             # Send in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None,
                 self._send_smtp, host, port, user, password, from_addr, to_addr, msg,
