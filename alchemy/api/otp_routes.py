@@ -141,9 +141,11 @@ async def confirm_2fa_setup(req: Setup2FARequest,
     # Activate 2FA in database
     import sqlite3
     from alchemy.api.auth_routes import _get_db_path
+    from alchemy.auth.security import get_encryptor
+    enc = get_encryptor()
     conn = sqlite3.connect(_get_db_path())
-    conn.execute("UPDATE users SET totp_enabled=1, totp_secret=? WHERE id=?",
-                 (secret, user.user_id))
+    conn.execute("UPDATE users SET totp_enabled=1, totp_secret_enc=? WHERE id=?",
+                 (enc.encrypt(secret), user.user_id))
     conn.commit(); conn.close()
 
     # Clean up pending
@@ -169,16 +171,18 @@ async def disable_2fa(req: Setup2FARequest,
     from alchemy.api.auth_routes import _get_db_path
 
     conn = sqlite3.connect(_get_db_path())
-    row  = conn.execute("SELECT totp_secret FROM users WHERE id=?", (user.user_id,)).fetchone()
+    row  = conn.execute("SELECT totp_secret_enc FROM users WHERE id=?", (user.user_id,)).fetchone()
     if not row or not row[0]:
         conn.close()
         raise HTTPException(400, "2FA is not enabled on this account.")
 
-    if not TOTPManager.verify(row[0], req.totp_code):
+    from alchemy.auth.security import get_encryptor
+    enc = get_encryptor()
+    if not TOTPManager.verify(enc.decrypt(row[0]), req.totp_code):
         conn.close()
         raise HTTPException(400, "Invalid TOTP code.")
 
-    conn.execute("UPDATE users SET totp_enabled=0, totp_secret=NULL WHERE id=?", (user.user_id,))
+    conn.execute("UPDATE users SET totp_enabled=0, totp_secret_enc=NULL WHERE id=?", (user.user_id,))
     conn.commit(); conn.close()
     log.info("2fa.disabled", user_id=user.user_id)
     return {"disabled": True, "message": "2FA disabled."}
