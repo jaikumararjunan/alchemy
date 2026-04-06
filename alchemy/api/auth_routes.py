@@ -261,7 +261,7 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
         tokens = await asyncio.get_running_loop().run_in_executor(
             None, _create_tokens_sync, str(user.id), user.email, user.role
         )
-        _set_refresh_cookie(response, tokens["refresh_token"])
+        _set_cookie(response, tokens["refresh_token"])
         user_data = user.safe_dict()
         return {
             "message":      msg("auth_signup_success", name=user.full_name.split()[0]),
