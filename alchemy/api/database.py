@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from typing import AsyncGenerator
+from urllib.parse import urlsplit
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -17,18 +18,34 @@ from sqlalchemy.pool import NullPool
 
 log = structlog.get_logger(__name__)
 
+
+def _extract_sqlite_path(db_url: str) -> str:
+    """Extract SQLite file path from SQLAlchemy URL without mangling relative paths."""
+    parsed = urlsplit(db_url)
+    # sqlite:///./data/alchemy.db   -> path='/./data/alchemy.db' (relative)
+    # sqlite:////data/alchemy.db    -> path='//data/alchemy.db' (absolute)
+    raw_path = parsed.path or ""
+    if raw_path.startswith("//"):
+        return raw_path[1:]
+    if raw_path.startswith("/"):
+        return raw_path[1:]
+    return raw_path
+
+
+def _resolve_sqlite_file_path(db_url: str) -> pathlib.Path:
+    db_path_str = _extract_sqlite_path(db_url)
+    db_path = pathlib.Path(db_path_str)
+    if not db_path.is_absolute():
+        db_path = pathlib.Path.cwd() / db_path
+    return db_path
+
 # Create data directory if it doesn't exist
 import pathlib
 _db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
 if "sqlite" in _db_url:
-    import re as _re
-    # Handle both relative (sqlite:///./path) and absolute (sqlite:////abs/path)
-    _db_path = _re.sub(r"^sqlite(\+aiosqlite)?:///", "", _db_url)
-    # If it started with 4 slashes, path is absolute — add the slash back
-    if _db_url.count("/") >= 4 and not _db_path.startswith("/"):
-        _db_path = "/" + _db_path
-    if _db_path and not _db_path.startswith(":"):
-        _parent = pathlib.Path(_db_path).parent
+    _resolved_db_path = _resolve_sqlite_file_path(_db_url)
+    if str(_resolved_db_path) and not str(_resolved_db_path).startswith(":"):
+        _parent = _resolved_db_path.parent
         _parent.mkdir(parents=True, exist_ok=True)
         # Make directory writable
         try:
@@ -88,10 +105,8 @@ async def create_tables() -> None:
 
     # Safe migrations: add missing columns without breaking existing data
     if "sqlite" in DATABASE_URL:
-        import sqlite3, re as _re
-        db_path = _re.sub(r"^sqlite(\+aiosqlite)?:///", "", DATABASE_URL)
-        if not db_path.startswith("/"):
-            db_path = "/" + db_path
+        import sqlite3
+        db_path = str(_resolve_sqlite_file_path(DATABASE_URL))
 
         try:
             conn2 = sqlite3.connect(db_path)
