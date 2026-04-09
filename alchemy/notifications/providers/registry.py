@@ -129,7 +129,7 @@ def _bootstrap_providers() -> None:
         ("alchemy.notifications.providers.sms",            "SMSProvider"),
         ("alchemy.notifications.providers.email_provider", "EmailProvider"),
         # ── Add new providers here ──────────────────────────────────────────
-        # ("alchemy.notifications.providers.slack",   "SlackProvider"),
+        ("alchemy.notifications.providers.slack",   "SlackProvider"),
         # ("alchemy.notifications.providers.discord", "DiscordProvider"),
         # ("alchemy.notifications.providers.webhook", "WebhookProvider"),
         # ("alchemy.notifications.providers.pushover","PushoverProvider"),
