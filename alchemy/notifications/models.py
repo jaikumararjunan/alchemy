@@ -61,6 +61,7 @@ class EventType(str, Enum):
     # System
     SYSTEM_STARTUP        = "system.startup"
     SYSTEM_ERROR          = "system.error"
+    DAILY_SUMMARY         = "daily.summary"
     CUSTOM                = "custom"
 
 
