@@ -266,6 +266,46 @@ async def block(body: dict, user: CurrentUser = Depends(get_current_user)):
     return {"ok": True}
 
 
+@app.get("/risk/dedup/stats",     tags=["risk"])
+@app.get("/api/risk/dedup/stats", tags=["risk"])
+async def dedup_stats(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.risk.dedup import get_deduplicator
+    return get_deduplicator().stats()
+
+
+@app.delete("/risk/dedup",     tags=["risk"])
+@app.delete("/api/risk/dedup", tags=["risk"])
+async def dedup_clear(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.risk.dedup import get_deduplicator
+    count = get_deduplicator().clear()
+    return {"ok": True, "cleared": count}
+
+
+@app.get("/risk/price-guard/stats",     tags=["risk"])
+@app.get("/api/risk/price-guard/stats", tags=["risk"])
+async def price_guard_stats(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.risk.price_guard import get_price_guard
+    return get_price_guard().stats()
+
+
+@app.get("/risk/price-guard/{symbol}",     tags=["risk"])
+@app.get("/api/risk/price-guard/{symbol}", tags=["risk"])
+async def price_guard_ref(symbol: str, user: CurrentUser = Depends(get_current_user)):
+    from alchemy.risk.price_guard import get_price_guard
+    ref = get_price_guard().get_reference(symbol)
+    if not ref:
+        raise HTTPException(404, f"No reference price for {symbol}")
+    return ref
+
+
+@app.post("/risk/reconcile",     tags=["risk"])
+@app.post("/api/risk/reconcile", tags=["risk"])
+async def run_reconciliation(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.risk.reconciler import reconcile_all_exchanges
+    report = await reconcile_all_exchanges(auto_fix=False)
+    return report.to_dict()
+
+
 @app.post("/signal",     tags=["signal"])
 @app.post("/api/signal", tags=["signal"])
 async def generate_signal(
