@@ -1,24 +1,11 @@
-version: "3.9"
-
-# ── Production compose ───────────────────────────────────────────────────────
-# Includes: Alchemy bot, Nginx reverse proxy, Prometheus, Grafana, Loki
-#
-# Usage:
-#   docker compose -f docker-compose.prod.yml up -d
-#   docker compose -f docker-compose.prod.yml logs -f alchemy
-#
-# Prerequisites:
-#   - .env file with API keys
-#   - deploy/nginx.conf present
-#   - SSL certs in ./ssl/ (or use certbot service below)
+# Alchemy Production Docker Compose
+# Usage: ./deploy.sh (one-click) or docker compose -f docker-compose.prod.yml up -d
 
 services:
 
-  # ── Trading Bot ─────────────────────────────────────────────────────────────
   alchemy:
     build:
       context: .
-      target: runtime
       cache_from:
         - alchemy:latest
     image: ${IMAGE_REF:-alchemy:latest}
@@ -31,19 +18,21 @@ services:
       - DRY_RUN=${DRY_RUN:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
+      - alchemy_data:/data
       - alchemy_logs:/app/logs
     command: >
-      python run_server.py
+      python -m uvicorn alchemy.api.app:app
         --host 0.0.0.0
         --port 8000
-        --start-bot
+        --workers 1
+        --log-level info
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -53,7 +42,6 @@ services:
       - alchemy_internal
       - alchemy_public
 
-  # ── Nginx Reverse Proxy ──────────────────────────────────────────────────────
   nginx:
     image: nginx:1.25-alpine
     container_name: alchemy_nginx
@@ -71,13 +59,8 @@ services:
     restart: unless-stopped
     networks:
       - alchemy_public
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+      - alchemy_internal
 
-  # ── Certbot (one-shot SSL renewal) ───────────────────────────────────────────
   certbot:
     image: certbot/certbot:latest
     container_name: alchemy_certbot
@@ -89,7 +72,6 @@ services:
     networks:
       - alchemy_public
 
-  # ── Prometheus Metrics ───────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: alchemy_prometheus
@@ -102,17 +84,10 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=30d"
-      - "--web.enable-lifecycle"
     restart: unless-stopped
     networks:
       - alchemy_internal
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
-  # ── Grafana Dashboard ────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.0
     container_name: alchemy_grafana
@@ -122,8 +97,6 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
@@ -133,13 +106,7 @@ services:
     restart: unless-stopped
     networks:
       - alchemy_internal
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
-  # ── Loki Log Aggregation ─────────────────────────────────────────────────────
   loki:
     image: grafana/loki:2.9.0
     container_name: alchemy_loki
@@ -153,7 +120,6 @@ services:
     networks:
       - alchemy_internal
 
-  # ── Promtail (log shipper) ───────────────────────────────────────────────────
   promtail:
     image: grafana/promtail:2.9.0
     container_name: alchemy_promtail
@@ -177,6 +143,7 @@ networks:
     driver: bridge
 
 volumes:
+  alchemy_data:
   alchemy_logs:
   nginx_cache:
   certbot_webroot:
