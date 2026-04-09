@@ -239,11 +239,28 @@ async def login(req: LoginRequest, request: Request, response: Response,
         # protection actually works across requests.
         await db.commit()
         code = getattr(e, "code", "auth_error")
+
+        # If account is pending verification, send/resend OTP instead of blocking
+        if code == "account_pending_verification":
+            try:
+                from alchemy.auth.otp_store import generate_otp
+                from alchemy.notifications.email_service import send_otp_email
+                otp = generate_otp("verification", req.email)
+                sent = send_otp_email(req.email, otp, "verification")
+                log.info("auth.login_pending_otp_sent", email=req.email, sent=sent)
+            except Exception:
+                pass
+            # Return 200 (not 401) so frontend can show OTP screen
+            return {
+                "requires_otp": True,
+                "email": req.email,
+                "message": "Please verify your email. A new OTP has been sent.",
+            }
+
         messages = {
             "invalid_credentials":          msg("auth_login_invalid"),
             "account_banned":               msg("auth_login_banned"),
             "account_locked":               msg("auth_login_locked"),
-            "account_pending_verification": msg("auth_login_pending"),
         }
         status_code = 429 if code == "account_locked" else 401
         raise HTTPException(status_code, {
@@ -290,12 +307,26 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
                 "user":         user.safe_dict(),
             }
         except AuthError:
-            # In production/paper mode the user is still pending email
-            # verification, so auto-login will be rejected.  Return a
-            # success response asking them to verify their email.
+            # In production the user is pending email verification.
+            # Send OTP email so they can verify.
+            try:
+                from alchemy.auth.otp_store import generate_otp
+                from alchemy.notifications.email_service import send_otp_email
+                otp = generate_otp("verification", req.email)
+                sent = send_otp_email(req.email, otp, "verification")
+                if sent:
+                    log.info("auth.signup_otp_sent", email=req.email)
+                else:
+                    log.warning("auth.signup_otp_not_sent", email=req.email,
+                                hint="Configure SMTP_USER + SMTP_PASSWORD in .env")
+            except Exception as otp_err:
+                log.error("auth.signup_otp_error", error=str(otp_err))
+
             return {
-                "message": "Account created. Please check your email to verify your account before signing in.",
-                "user":    user.safe_dict(),
+                "message": "Account created! Please check your email for the verification code.",
+                "requires_otp": True,
+                "email": req.email,
+                "user": user.safe_dict(),
             }
     except AuthError as e:
         code    = getattr(e, "code", "signup_error")

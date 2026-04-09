@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { Eye, EyeOff, CheckCircle, XCircle, Loader2, ShieldCheck } from 'lucide-react'
 import clsx from 'clsx'
@@ -61,14 +61,46 @@ export default function SignupPage() {
 
   const canSubmit = reqs.every(r => r.met) && form.email && usernameValid && form.fullName
 
+  const [otpMode, setOtpMode]     = useState(false)
+  const [otpEmail, setOtpEmail]   = useState('')
+  const [otpCode, setOtpCode]     = useState('')
+  const [otpLoading, setOtpLoading] = useState(false)
+  const [searchParams] = useSearchParams()
+
+  // Auto-enter OTP mode if redirected from login with ?verify=email
+  useEffect(() => {
+    const verifyEmail = searchParams.get('verify')
+    if (verifyEmail) {
+      setOtpMode(true)
+      setOtpEmail(decodeURIComponent(verifyEmail))
+    }
+  }, [searchParams])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!canSubmit) return
     setError(''); setLoading(true)
     try {
       const result = await signup(form.email, form.username, form.fullName, form.password)
-      toast.success('Welcome to Alchemy! Your account is ready.')
-      navigate('/dashboard')
+
+      // If server says OTP verification needed (production mode)
+      if (result.requires_otp) {
+        setOtpMode(true)
+        setOtpEmail(result.email || form.email)
+        toast.success('Verification code sent to your email!')
+        return
+      }
+
+      // Dev mode: auto-login succeeded
+      if (result.access_token) {
+        toast.success('Welcome to Alchemy! Your account is ready.')
+        navigate('/dashboard')
+        return
+      }
+
+      // Fallback: account created but needs verification
+      setOtpMode(true)
+      setOtpEmail(form.email)
     } catch (err) {
       const detail = err.response?.data?.detail
       const errMsg =
@@ -83,6 +115,35 @@ export default function SignupPage() {
     }
   }
 
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault()
+    if (otpCode.length < 6) return
+    setOtpLoading(true); setError('')
+    try {
+      await axios.post('/api/auth/otp/verify', {
+        email: otpEmail,
+        otp: otpCode,
+        purpose: 'verification',
+      })
+      toast.success('Email verified! Please sign in.')
+      navigate('/auth/login')
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Invalid or expired OTP. Try again.'
+      setError(typeof msg === 'string' ? msg : 'Invalid OTP')
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  const handleResendOtp = async () => {
+    try {
+      await axios.post('/api/auth/otp/resend', { email: otpEmail, purpose: 'verification' })
+      toast.success('New OTP sent!')
+    } catch {
+      toast.error('Failed to resend. Try again in a moment.')
+    }
+  }
+
   if (success) return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="text-center max-w-sm">
@@ -90,6 +151,66 @@ export default function SignupPage() {
         <h2 className="text-xl font-bold text-white mb-2">Account Created!</h2>
         <p className="text-gray-400 mb-6">Check your email to verify your account, then sign in.</p>
         <Link to="/auth/login" className="btn-primary">Go to Login</Link>
+      </div>
+    </div>
+  )
+
+  // ── OTP Verification Screen ──
+  if (otpMode) return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-3">📧</div>
+          <h1 className="text-2xl font-bold text-white">Verify Your Email</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            We sent a 6-digit code to <span className="text-blue-400">{otpEmail}</span>
+          </p>
+        </div>
+
+        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">
+          {error && (
+            <div className="bg-red-900/30 border border-red-500/40 rounded-lg px-3 py-2.5 mb-4 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyOtp} className="space-y-5">
+            <div>
+              <label className="text-xs text-gray-400 mb-2 block">Verification Code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={otpCode}
+                onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="input-field text-center text-2xl tracking-[0.5em] font-mono"
+                placeholder="000000"
+                autoFocus
+                required
+              />
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Code expires in 10 minutes
+              </p>
+            </div>
+
+            <button type="submit" disabled={otpCode.length < 6 || otpLoading}
+              className="btn-primary w-full py-2.5 flex items-center justify-center gap-2">
+              {otpLoading && <Loader2 size={16} className="animate-spin" />}
+              {otpLoading ? 'Verifying…' : 'Verify Email'}
+            </button>
+          </form>
+
+          <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-800">
+            <button onClick={handleResendOtp}
+              className="text-sm text-blue-400 hover:text-blue-300">
+              Resend Code
+            </button>
+            <Link to="/auth/login" className="text-sm text-gray-500 hover:text-gray-400">
+              Back to Login
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -60,10 +60,28 @@ export function AuthProvider({ children }) {
   }, [])
 
   // ── Login / Signup / Logout ───────────────────────────────────────────────
-  const login = async (email, password) => {
-    const { data } = await authApi.post('/auth/login', { email, password })
-    storeToken(data.access_token)
-    return { success: true, user: data.user }
+  const login = async (email, password, totpCode) => {
+    const payload = { email, password }
+    if (totpCode) payload.totp_code = totpCode
+    const { data } = await authApi.post('/auth/login', payload)
+
+    // Backend says account needs email OTP verification
+    if (data.requires_otp) {
+      return { requiresOTP: true, email: data.email }
+    }
+
+    // Backend says 2FA is required
+    if (data.requires_2fa) {
+      return { requires2FA: true, temp_token: data.temp_token }
+    }
+
+    // Normal login success
+    if (data.access_token) {
+      storeToken(data.access_token)
+      return { success: true, user: data.user }
+    }
+
+    return data
   }
 
   const signup = async (email, username, fullName, password) => {

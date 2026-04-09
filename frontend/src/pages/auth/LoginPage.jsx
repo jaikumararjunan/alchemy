@@ -89,7 +89,10 @@ export default function LoginPage() {
     setError(''); setLoading(true)
     try {
       const result = await login(email, password)
-      if (result.requires2FA) {
+      if (result.requiresOTP) {
+        toast('Please verify your email first. Check your inbox for the OTP code.')
+        navigate('/auth/signup?verify=' + encodeURIComponent(email))
+      } else if (result.requires2FA) {
         setStep('2fa')
       } else if (result.success) {
         toast.success(`Welcome back, ${result.user?.username || email}!`)
