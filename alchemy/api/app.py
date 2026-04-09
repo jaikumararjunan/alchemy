@@ -228,11 +228,14 @@ async def risk_status(user: CurrentUser = Depends(get_current_user)):
 @app.post("/risk/emergency-stop",     tags=["risk"])
 @app.post("/api/risk/emergency-stop", tags=["risk"])
 async def emergency_stop(user: CurrentUser = Depends(get_current_user)):
-    from alchemy.risk.manager import RiskManager
-    rm = RiskManager()
-    rm.trigger_emergency_stop(f"Manual by {user.email}")
-    await manager.broadcast("risk_alert", rm.status())
-    return {"ok": True}
+    from alchemy.risk.kill_switch import activate_kill_switch
+    result = await activate_kill_switch(
+        triggered_by=user.email,
+        reason="Manual kill switch via API",
+        close_positions=True,
+    )
+    await manager.broadcast("risk_alert", result.to_dict())
+    return result.to_dict()
 
 
 @app.delete("/risk/emergency-stop",     tags=["risk"])
