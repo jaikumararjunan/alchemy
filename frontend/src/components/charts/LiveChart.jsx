@@ -47,7 +47,25 @@ function calcMACD(cl) {
 }
 
 const fmtP = n => !n||isNaN(n)?'—': n>=1000?n.toLocaleString(undefined,{maximumFractionDigits:2}):n.toFixed(4)
-const fmtA = n => n>=10000?`${(n/1000).toFixed(0)}K`:n>=1000?`${(n/1000).toFixed(1)}K`:n.toFixed(1)
+const fmtA = (n, range) => {
+  if (n == null || isNaN(n)) return '—'
+  // If range is provided, use it for smart formatting
+  if (range != null && range > 0) {
+    // Show enough decimals to differentiate ticks
+    if (range < 0.01) return n.toFixed(6)
+    if (range < 1) return n.toFixed(4)
+    if (range < 10) return n.toFixed(2)
+    if (range < 100) return n.toFixed(1)
+    if (range < 1000) return n.toFixed(0)
+    // For large prices (BTC): show full number with commas
+    return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+  }
+  // Fallback (no range context)
+  if (n >= 10000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+  if (n >= 1000) return n.toFixed(1)
+  if (n >= 1) return n.toFixed(2)
+  return n.toFixed(4)
+}
 
 /* ─── SVG path builder ─────────────────────────────────── */
 function buildPath(pts) {
@@ -81,7 +99,7 @@ const ChartCanvas = memo(function ChartCanvas({ candles, chartType, indicator, w
     return () => el.removeEventListener('wheel', handler)
   }, []) // empty deps — runs once per mount
 
-  const H=290, PL=8, PR=66, PT=10, PB=22
+  const H=290, PL=8, PR=76, PT=10, PB=22
   const W = Math.max(50, width-PL-PR)
 
   const maxVis = Math.min(candles.length, Math.max(10, Math.round(100/zoom)))
@@ -111,7 +129,7 @@ const ChartCanvas = memo(function ChartCanvas({ candles, chartType, indicator, w
   const slE9  = indicator==='EMA' ? calcEMA(closes,9).slice(si,si+vis.length) : null
   const slE21 = indicator==='EMA' ? calcEMA(closes,21).slice(si,si+vis.length) : null
 
-  const yTicks = [0,1,2,3,4,5].map(i=>yMn+yRng*i/5)
+  const yTicks = [0,1,2,3,4,5,6,7].map(i=>yMn+yRng*i/7)
   const maxVol = Math.max(...vis.map(c=>c.volume), 1)
 
   const onMDown = e => { dragRef.current={x:e.clientX, pe} }
@@ -196,7 +214,7 @@ const ChartCanvas = memo(function ChartCanvas({ candles, chartType, indicator, w
         {yTicks.map((p,i)=>(
           <g key={i}>
             <line x1={PL} x2={width-PR} y1={py(p)} y2={py(p)} stroke="#1e293b" strokeWidth={1}/>
-            <text x={width-PR+5} y={py(p)+4} fill="#475569" fontSize={9.5}>{fmtA(p)}</text>
+            <text x={width-PR+5} y={py(p)+4} fill="#475569" fontSize={9.5}>{fmtA(p, yRng)}</text>
           </g>
         ))}
 
@@ -256,7 +274,7 @@ const ChartCanvas = memo(function ChartCanvas({ candles, chartType, indicator, w
               stroke={up?'#10B98140':'#EF444440'} strokeWidth={1} strokeDasharray="3 3"/>
             <rect x={width-PR} y={y-8} width={PR-2} height={16}
               fill={up?'#10B981':'#EF4444'} rx={3}/>
-            <text x={width-PR+3} y={y+5} fill="#fff" fontSize={9} fontWeight="600">{fmtA(lastC.close)}</text>
+            <text x={width-PR+3} y={y+5} fill="#fff" fontSize={9} fontWeight="600">{fmtA(lastC.close, yRng)}</text>
           </>)
         })()}
 
@@ -267,15 +285,19 @@ const ChartCanvas = memo(function ChartCanvas({ candles, chartType, indicator, w
             <line x1={PL} x2={width-PR} y1={py(hC.close)} y2={py(hC.close)} stroke="#ffffff18" strokeWidth={1}/>
             <rect x={width-PR} y={py(hC.close)-8} width={PR-2} height={16}
               fill={hC.close>=hC.open?'#10B981':'#EF4444'} rx={3}/>
-            <text x={width-PR+3} y={py(hC.close)+5} fill="#fff" fontSize={9} fontWeight="600">{fmtA(hC.close)}</text>
+            <text x={width-PR+3} y={py(hC.close)+5} fill="#fff" fontSize={9} fontWeight="600">{fmtA(hC.close, yRng)}</text>
           </g>
         )}
 
         {/* Time labels */}
-        {vis.filter((_,i)=>i%Math.max(1,Math.floor(vis.length/7))===0).map((c,i)=>(
-          <text key={i} x={cx(vis.indexOf(c))} y={PT+H+PB-3}
-            fill="#475569" fontSize={9} textAnchor="middle">{c.timeLabel}</text>
-        ))}
+        {(()=>{
+          const step = Math.max(1, Math.floor(vis.length / 7))
+          return vis.map((c, i) => {
+            if (i % step !== 0) return null
+            return <text key={i} x={cx(i)} y={PT+H+PB-3}
+              fill="#475569" fontSize={9} textAnchor="middle">{c.timeLabel}</text>
+          })
+        })()}
 
         <rect x={PL} y={PT} width={W} height={H} fill="none" stroke="#1e293b" strokeWidth={1}/>
       </svg>
