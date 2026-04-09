@@ -151,9 +151,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("reconciler.startup_failed", error=str(e))
 
+    # 5. Daily P&L summary cron
+    try:
+        from alchemy.notifications.daily_summary import start_daily_summary_cron
+        await start_daily_summary_cron()
+    except Exception as e:
+        log.warning("daily_summary.start_failed", error=str(e))
+
     yield  # ← app runs here
 
     # Shutdown
+    try:
+        from alchemy.notifications.daily_summary import stop_daily_summary_cron
+        await stop_daily_summary_cron()
+    except Exception:
+        pass
     try:
         from alchemy.notifications.dispatcher import get_dispatcher
         await get_dispatcher().stop()
@@ -304,6 +316,14 @@ async def run_reconciliation(user: CurrentUser = Depends(get_current_user)):
     from alchemy.risk.reconciler import reconcile_all_exchanges
     report = await reconcile_all_exchanges(auto_fix=False)
     return report.to_dict()
+
+
+@app.post("/risk/daily-summary",     tags=["risk"])
+@app.post("/api/risk/daily-summary", tags=["risk"])
+async def trigger_daily_summary(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.notifications.daily_summary import send_daily_summary
+    await send_daily_summary()
+    return {"ok": True, "message": "Daily summary sent to all channels"}
 
 
 @app.post("/signal",     tags=["signal"])
