@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import structlog
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
@@ -324,6 +325,41 @@ async def trigger_daily_summary(user: CurrentUser = Depends(get_current_user)):
     from alchemy.notifications.daily_summary import send_daily_summary
     await send_daily_summary()
     return {"ok": True, "message": "Daily summary sent to all channels"}
+
+
+@app.get("/risk/audit-log",     tags=["risk"])
+@app.get("/api/risk/audit-log", tags=["risk"])
+async def audit_log_recent(
+    limit: int = 50,
+    action: Optional[str] = None,
+    symbol: Optional[str] = None,
+    user: CurrentUser = Depends(get_current_user),
+):
+    from alchemy.risk.audit_log import get_audit_log
+    if symbol or action:
+        return get_audit_log().search(symbol=symbol, action=action, limit=limit)
+    return get_audit_log().recent(limit=limit)
+
+
+@app.get("/risk/audit-log/stats",     tags=["risk"])
+@app.get("/api/risk/audit-log/stats", tags=["risk"])
+async def audit_log_stats(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.risk.audit_log import get_audit_log
+    return get_audit_log().stats()
+
+
+@app.get("/risk/rate-limiters",     tags=["risk"])
+@app.get("/api/risk/rate-limiters", tags=["risk"])
+async def rate_limiter_stats(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.execution.rate_limiter import all_rate_limiter_stats
+    return all_rate_limiter_stats()
+
+
+@app.get("/risk/ws-stats",     tags=["risk"])
+@app.get("/api/risk/ws-stats", tags=["risk"])
+async def ws_reconnector_stats(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.data.ws_reconnector import all_reconnector_stats
+    return all_reconnector_stats()
 
 
 @app.post("/signal",     tags=["signal"])
