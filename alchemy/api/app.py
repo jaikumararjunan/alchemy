@@ -139,6 +139,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("notification.start_failed", error=str(e))
 
+    # 4. Crash recovery — reconcile local state with exchanges
+    try:
+        from alchemy.risk.reconciler import reconcile_all_exchanges
+        report = await reconcile_all_exchanges(auto_fix=False)
+        if not report.clean:
+            log.warning("reconciler.discrepancies_found",
+                        count=len(report.discrepancies))
+        else:
+            log.info("reconciler.clean_startup")
+    except Exception as e:
+        log.warning("reconciler.startup_failed", error=str(e))
+
     yield  # ← app runs here
 
     # Shutdown
