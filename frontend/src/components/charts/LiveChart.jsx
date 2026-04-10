@@ -419,6 +419,14 @@ export default function LiveChart({ defaultSymbol='BTCUSDT', height=290 }) {
     const rest = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=250`
     const proxy = `/api/crypto/proxy/klines?symbol=${symbol}&interval=${interval}&limit=250`
 
+    const fmtLabel = (ts) => {
+      const d = new Date(ts)
+      if (interval === '1d') return d.toLocaleDateString([], { month:'short', day:'numeric' })
+      if (interval === '4h') return d.toLocaleDateString([], { month:'short', day:'numeric' }) + ' ' + d.toLocaleTimeString([], { hour:'2-digit', hour12:false }) + 'h'
+      if (interval === '1h') return d.toLocaleDateString([], { day:'numeric' }) + ' ' + d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:false })
+      return d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:false })
+    }
+
     fetch(rest)
       .catch(()=>fetch(proxy))
       .then(r=>r.json())
@@ -426,7 +434,7 @@ export default function LiveChart({ defaultSymbol='BTCUSDT', height=290 }) {
         if(!Array.isArray(data)||!data.length) return
         const parsed=data.map(k=>({
           openTime: k[0],
-          timeLabel:new Date(k[0]).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}),
+          timeLabel:fmtLabel(k[0]),
           open:parseFloat(k[1]),high:parseFloat(k[2]),
           low:parseFloat(k[3]),close:parseFloat(k[4]),
           volume:parseFloat(k[5]),
@@ -450,7 +458,7 @@ export default function LiveChart({ defaultSymbol='BTCUSDT', height=290 }) {
           const k=d.k
           const c={
             openTime:k.t,
-            timeLabel:new Date(k.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}),
+            timeLabel:fmtLabel(k.t),
             open:parseFloat(k.o),high:parseFloat(k.h),
             low:parseFloat(k.l),close:parseFloat(k.c),
             volume:parseFloat(k.v),
