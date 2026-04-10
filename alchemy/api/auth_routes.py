@@ -100,13 +100,9 @@ def _login_sync(email: str, password: str) -> dict:
             raise ValueError("account_locked")
 
         if row["status"] == "pending":
-            # Auto-activate in dev mode; in prod would require email verification
-            from alchemy.core.config import get_config
-            if get_config().env in ("development","dev","local","test"):
-                conn.execute("UPDATE users SET status='active', email_verified=1 WHERE email=?", (row["email"],))
-                conn.commit()
-            else:
-                raise ValueError("account_pending_verification")
+            # Auto-activate (OTP email verification disabled)
+            conn.execute("UPDATE users SET status='active', email_verified=1 WHERE email=?", (row["email"],))
+            conn.commit()
 
         # Check password
         stored_hash = row["password_hash"]
@@ -310,12 +306,10 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
         svc  = AuthService()
         user = await svc.signup(db, email=req.email, username=req.username,
                                 full_name=req.full_name, password=req.password)
-        # Auto-activate in dev mode (no email verification required)
-        cfg = get_config()
-        if cfg.env in ("development", "dev", "local", "test"):
-            user.status         = "active"
-            user.email_verified = True
-            log.info("auth.auto_activated", email=req.email, env=cfg.env)
+        # Auto-activate all users (OTP email verification disabled)
+        user.status         = "active"
+        user.email_verified = True
+        log.info("auth.auto_activated", email=req.email)
 
         # Persist user to DB before attempting auto-login so the account
         # is saved even if login fails (e.g. pending status in production).
