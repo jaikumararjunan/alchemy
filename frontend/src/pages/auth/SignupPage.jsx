@@ -137,7 +137,12 @@ export default function SignupPage() {
 
   const handleResendOtp = async () => {
     try {
-      await axios.post('/api/auth/otp/resend', { email: otpEmail, purpose: 'verification' })
+      const { data } = await axios.post('/api/auth/otp/resend', { email: otpEmail, purpose: 'verification' })
+      if (data.auto_activated) {
+        toast.success('Account activated! Please sign in.')
+        navigate('/auth/login')
+        return
+      }
       toast.success('New OTP sent!')
     } catch {
       toast.error('Failed to resend. Try again in a moment.')

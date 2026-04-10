@@ -86,6 +86,10 @@ export function AuthProvider({ children }) {
 
   const signup = async (email, username, fullName, password) => {
     const { data } = await authApi.post('/auth/signup', { email, username, full_name: fullName, password })
+    // If backend auto-activated and returned a token, store it
+    if (data.access_token) {
+      storeToken(data.access_token)
+    }
     return data
   }
 

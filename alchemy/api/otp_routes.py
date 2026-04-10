@@ -47,9 +47,10 @@ async def send_otp(req: SendOTPRequest, request: Request):
     sent = send_otp_email(req.email, otp, req.purpose)
 
     if not sent:
-        # In dev mode: return OTP in response (never in production)
         from alchemy.core.config import get_config
         cfg = get_config()
+
+        # Dev mode: show OTP in response
         if cfg.env in ("development","dev","local","test"):
             log.info("otp.dev_mode", email=req.email, otp=otp, purpose=req.purpose)
             return {
@@ -57,7 +58,26 @@ async def send_otp(req: SendOTPRequest, request: Request):
                 "dev_otp": otp,
                 "message": "SMTP not configured — OTP shown for dev only",
             }
-        raise HTTPException(503, "Email service unavailable. Configure SMTP_USER + SMTP_PASSWORD.")
+
+        # Production with no SMTP: auto-activate if verification
+        if req.purpose == "verification":
+            import sqlite3
+            from alchemy.api.auth_routes import _get_db_path
+            try:
+                conn = sqlite3.connect(_get_db_path())
+                conn.execute("UPDATE users SET status='active', email_verified=1 WHERE LOWER(email)=LOWER(?)",
+                             (req.email,))
+                conn.commit(); conn.close()
+                log.warning("otp.auto_activated_no_smtp", email=req.email)
+                return {
+                    "sent": False,
+                    "auto_activated": True,
+                    "message": "Email service not configured. Your account has been auto-activated. Please sign in.",
+                }
+            except Exception as e:
+                log.error("otp.auto_activate_error", error=str(e))
+
+        raise HTTPException(503, "Email service unavailable. Configure SMTP_USER + SMTP_PASSWORD in .env")
 
     log.info("otp.sent", email=req.email, purpose=req.purpose)
     return {"sent": True, "message": f"OTP sent to {req.email}"}

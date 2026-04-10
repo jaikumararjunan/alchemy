@@ -242,6 +242,37 @@ async def login(req: LoginRequest, request: Request, response: Response,
 
         # If account is pending verification, send/resend OTP instead of blocking
         if code == "account_pending_verification":
+            from alchemy.notifications.email_service import EmailConfig
+            smtp_cfg = EmailConfig()
+
+            if not smtp_cfg.enabled:
+                # SMTP not configured — auto-activate and login
+                import sqlite3
+                conn = sqlite3.connect(_get_db_path())
+                conn.execute("UPDATE users SET status='active', email_verified=1 WHERE LOWER(email)=LOWER(?)",
+                             (req.email,))
+                conn.commit(); conn.close()
+                log.warning("auth.login_auto_activated_no_smtp", email=req.email)
+
+                # Retry login
+                try:
+                    result = await svc.login(
+                        db, email=req.email, password=req.password,
+                        ip_address=ip, user_agent=ua, totp_code=req.totp_code,
+                    )
+                    await db.commit()
+                    if result.get("requires_2fa"):
+                        return result
+                    _set_cookie(response, result["refresh_token"])
+                    return {
+                        "access_token": result["access_token"],
+                        "token_type": "bearer",
+                        "user": result["user"],
+                    }
+                except Exception:
+                    pass
+
+            # SMTP configured — send OTP
             try:
                 from alchemy.auth.otp_store import generate_otp
                 from alchemy.notifications.email_service import send_otp_email
@@ -250,7 +281,6 @@ async def login(req: LoginRequest, request: Request, response: Response,
                 log.info("auth.login_pending_otp_sent", email=req.email, sent=sent)
             except Exception:
                 pass
-            # Return 200 (not 401) so frontend can show OTP screen
             return {
                 "requires_otp": True,
                 "email": req.email,
@@ -307,8 +337,40 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
                 "user":         user.safe_dict(),
             }
         except AuthError:
-            # In production the user is pending email verification.
-            # Send OTP email so they can verify.
+            # User is pending email verification. Try to send OTP.
+            from alchemy.notifications.email_service import EmailConfig
+            smtp_cfg = EmailConfig()
+
+            if not smtp_cfg.enabled:
+                # SMTP not configured — auto-activate the user (graceful degradation)
+                import sqlite3
+                from alchemy.api.auth_routes import _get_db_path
+                conn = sqlite3.connect(_get_db_path())
+                conn.execute("UPDATE users SET status='active', email_verified=1 WHERE LOWER(email)=LOWER(?)",
+                             (req.email,))
+                conn.commit(); conn.close()
+                log.warning("auth.signup_auto_activated_no_smtp", email=req.email)
+
+                # Retry login now that user is active
+                try:
+                    result = await svc.login(
+                        db, email=req.email, password=req.password,
+                        ip_address=ip, user_agent=ua,
+                    )
+                    await db.commit()
+                    _set_cookie(response, result["refresh_token"])
+                    return {
+                        "message": "Account created and activated! (Email verification skipped — SMTP not configured)",
+                        "access_token": result["access_token"],
+                        "user": user.safe_dict(),
+                    }
+                except Exception:
+                    return {
+                        "message": "Account created and activated. Please sign in.",
+                        "user": user.safe_dict(),
+                    }
+
+            # SMTP IS configured — send OTP email
             try:
                 from alchemy.auth.otp_store import generate_otp
                 from alchemy.notifications.email_service import send_otp_email
@@ -317,8 +379,7 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
                 if sent:
                     log.info("auth.signup_otp_sent", email=req.email)
                 else:
-                    log.warning("auth.signup_otp_not_sent", email=req.email,
-                                hint="Configure SMTP_USER + SMTP_PASSWORD in .env")
+                    log.warning("auth.signup_otp_send_failed", email=req.email)
             except Exception as otp_err:
                 log.error("auth.signup_otp_error", error=str(otp_err))
 
