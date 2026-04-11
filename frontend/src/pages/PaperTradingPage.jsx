@@ -400,16 +400,47 @@ function StatRow({ label, value }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function PositionsPanel({ api, positions }) {
   const qc = useQueryClient()
+  const [livePrices, setLivePrices] = useState({})
+
+  // Fetch live prices every 5 seconds and update backend
+  useEffect(() => {
+    const symbols = Object.keys(positions)
+    if (symbols.length === 0) return
+
+    const fetchAndUpdate = async () => {
+      try {
+        const prices = {}
+        for (const sym of symbols) {
+          const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
+          const d = await resp.json()
+          prices[sym] = parseFloat(d.price)
+        }
+        setLivePrices(prices)
+        // Push prices to backend (updates P&L, triggers SL/TP)
+        await api.post('/paper/update-prices', { prices }).catch(() => {})
+        qc.invalidateQueries({ queryKey: ['paper-portfolio'] })
+      } catch {}
+    }
+
+    fetchAndUpdate()
+    const interval = setInterval(fetchAndUpdate, 5000)
+    return () => clearInterval(interval)
+  }, [Object.keys(positions).join(',')])
+
   const closeMut = useMutation({
     mutationFn: async ({ symbol }) => {
-      const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`)
-      const d = await resp.json()
-      return api.post('/paper/close', { symbol, current_price: parseFloat(d.price) }).then(r => r.data)
+      const price = livePrices[symbol] || 0
+      if (!price) {
+        const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`)
+        const d = await resp.json()
+        return api.post('/paper/close', { symbol, current_price: parseFloat(d.price) }).then(r => r.data)
+      }
+      return api.post('/paper/close', { symbol, current_price: price }).then(r => r.data)
     },
     onSuccess: (d) => {
-      toast.success(d.message)
-      qc.invalidateQueries(['paper-portfolio'])
-      qc.invalidateQueries(['paper-trades'])
+      toast.success(d.message || 'Position closed')
+      qc.invalidateQueries({ queryKey: ['paper-portfolio'] })
+      qc.invalidateQueries({ queryKey: ['paper-trades'] })
     },
     onError: () => toast.error('Close failed'),
   })
@@ -452,9 +483,21 @@ function PositionsPanel({ api, positions }) {
               </td>
               <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">{pos.quantity}</td>
               <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">${pos.avg_entry_price?.toLocaleString()}</td>
-              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">${pos.current_price?.toLocaleString()}</td>
-              <td className="px-4 py-3 text-right"><PnL value={pos.unrealized_pnl || 0} prefix="$" /></td>
-              <td className="px-4 py-3 text-right"><PnL value={pos.unrealized_pct || 0} suffix="%" /></td>
+              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">${(livePrices[sym] || pos.current_price)?.toLocaleString()}</td>
+              <td className="px-4 py-3 text-right"><PnL value={(() => {
+                const lp = livePrices[sym] || pos.current_price || 0
+                if (pos.side === 'long') return (lp - pos.avg_entry_price) * pos.quantity
+                if (pos.side === 'short') return (pos.avg_entry_price - lp) * pos.quantity
+                return pos.unrealized_pnl || 0
+              })()} prefix="$" /></td>
+              <td className="px-4 py-3 text-right"><PnL value={(() => {
+                const lp = livePrices[sym] || pos.current_price || 0
+                const cost = pos.avg_entry_price * pos.quantity
+                if (!cost) return 0
+                if (pos.side === 'long') return ((lp - pos.avg_entry_price) / pos.avg_entry_price) * 100
+                if (pos.side === 'short') return ((pos.avg_entry_price - lp) / pos.avg_entry_price) * 100
+                return pos.unrealized_pct || 0
+              })()} suffix="%" /></td>
               <td className="px-4 py-3 text-center">
                 <button onClick={() => closeMut.mutate({ symbol: sym })}
                   disabled={closeMut.isPending}
@@ -682,56 +725,118 @@ function TradeHistoryPanel({ trades }) {
 // CAPITAL ALLOCATION
 // ══════════════════════════════════════════════════════════════════════════════
 function CapitalPanel({ api }) {
+  const { data: portfolio } = useQuery({
+    queryKey: ['paper-portfolio'],
+    queryFn: () => api.get('/paper/portfolio').then(r => r.data),
+  })
+
   const { data: fund } = useQuery({
     queryKey: ['capital-fund'],
     queryFn: () => api.get('/capital/fund').then(r => r.data),
+    retry: 1,
   })
 
+  const qc = useQueryClient()
   const templateMut = useMutation({
-    mutationFn: (t) => api.post('/capital/fund/template', { template: t, total_capital: 100000 }).then(r => r.data),
-    onSuccess: (d) => { toast.success(d.message) },
+    mutationFn: (t) => api.post('/capital/fund/template', { template: t, total_capital: portfolio?.portfolio_value || 100000 }).then(r => r.data),
+    onSuccess: (d) => {
+      toast.success(d.message || 'Template applied!')
+      qc.invalidateQueries({ queryKey: ['capital-fund'] })
+    },
+    onError: () => toast.error('Failed to apply template'),
   })
+
+  const p = portfolio || {}
+  const positions = p.positions || {}
+  const posEntries = Object.entries(positions)
+  const totalValue = p.portfolio_value || 100000
+  const cashPct = totalValue > 0 ? (p.cash_balance / totalValue * 100) : 100
+  const investedValue = totalValue - (p.cash_balance || 0)
 
   const f = fund || {}
   const tree = f.allocation_tree || []
 
   return (
     <div className="space-y-4">
-      {/* Fund summary */}
-      <div className="grid grid-cols-4 gap-3">
-        <SummaryCard label="Total Capital" value={`$${(f.total_capital||100000).toLocaleString()}`} icon={<PieChart className="w-5 h-5" />} color="blue" />
-        <SummaryCard label="Allocated" value={`$${(f.allocated_capital||0).toLocaleString()}`} icon={<Target className="w-5 h-5" />} color="green" />
-        <SummaryCard label="Unallocated" value={`$${(f.unallocated_capital||0).toLocaleString()}`} icon={<DollarSign className="w-5 h-5" />} color="yellow" />
-        <SummaryCard label="Total P&L" value={<PnL value={f.total_pnl||0} prefix="$" size="text-xl" />} icon={<Activity className="w-5 h-5" />} color={f.total_pnl>=0?"green":"red"} />
+      {/* Portfolio Capital Summary */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <SummaryCard label="Total Capital" value={`$${totalValue.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<PieChart className="w-5 h-5" />} color="blue" />
+        <SummaryCard label="Cash" value={`$${(p.cash_balance||0).toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<DollarSign className="w-5 h-5" />} color="cyan" sub={`${cashPct.toFixed(1)}%`} />
+        <SummaryCard label="Invested" value={`$${investedValue.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<Target className="w-5 h-5" />} color="green" sub={`${(100-cashPct).toFixed(1)}%`} />
+        <SummaryCard label="Unrealized P&L" value={<PnL value={p.unrealized_pnl||0} prefix="$" size="text-xl" />} icon={<Activity className="w-5 h-5" />} color={p.unrealized_pnl>=0?"green":"red"} />
+        <SummaryCard label="Realized P&L" value={<PnL value={p.realized_pnl||0} prefix="$" size="text-xl" />} icon={<TrendingUp className="w-5 h-5" />} color={p.realized_pnl>=0?"green":"red"} />
       </div>
 
-      {/* Quick Templates */}
-      {tree.length === 0 && (
+      {/* Position Allocations */}
+      {posEntries.length > 0 && (
         <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-          <h3 className="text-white font-semibold mb-3">Quick Start — Choose a Template</h3>
+          <h3 className="text-white font-semibold mb-3">Current Position Allocation</h3>
+          <div className="space-y-2">
+            {/* Cash */}
+            <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-gray-300 font-medium text-sm">💵 Cash Reserve</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-400 text-sm">{cashPct.toFixed(1)}%</span>
+                  <span className="text-white font-semibold text-sm tabular-nums">${(p.cash_balance||0).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                </div>
+              </div>
+              <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-cyan-500 rounded-full" style={{width: `${cashPct}%`}} />
+              </div>
+            </div>
+            {/* Positions */}
+            {posEntries.map(([sym, pos]) => {
+              const posValue = (pos.current_price || pos.avg_entry_price) * pos.quantity
+              const pct = totalValue > 0 ? (posValue / totalValue * 100) : 0
+              const isShort = pos.side === 'short'
+              return (
+                <div key={sym} className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-gray-300 font-medium text-sm">
+                      {isShort ? '🔴' : '🟢'} {sym.replace('USDT','')}/USDT
+                      <span className={clsx('ml-2 text-xs px-1.5 py-0.5 rounded',
+                        isShort ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')}>
+                        {pos.side?.toUpperCase()}
+                      </span>
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-gray-400 text-sm">{pct.toFixed(1)}%</span>
+                      <span className="text-white font-semibold text-sm tabular-nums">${posValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                      <PnL value={pos.unrealized_pnl || 0} prefix="$" />
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                    <div className={clsx('h-full rounded-full', isShort ? 'bg-red-500' : 'bg-emerald-500')} style={{width: `${Math.min(pct, 100)}%`}} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Strategy Templates */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+        <h3 className="text-white font-semibold mb-3">{tree.length > 0 ? 'Strategy Buckets' : 'Quick Start — Choose a Template'}</h3>
+        {tree.length === 0 ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              ['conservative', 'Conservative', 'Capital preservation, 20% cash reserve', Shield, 'green'],
-              ['balanced', 'Balanced', 'Mix of trend + mean reversion', BarChart3, 'blue'],
-              ['aggressive', 'Aggressive', 'Multiple momentum strategies', Flame, 'orange'],
-              ['crypto_diversified', 'Crypto Diversified', 'BTC 40% + ETH 25% + Alts 20%', PieChart, 'purple'],
-            ].map(([key, name, desc, Icon, color]) => (
+              ['conservative', 'Conservative', 'Capital preservation, 20% cash', Shield, 'text-green-400'],
+              ['balanced', 'Balanced', 'Mix of trend + mean reversion', BarChart3, 'text-blue-400'],
+              ['aggressive', 'Aggressive', 'Multiple momentum strategies', Flame, 'text-orange-400'],
+              ['crypto_diversified', 'Crypto Diversified', 'BTC 40% + ETH 25% + Alts 20%', PieChart, 'text-purple-400'],
+            ].map(([key, name, desc, Icon, clr]) => (
               <button key={key} onClick={() => templateMut.mutate(key)}
                 disabled={templateMut.isPending}
-                className={`rounded-xl border border-gray-700 bg-gray-800 p-4 text-left hover:border-${color}-500/50 transition-all`}>
-                <Icon className={`w-6 h-6 text-${color}-400 mb-2`} />
+                className="rounded-xl border border-gray-700 bg-gray-800 p-4 text-left hover:border-blue-500/50 transition-all">
+                <Icon className={`w-6 h-6 ${clr} mb-2`} />
                 <div className="text-white font-semibold text-sm">{name}</div>
                 <div className="text-gray-500 text-xs mt-1">{desc}</div>
               </button>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Allocation Tree */}
-      {tree.length > 0 && (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-          <h3 className="text-white font-semibold mb-3">Allocation Buckets</h3>
+        ) : (
           <div className="space-y-2">
             {tree.map(bucket => (
               <div key={bucket.id} className="rounded-lg border border-gray-700 bg-gray-800 p-4">
@@ -742,28 +847,18 @@ function CapitalPanel({ api }) {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-gray-400 text-sm">{bucket.allocation_pct}%</span>
-                    <span className="text-white font-semibold text-sm tabular-nums">
-                      ${bucket.allocated_capital?.toLocaleString()}
-                    </span>
+                    <span className="text-white font-semibold text-sm tabular-nums">${bucket.allocated_capital?.toLocaleString()}</span>
                     <PnL value={bucket.return_pct || 0} suffix="%" />
                   </div>
                 </div>
-                {/* Progress bar */}
                 <div className="mt-2 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                   <div className="h-full bg-blue-500 rounded-full" style={{width: `${bucket.allocation_pct}%`}} />
                 </div>
-                {/* Children */}
-                {bucket.children?.map(child => (
-                  <div key={child.id} className="ml-6 mt-2 flex justify-between text-xs text-gray-400">
-                    <span>└ {child.name} ({child.allocation_pct}%)</span>
-                    <span>${child.allocated_capital?.toLocaleString()}</span>
-                  </div>
-                ))}
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
