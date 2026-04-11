@@ -249,7 +249,98 @@ app.include_router(capital_router)
 @app.get("/health",      tags=["core"])
 @app.get("/api/health",  tags=["core"])
 async def health():
-    return {"status": "ok", "version": "0.7.0", "env": get_config().env}
+    return {"status": "ok", "version": "1.0.0", "env": get_config().env}
+
+
+# ── Unified Trading Pipeline ─────────────────────────────────────────────────
+
+@app.post("/trade/execute",     tags=["trading"])
+@app.post("/api/trade/execute", tags=["trading"])
+async def execute_trade(body: dict, user: CurrentUser = Depends(get_current_user)):
+    """
+    Unified order execution — routes through full risk pipeline.
+
+    Supports both paper and live trading modes.
+    Every order passes through: kill switch → session check → dedup →
+    price guard → position sizing → rate limiter → execute → audit → notify.
+
+    Body:
+        exchange: str       — "binance", "delta", "angel", "kite"
+        symbol: str         — "BTCUSDT", "ETHUSDT", etc.
+        side: str           — "BUY" or "SELL"
+        quantity: float     — Amount to trade
+        order_type: str     — "MARKET", "LIMIT", "STOP_MARKET"
+        price: float        — Limit price (for LIMIT orders)
+        stop_loss: float    — Stop loss price
+        take_profit: float  — Take profit price
+        leverage: int       — Leverage (futures only, default 1)
+        mode: str           — "paper" or "live"
+        strategy: str       — Strategy name for tracking
+        market_price: float — Current market price (for validation)
+    """
+    from alchemy.execution.order_pipeline import execute_order
+    result = await execute_order(
+        user_id=user.user_id,
+        exchange=body.get("exchange", "binance"),
+        symbol=body.get("symbol", ""),
+        side=body.get("side", "BUY"),
+        quantity=body.get("quantity", 0),
+        order_type=body.get("order_type", "MARKET"),
+        price=body.get("price", 0),
+        stop_loss=body.get("stop_loss", 0),
+        take_profit=body.get("take_profit", 0),
+        leverage=body.get("leverage", 1),
+        mode=body.get("mode", "paper"),
+        strategy=body.get("strategy", "manual"),
+        notes=body.get("notes", ""),
+        market_price=body.get("market_price", 0),
+    )
+    if not result.success:
+        from fastapi import HTTPException
+        raise HTTPException(400, {
+            "code": result.rejected_by or "order_failed",
+            "message": result.message,
+            "details": result.to_dict(),
+        })
+    return result.to_dict()
+
+
+@app.get("/trade/pipeline-status",     tags=["trading"])
+@app.get("/api/trade/pipeline-status", tags=["trading"])
+async def pipeline_status(user: CurrentUser = Depends(get_current_user)):
+    """Get status of all risk guards in the execution pipeline."""
+    status = {"pipeline": "operational", "guards": {}}
+
+    try:
+        from alchemy.risk.kill_switch import is_kill_switch_active
+        status["guards"]["kill_switch"] = {
+            "active": is_kill_switch_active(),
+            "status": "BLOCKED" if is_kill_switch_active() else "OK",
+        }
+    except: status["guards"]["kill_switch"] = {"status": "not_loaded"}
+
+    try:
+        from alchemy.risk.dedup import get_dedup_guard
+        d = get_dedup_guard()
+        status["guards"]["dedup"] = {"status": "OK", "cache_size": len(d._cache) if hasattr(d, '_cache') else 0}
+    except: status["guards"]["dedup"] = {"status": "not_loaded"}
+
+    try:
+        from alchemy.risk.price_guard import get_price_guard
+        status["guards"]["price_guard"] = {"status": "OK", "max_deviation_pct": 5.0}
+    except: status["guards"]["price_guard"] = {"status": "not_loaded"}
+
+    try:
+        from alchemy.execution.rate_limiter import all_rate_limiter_stats
+        status["guards"]["rate_limiter"] = {"status": "OK", "stats": all_rate_limiter_stats()}
+    except: status["guards"]["rate_limiter"] = {"status": "not_loaded"}
+
+    try:
+        from alchemy.risk.audit_log import get_audit_log
+        status["guards"]["audit_log"] = {"status": "OK", "stats": get_audit_log().stats()}
+    except: status["guards"]["audit_log"] = {"status": "not_loaded"}
+
+    return status
 
 
 @app.get("/risk/status",      tags=["risk"])

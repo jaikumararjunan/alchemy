@@ -211,3 +211,36 @@ def _volatility_based(
         risk_pct_of_capital=(daily_risk / capital) * 100,
         notes=f"Asset vol={volatility*100:.1f}%, target={target_vol*100:.1f}%, scale={scale:.2f}",
     )
+
+
+# ── Position Limit Check (used by order pipeline) ────────────────────────────
+
+def check_position_limit(
+    user_id: str,
+    symbol: str,
+    quantity: float,
+    market_price: float,
+    max_position_pct: float = 25.0,
+) -> str | None:
+    """
+    Check if an order would exceed the maximum position size as % of portfolio.
+
+    Returns warning message if exceeded, None if OK.
+    Used by the order pipeline for advisory warnings (doesn't block).
+    """
+    try:
+        from alchemy.paper_trading.engine import get_paper_engine
+        portfolio = get_paper_engine().get_portfolio(user_id)
+        portfolio_value = portfolio.portfolio_value
+        if portfolio_value <= 0:
+            return None
+
+        order_value = quantity * market_price
+        position_pct = (order_value / portfolio_value) * 100
+
+        if position_pct > max_position_pct:
+            return (f"Order is {position_pct:.1f}% of portfolio "
+                    f"(max recommended: {max_position_pct}%)")
+        return None
+    except Exception:
+        return None
