@@ -19,6 +19,7 @@ import RiskPage           from '@/pages/RiskPage'
 import AnalyticsPage      from '@/pages/AnalyticsPage'
 import StrategyPage       from '@/pages/StrategyPage'
 import AutonomousTradingPage from '@/pages/AutonomousTradingPage'
+import PaperTradingPage from '@/pages/PaperTradingPage'
 import TokenManagerPage   from '@/pages/TokenManagerPage'
 import WorkflowPage       from '@/pages/WorkflowPage'
 import NotificationsPage  from '@/pages/NotificationsPage'
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="analytics"     element={<AnalyticsPage />} />
           <Route path="strategy"      element={<StrategyPage />} />
           <Route path="autonomous"    element={<AutonomousTradingPage />} />
+          <Route path="paper-trading" element={<PaperTradingPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings"      element={<SettingsPage />} />
 
