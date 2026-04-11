@@ -21,6 +21,37 @@ def _require_live(user_id: str, exchange: str) -> dict:
     return data
 
 
+def _record_trade_in_portfolio(user_id: str, symbol: str, side: str, quantity: float,
+                                 price: float, exchange: str, strategy: str = "live_manual"):
+    """Record a live trade in the paper trading engine for unified dashboard visibility."""
+    try:
+        from alchemy.paper_trading.engine import get_paper_engine
+        engine = get_paper_engine()
+        normalized_side = "buy" if side.upper() in ("BUY", "LONG") else "sell"
+
+        if normalized_side == "buy":
+            engine.place_order(
+                user_id=user_id, symbol=symbol, side="buy",
+                quantity=quantity, current_price=price,
+                order_type="market", strategy=f"live_{exchange}",
+                notes=f"Live {exchange} trade recorded",
+            )
+        else:
+            engine.close_position(
+                user_id=user_id, symbol=symbol,
+                current_price=price, quantity=quantity,
+            )
+        import structlog
+        structlog.get_logger(__name__).info(
+            "live_trade.recorded", user_id=user_id[:8], symbol=symbol,
+            side=side, qty=quantity, price=price, exchange=exchange)
+    except Exception as e:
+        import structlog
+        structlog.get_logger(__name__).warning(
+            "live_trade.record_failed", error=str(e), symbol=symbol)
+    return data
+
+
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
 # ── Proxy endpoints (CSP-safe fallback) ──────────────────────────────────────
@@ -142,11 +173,16 @@ async def delta_place_order(req: OrderRequest,
     _require_live(user.user_id, "delta")
     try:
         gw = _delta(user.user_id)
-        return gw.place_order(
+        result = gw.place_order(
             symbol=req.symbol, side=req.side, size=int(req.size),
             order_type=req.order_type, leverage=req.leverage,
             limit_price=req.price,
         )
+        # Record in unified portfolio
+        fill_price = float(result.get("avg_fill_price", 0) or result.get("price", 0) or req.price or 0)
+        _record_trade_in_portfolio(user.user_id, req.symbol, req.side,
+                                    float(req.size), fill_price, "delta")
+        return result
     except Exception as e:
         raise HTTPException(502, str(e))
 
@@ -211,11 +247,17 @@ async def binance_place_order(req: OrderRequest,
     _require_live(user.user_id, "binance")
     try:
         gw = _binance(user.user_id)
-        return gw.place_order(
+        result = gw.place_order(
             symbol=req.symbol, side=req.side.upper(),
             quantity=req.size, order_type=req.order_type.upper(),
             leverage=req.leverage, price=req.price,
         )
+        # Record in unified portfolio
+        fill_price = float(result.get("avgPrice", 0) or result.get("price", 0) or req.price or 0)
+        fill_qty = float(result.get("executedQty", 0) or req.size or 0)
+        _record_trade_in_portfolio(user.user_id, req.symbol, req.side,
+                                    fill_qty, fill_price, "binance")
+        return result
     except Exception as e:
         raise HTTPException(502, str(e))
 
@@ -233,7 +275,14 @@ async def binance_cancel_all(symbol: str, user: CurrentUser = Depends(get_curren
 async def binance_close_position(symbol: str, user: CurrentUser = Depends(get_current_user)):
     _require_live(user.user_id, "binance")
     try:
-        return _binance(user.user_id).close_position(symbol)
+        gw = _binance(user.user_id)
+        result = gw.close_position(symbol)
+        # Record close in unified portfolio
+        fill_price = float(result.get("avgPrice", 0) or result.get("price", 0) or 0)
+        fill_qty = float(result.get("executedQty", 0) or 0)
+        _record_trade_in_portfolio(user.user_id, symbol, "SELL",
+                                    fill_qty, fill_price, "binance")
+        return result
     except Exception as e:
         raise HTTPException(502, str(e))
 

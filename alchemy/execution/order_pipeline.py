@@ -313,7 +313,7 @@ async def _execute_paper(req: OrderRequest) -> OrderResult:
 # ── Live Execution ────────────────────────────────────────────────────────────
 
 async def _execute_live(req: OrderRequest) -> OrderResult:
-    """Execute order via live exchange gateway."""
+    """Execute order via live exchange gateway + record in unified portfolio."""
     try:
         from alchemy.api.token_routes import get_live_gateway
         gateway = get_live_gateway(req.exchange, req.user_id)
@@ -340,8 +340,37 @@ async def _execute_live(req: OrderRequest) -> OrderResult:
         order_id = str(result.get("orderId", "") or result.get("order_id", ""))
         status = result.get("status", "FILLED").lower()
 
+        is_success = status in ("filled", "new", "partially_filled")
+
+        # ── Record in paper trading engine for unified dashboard ──
+        if is_success and filled_price > 0:
+            try:
+                from alchemy.paper_trading.engine import get_paper_engine
+                engine = get_paper_engine()
+                side_norm = "buy" if req.side.upper() in ("BUY", "LONG") else "sell"
+
+                if side_norm == "buy":
+                    engine.place_order(
+                        user_id=req.user_id, symbol=req.symbol, side="buy",
+                        quantity=filled_qty or req.quantity,
+                        current_price=filled_price,
+                        order_type="market",
+                        strategy=f"live_{req.exchange}",
+                        notes=f"Live trade via {req.exchange} | Order #{order_id}",
+                    )
+                else:
+                    engine.close_position(
+                        user_id=req.user_id, symbol=req.symbol,
+                        current_price=filled_price,
+                        quantity=filled_qty or req.quantity,
+                    )
+                log.info("pipeline.live_recorded_in_portfolio",
+                         symbol=req.symbol, side=req.side, price=filled_price)
+            except Exception as pe:
+                log.warning("pipeline.portfolio_record_failed", error=str(pe))
+
         return OrderResult(
-            success=status in ("filled", "new", "partially_filled"),
+            success=is_success,
             order_id=order_id,
             filled_price=filled_price,
             filled_qty=filled_qty,
