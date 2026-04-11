@@ -1,45 +1,86 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Wallet, TrendingUp, TrendingDown, BarChart3, Target, Trophy, RefreshCw,
   ArrowUpCircle, ArrowDownCircle, X, Play, RotateCcw, Clock, Zap,
   PieChart, DollarSign, Activity, Percent, AlertTriangle, ChevronDown,
-  Shield, Flame, Award, LineChart
+  Shield, Flame, Award, LineChart, WifiOff
 } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 
 export default function PaperTradingPage() {
   const { apiClient } = useAuth()
-  const api = apiClient()
+  const api = useMemo(() => apiClient(), [apiClient])
   const qc = useQueryClient()
-  const [activeTab, setActiveTab] = useState('trade') // trade, backtest, capital, history
+  const [activeTab, setActiveTab] = useState('trade')
 
   // ── Data Fetching ──────────────────────────────────────────────────────
-  const { data: portfolio, isLoading } = useQuery({
+  const { data: portfolio, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['paper-portfolio'],
     queryFn: () => api.get('/paper/portfolio').then(r => r.data),
     refetchInterval: 15000,
+    retry: 2,
   })
 
   const { data: trades } = useQuery({
     queryKey: ['paper-trades'],
     queryFn: () => api.get('/paper/trades?limit=100').then(r => r.data),
+    retry: 1,
   })
 
   const { data: leaderboard } = useQuery({
     queryKey: ['paper-leaderboard'],
     queryFn: () => api.get('/paper/leaderboard').then(r => r.data),
+    retry: 1,
   })
 
   const { data: strategies } = useQuery({
     queryKey: ['backtest-strategies'],
     queryFn: () => api.get('/paper/backtest/strategies').then(r => r.data),
+    retry: 1,
   })
+
+  const handleRefresh = useCallback(() => {
+    toast.loading('Refreshing...', { id: 'refresh' })
+    refetch().then(() => {
+      qc.invalidateQueries({ queryKey: ['paper-trades'] })
+      qc.invalidateQueries({ queryKey: ['paper-leaderboard'] })
+      toast.success('Refreshed!', { id: 'refresh' })
+    }).catch(() => {
+      toast.error('Refresh failed - check connection', { id: 'refresh' })
+    })
+  }, [refetch, qc])
 
   const p = portfolio || {}
   const positions = p.positions || {}
+
+  if (isError) {
+    const msg = error?.response?.status === 401
+      ? 'Session expired. Please log out and log in again.'
+      : error?.message || 'Failed to load portfolio'
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <WifiOff className="w-16 h-16 text-red-400 mb-4" />
+        <h2 className="text-xl font-bold text-white mb-2">Connection Error</h2>
+        <p className="text-gray-400 text-sm mb-4">{msg}</p>
+        <button onClick={() => refetch()}
+          className="px-6 py-2.5 rounded-lg bg-blue-600 text-white font-medium flex items-center gap-2 hover:bg-blue-500">
+          <RefreshCw className="w-4 h-4" /> Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <RefreshCw className="w-10 h-10 text-blue-400 animate-spin mb-4" />
+        <p className="text-gray-400">Loading paper trading dashboard...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -55,7 +96,7 @@ export default function PaperTradingPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => qc.invalidateQueries(['paper-portfolio'])}
+          <button onClick={handleRefresh}
             className="px-3 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 text-sm flex items-center gap-1">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
