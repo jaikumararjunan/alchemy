@@ -58,8 +58,13 @@ async def start_autonomous(
     except ImportError:
         ws_broadcast = None
 
+    # MUST set user_id BEFORE start so trades record to correct portfolio
+    engine._user_id = user.user_id
+    import structlog
+    structlog.get_logger(__name__).info("autonomous.user_linked",
+        user_id=user.user_id, email=user.email)
+
     result = await engine.start(ws_broadcast=ws_broadcast)
-    engine._user_id = user.user_id  # Link trades to user's paper portfolio
     if not result["ok"]:
         raise HTTPException(400, result.get("error", "Failed to start"))
     return result

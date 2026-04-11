@@ -330,33 +330,93 @@ class AutonomousTradingEngine:
     async def _execute_trade(self, record: TradeRecord) -> None:
         """Execute a trade via the paper trading engine + exchange gateway."""
         try:
-            # ── Always record in paper trading engine for dashboard visibility ──
+            # ── Record in paper trading engine for dashboard visibility ──
+            user_id = self._user_id
+            if not user_id:
+                # Fallback: look up first admin user from DB
+                try:
+                    import sqlite3, os, re as _re
+                    url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/alchemy.db")
+                    db_path = _re.sub(r"^sqlite(\+aiosqlite)?:///", "", url)
+                    conn = sqlite3.connect(db_path)
+                    row = conn.execute("SELECT id FROM users ORDER BY created_at LIMIT 1").fetchone()
+                    conn.close()
+                    if row:
+                        user_id = str(row[0])
+                        self._user_id = user_id
+                        log.info("autonomous.user_resolved_from_db", user_id=user_id)
+                except Exception as dbe:
+                    log.error("autonomous.db_user_lookup_failed", error=str(dbe))
+
+            if not user_id:
+                log.error("autonomous.NO_USER_ID — trades will NOT appear in dashboard")
+                user_id = "autonomous"
+
+            side = "buy" if record.direction == "long" else "sell"
+            price = record.entry_price
+
+            # Calculate meaningful quantity based on portfolio
+            quantity = 0.0
             try:
                 from alchemy.paper_trading.engine import get_paper_engine
                 paper = get_paper_engine()
-                side = "buy" if record.direction == "long" else "sell"
-                price = record.entry_price
+                portfolio = paper.get_portfolio(user_id)
+                # Use 5% of available cash per trade
+                trade_budget = portfolio.cash_balance * 0.05
+                if price > 0:
+                    quantity = round(trade_budget / price, 6)
+                else:
+                    quantity = 0.001
+            except Exception:
+                quantity = 0.001
+
+            log.info("autonomous.recording_paper_trade",
+                     user_id=user_id[:12], symbol=record.symbol,
+                     side=side, quantity=quantity, price=price)
+
+            try:
+                from alchemy.paper_trading.engine import get_paper_engine
+                paper = get_paper_engine()
 
                 if side == "buy":
-                    paper.place_order(
-                        user_id=self._user_id or "autonomous",
+                    order = paper.place_order(
+                        user_id=user_id,
                         symbol=record.symbol,
                         side=side,
-                        quantity=record.quantity if hasattr(record, 'quantity') and record.quantity else 0.001,
+                        quantity=quantity,
                         current_price=price,
                         order_type="market",
                         strategy=f"auto_{record.strategy}",
-                        notes=f"Autonomous: {record.signal_strength:.0%} confidence",
+                        notes=f"Autonomous: {record.signal_strength:.0%} confidence | {record.reasoning[:60]}",
                     )
+                    log.info("autonomous.paper_order_placed",
+                             order_id=order.id, status=order.status.value,
+                             symbol=record.symbol, qty=quantity, price=price)
                 else:
-                    paper.close_position(
-                        user_id=self._user_id or "autonomous",
+                    order = paper.close_position(
+                        user_id=user_id,
                         symbol=record.symbol,
                         current_price=price,
                     )
-                log.info("autonomous.paper_recorded", symbol=record.symbol, side=side)
+                    if order:
+                        log.info("autonomous.paper_position_closed",
+                                 symbol=record.symbol, price=price)
+                    else:
+                        log.warning("autonomous.paper_no_position_to_close",
+                                    symbol=record.symbol)
+
+                # Verify it was recorded
+                portfolio_after = paper.get_portfolio(user_id)
+                log.info("autonomous.paper_portfolio_after",
+                         cash=round(portfolio_after.cash_balance, 2),
+                         positions=len(portfolio_after.positions),
+                         trades=len(portfolio_after.trade_log))
+
             except Exception as pe:
-                log.warning("autonomous.paper_record_failed", error=str(pe))
+                log.error("autonomous.PAPER_RECORD_FAILED", error=str(pe),
+                          user_id=user_id[:12], symbol=record.symbol)
+                import traceback
+                traceback.print_exc()
 
             # ── Execute on exchange if auto_execute is enabled ──
             if self.auto_execute:
@@ -376,7 +436,7 @@ class AutonomousTradingEngine:
                     result = await loop.run_in_executor(None, lambda: gw.place_order(
                         symbol=record.symbol,
                         side=ex_side,
-                        quantity=0.001,  # Minimum size for safety
+                        quantity=0.001,
                         order_type="MARKET",
                     ))
                 else:
@@ -384,10 +444,9 @@ class AutonomousTradingEngine:
                     result = await loop.run_in_executor(None, lambda: gw.place_order(
                         symbol=record.symbol,
                         side=ex_side,
-                        size=1,  # Minimum contracts for safety
+                        size=1,
                         order_type="market_order",
                     ))
-                # Binance returns "avgPrice"/"price", Delta returns "avg_fill_price"
                 fill = (result.get("avgPrice")
                         or result.get("avg_fill_price")
                         or result.get("price")
@@ -409,6 +468,8 @@ class AutonomousTradingEngine:
             record.execution_error = str(e)
             record.status = "error"
             log.error("autonomous.execution_error", symbol=record.symbol, error=str(e))
+            import traceback
+            traceback.print_exc()
 
     async def _notify_signal(self, record: TradeRecord) -> None:
         """Dispatch notification for a new trade signal."""
