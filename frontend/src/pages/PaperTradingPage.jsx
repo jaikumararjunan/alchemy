@@ -104,7 +104,7 @@ export default function PaperTradingPage() {
       </div>
 
       {/* Portfolio Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         <SummaryCard
           label="Portfolio Value"
           value={`$${(p.portfolio_value || 100000).toLocaleString(undefined, {maximumFractionDigits: 0})}`}
@@ -119,10 +119,18 @@ export default function PaperTradingPage() {
           color="cyan"
         />
         <SummaryCard
+          label="Unrealized P&L"
+          value={<PnL value={p.unrealized_pnl || 0} prefix="$" size="text-xl" />}
+          icon={<TrendingUp className="w-5 h-5" />}
+          color={p.unrealized_pnl >= 0 ? "green" : "red"}
+          sub={`${Object.keys(positions).length} positions`}
+        />
+        <SummaryCard
           label="Realized P&L"
           value={<PnL value={p.realized_pnl || 0} prefix="$" size="text-xl" />}
           icon={<Activity className="w-5 h-5" />}
           color={p.realized_pnl >= 0 ? "green" : "red"}
+          sub={`${p.total_trades || 0} closed`}
         />
         <SummaryCard
           label="Win Rate"
@@ -132,11 +140,11 @@ export default function PaperTradingPage() {
           sub={`${p.winning_trades || 0}W / ${p.losing_trades || 0}L`}
         />
         <SummaryCard
-          label="Total Trades"
-          value={p.total_trades || 0}
+          label="Open Positions"
+          value={Object.keys(positions).length}
           icon={<BarChart3 className="w-5 h-5" />}
           color="purple"
-          sub={`${Object.keys(positions).length} open`}
+          sub={`${(p.total_trades || 0) + Object.keys(positions).length} total`}
         />
       </div>
 
@@ -425,7 +433,7 @@ function PositionsPanel({ api, positions }) {
     fetchAndUpdate()
     const interval = setInterval(fetchAndUpdate, 5000)
     return () => clearInterval(interval)
-  }, [Object.keys(positions).join(',')])
+  }, [JSON.stringify(Object.keys(positions))])
 
   const closeMut = useMutation({
     mutationFn: async ({ symbol }) => {
