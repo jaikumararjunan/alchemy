@@ -287,3 +287,14 @@ async def _close_all_positions(gateway_cls, exchange_name: str) -> int:
         raise
 
     return 0
+
+
+# ── State Query ───────────────────────────────────────────────────────────────
+
+def is_kill_switch_active() -> bool:
+    """Check if emergency stop is currently active."""
+    try:
+        from alchemy.risk.manager import RiskManager
+        return RiskManager()._emergency_stop
+    except Exception:
+        return False

@@ -171,17 +171,15 @@ async def execute_order(
 
     # ── [3] Dedup Guard ───────────────────────────────────────────────────
     try:
-        from alchemy.risk.dedup import get_dedup_guard
-        dedup = get_dedup_guard()
-        is_dup, dup_info = dedup.check(
-            user_id=user_id, exchange=exchange, symbol=symbol,
-            side=side, quantity=quantity, order_type=order_type,
+        from alchemy.risk.dedup import get_deduplicator
+        dedup = get_deduplicator()
+        is_dup = dedup.is_duplicate(
+            strategy=strategy, symbol=symbol, side=side,
         )
         if is_dup:
-            log.warning("pipeline.duplicate", user_id=user_id, symbol=symbol,
-                        original=dup_info)
+            log.warning("pipeline.duplicate", user_id=user_id, symbol=symbol)
             return _reject(req, "duplicate_order",
-                           f"Duplicate order detected. Same order was placed {dup_info.get('seconds_ago', '?')}s ago.")
+                           "Duplicate order detected. Same order was placed within cooldown window.")
     except ImportError:
         pass
 
@@ -191,11 +189,13 @@ async def execute_order(
             from alchemy.risk.price_guard import get_price_guard
             pg = get_price_guard()
             effective_price = price if order_type == "LIMIT" and price > 0 else market_price
-            ok, reason = pg.check(symbol, effective_price, market_price)
-            if not ok:
+            # Update reference price first, then validate
+            pg.update_price(symbol, market_price)
+            result_pg = pg.validate(symbol, effective_price)
+            if not result_pg.valid:
                 log.warning("pipeline.price_guard", user_id=user_id,
-                            symbol=symbol, reason=reason)
-                return _reject(req, "price_guard", reason)
+                            symbol=symbol, reason=result_pg.reason)
+                return _reject(req, "price_guard", result_pg.reason)
         except ImportError:
             pass
 
@@ -213,13 +213,13 @@ async def execute_order(
 
     # ── [6] Rate Limiter ──────────────────────────────────────────────────
     try:
-        from alchemy.execution.rate_limiter import check_rate_limit
-        allowed, wait_ms = check_rate_limit(exchange)
-        if not allowed:
-            log.info("pipeline.rate_limited", exchange=exchange, wait_ms=wait_ms)
-            # Wait briefly then retry (don't reject)
+        from alchemy.execution.rate_limiter import get_rate_limiter
+        limiter = get_rate_limiter(exchange)
+        if limiter:
             import asyncio
-            await asyncio.sleep(min(wait_ms / 1000, 5))  # Max 5s wait
+            wait_s = await limiter.acquire(weight=1)
+            if wait_s > 0:
+                log.info("pipeline.rate_limited", exchange=exchange, wait_s=round(wait_s, 2))
     except (ImportError, Exception):
         pass
 
@@ -233,17 +233,21 @@ async def execute_order(
 
     # ── [8] Audit Log ─────────────────────────────────────────────────────
     try:
-        from alchemy.risk.audit_log import get_audit_log
+        from alchemy.risk.audit_log import get_audit_log, AuditAction
         audit = get_audit_log()
-        audit.log_trade(
-            user_id=user_id, exchange=exchange, symbol=symbol,
-            side=side, quantity=quantity if result.success else 0,
-            price=result.filled_price, order_type=order_type,
-            mode=mode, strategy=strategy,
-            status="filled" if result.success else "rejected",
+        action = AuditAction.ORDER_FILLED if result.success else AuditAction.ORDER_REJECTED
+        audit.log_order(
+            action=action,
+            exchange=exchange,
+            symbol=symbol,
+            side=side,
+            quantity=result.filled_qty if result.success else quantity,
+            price=result.filled_price,
             order_id=result.order_id,
+            strategy=strategy,
+            user_id=user_id,
+            mode=mode,
             error=result.message if not result.success else "",
-            pnl=result.pnl, fee=result.fee,
         )
     except (ImportError, Exception) as e:
         log.warning("pipeline.audit_failed", error=str(e))

@@ -284,23 +284,50 @@ def _discover_exchanges() -> dict:
 async def _get_local_orders(exchange: str) -> list[dict]:
     """
     Fetch locally tracked open orders for an exchange.
-    Returns empty list if no local tracking DB is available.
+    Reads from paper trading engine's pending orders.
     """
-    # TODO: Wire into your SQLAlchemy/SQLite order table
-    # Example:
-    #   from alchemy.api.database import get_db
-    #   async with get_db() as db:
-    #       rows = await db.execute(
-    #           select(Order).where(Order.exchange == exchange, Order.status == "open")
-    #       )
-    #       return [r._asdict() for r in rows]
-    return []
+    try:
+        from alchemy.paper_trading.engine import get_paper_engine
+        engine = get_paper_engine()
+        orders = []
+        for uid, portfolio in engine._portfolios.items():
+            for order in portfolio.order_history:
+                if hasattr(order, 'status') and order.status.value == "pending":
+                    orders.append({
+                        "id": order.id,
+                        "user_id": uid,
+                        "symbol": order.symbol,
+                        "side": order.side.value,
+                        "quantity": order.quantity,
+                        "price": order.price,
+                        "status": "open",
+                        "exchange": exchange,
+                    })
+        return orders
+    except Exception:
+        return []
 
 
 async def _get_local_positions(exchange: str) -> list[dict]:
     """
     Fetch locally tracked positions for an exchange.
-    Returns empty list if no local tracking DB is available.
+    Reads from paper trading engine's open positions.
     """
-    # TODO: Wire into your SQLAlchemy/SQLite position table
-    return []
+    try:
+        from alchemy.paper_trading.engine import get_paper_engine
+        engine = get_paper_engine()
+        positions = []
+        for uid, portfolio in engine._portfolios.items():
+            for sym, pos in portfolio.positions.items():
+                if pos.side.value != "flat":
+                    positions.append({
+                        "user_id": uid,
+                        "symbol": sym,
+                        "side": pos.side.value,
+                        "quantity": pos.quantity,
+                        "entry_price": pos.avg_entry_price,
+                        "exchange": exchange,
+                    })
+        return positions
+    except Exception:
+        return []

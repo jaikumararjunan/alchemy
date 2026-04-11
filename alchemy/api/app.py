@@ -320,9 +320,9 @@ async def pipeline_status(user: CurrentUser = Depends(get_current_user)):
     except: status["guards"]["kill_switch"] = {"status": "not_loaded"}
 
     try:
-        from alchemy.risk.dedup import get_dedup_guard
-        d = get_dedup_guard()
-        status["guards"]["dedup"] = {"status": "OK", "cache_size": len(d._cache) if hasattr(d, '_cache') else 0}
+        from alchemy.risk.dedup import get_deduplicator
+        d = get_deduplicator()
+        status["guards"]["dedup"] = {"status": "OK", "cooldown_s": d._cooldown_s if hasattr(d, '_cooldown_s') else 60}
     except: status["guards"]["dedup"] = {"status": "not_loaded"}
 
     try:
