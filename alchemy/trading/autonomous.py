@@ -387,7 +387,7 @@ class AutonomousTradingEngine:
                         current_price=price,
                         order_type="market",
                         strategy=f"auto_{record.strategy}",
-                        notes=f"Autonomous LONG: {record.signal_strength:.0%} confidence | {record.reasoning[:60]}",
+                        notes=f"Autonomous LONG: {record.confidence:.0%} confidence | {record.reasoning[:60]}",
                     )
                     log.info("autonomous.paper_order_placed",
                              order_id=order.id, status=order.status.value,
@@ -402,7 +402,7 @@ class AutonomousTradingEngine:
                         current_price=price,
                         order_type="market",
                         strategy=f"auto_{record.strategy}",
-                        notes=f"Autonomous SHORT: {record.signal_strength:.0%} confidence | {record.reasoning[:60]}",
+                        notes=f"Autonomous SHORT: {record.confidence:.0%} confidence | {record.reasoning[:60]}",
                     )
                     log.info("autonomous.paper_order_placed",
                              order_id=order.id, status=order.status.value,
