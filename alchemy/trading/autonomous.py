@@ -318,7 +318,25 @@ class AutonomousTradingEngine:
 
                     # Auto-execute if enabled
                     if self.auto_execute:
-                        await self._execute_trade(record)
+                        # Skip if already have an open position for this symbol
+                        has_position = False
+                        try:
+                            from alchemy.paper_trading.engine import get_paper_engine
+                            portfolio = get_paper_engine().get_portfolio(self._user_id or "autonomous")
+                            pos = portfolio.positions.get(symbol)
+                            if pos and pos.side.value != "flat" and pos.quantity > 0:
+                                has_position = True
+                                log.info("autonomous.skip_existing_position",
+                                         symbol=symbol, side=pos.side.value,
+                                         qty=pos.quantity, entry=pos.avg_entry_price)
+                        except Exception:
+                            pass
+
+                        if not has_position:
+                            await self._execute_trade(record)
+                        else:
+                            record.status = "skipped"
+                            record.reasoning += " | Skipped: existing position open"
 
         log.info("autonomous.scan_complete", scan=self._scan_count)
         await self._broadcast_event("autonomous_scan_complete", {

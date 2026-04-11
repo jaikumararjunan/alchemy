@@ -141,7 +141,21 @@ class PaperPortfolio:
 
     @property
     def portfolio_value(self) -> float:
-        return self.cash_balance + sum(p.market_value for p in self.positions.values())
+        """
+        Total portfolio value.
+        LONG positions: cash + market value of longs
+        SHORT positions: cash + margin_locked + unrealized_pnl
+        """
+        long_value = sum(
+            p.market_value for p in self.positions.values()
+            if p.side == PositionSide.LONG
+        )
+        short_margin_and_pnl = sum(
+            (p.avg_entry_price * p.quantity * 0.5) + p.unrealized_pnl
+            for p in self.positions.values()
+            if p.side == PositionSide.SHORT
+        )
+        return self.cash_balance + long_value + short_margin_and_pnl
 
     @property
     def total_return_pct(self) -> float:
