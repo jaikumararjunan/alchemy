@@ -382,28 +382,31 @@ class AutonomousTradingEngine:
                     order = paper.place_order(
                         user_id=user_id,
                         symbol=record.symbol,
-                        side=side,
+                        side="buy",
                         quantity=quantity,
                         current_price=price,
                         order_type="market",
                         strategy=f"auto_{record.strategy}",
-                        notes=f"Autonomous: {record.signal_strength:.0%} confidence | {record.reasoning[:60]}",
+                        notes=f"Autonomous LONG: {record.signal_strength:.0%} confidence | {record.reasoning[:60]}",
                     )
                     log.info("autonomous.paper_order_placed",
                              order_id=order.id, status=order.status.value,
-                             symbol=record.symbol, qty=quantity, price=price)
+                             symbol=record.symbol, side="buy", qty=quantity, price=price)
                 else:
-                    order = paper.close_position(
+                    # SHORT signal → open short position via place_order(side=sell)
+                    order = paper.place_order(
                         user_id=user_id,
                         symbol=record.symbol,
+                        side="sell",
+                        quantity=quantity,
                         current_price=price,
+                        order_type="market",
+                        strategy=f"auto_{record.strategy}",
+                        notes=f"Autonomous SHORT: {record.signal_strength:.0%} confidence | {record.reasoning[:60]}",
                     )
-                    if order:
-                        log.info("autonomous.paper_position_closed",
-                                 symbol=record.symbol, price=price)
-                    else:
-                        log.warning("autonomous.paper_no_position_to_close",
-                                    symbol=record.symbol)
+                    log.info("autonomous.paper_order_placed",
+                             order_id=order.id, status=order.status.value,
+                             symbol=record.symbol, side="sell/short", qty=quantity, price=price)
 
                 # Verify it was recorded
                 portfolio_after = paper.get_portfolio(user_id)

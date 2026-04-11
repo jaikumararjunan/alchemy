@@ -261,16 +261,32 @@ class PaperTradingEngine:
             return "Price must be positive"
 
         cost = price * order.quantity
-        if order.side == OrderSide.BUY and cost > portfolio.cash_balance:
-            return (f"Insufficient balance. Need ${cost:,.2f}, "
-                    f"have ${portfolio.cash_balance:,.2f}")
+        if order.side == OrderSide.BUY:
+            # Check if closing a short position (no cash needed) or opening long
+            pos = portfolio.positions.get(order.symbol)
+            if pos and pos.side == PositionSide.SHORT:
+                return None  # Closing short — no cash check needed
+            if cost > portfolio.cash_balance:
+                return (f"Insufficient balance. Need ${cost:,.2f}, "
+                        f"have ${portfolio.cash_balance:,.2f}")
 
         if order.side == OrderSide.SELL:
             pos = portfolio.positions.get(order.symbol)
-            if not pos or pos.quantity < order.quantity:
-                available = pos.quantity if pos else 0
-                return (f"Insufficient position. Want to sell {order.quantity}, "
-                        f"have {available}")
+            if pos and pos.side == PositionSide.LONG:
+                # Closing long — check quantity
+                if pos.quantity < order.quantity:
+                    return (f"Insufficient position. Want to sell {order.quantity}, "
+                            f"have {pos.quantity}")
+            elif pos and pos.side == PositionSide.SHORT:
+                # Adding to short — check margin (use 50% as margin requirement)
+                margin_needed = cost * 0.5
+                if margin_needed > portfolio.cash_balance:
+                    return f"Insufficient margin for short. Need ${margin_needed:,.2f}"
+            else:
+                # Opening new short — check margin
+                margin_needed = cost * 0.5
+                if margin_needed > portfolio.cash_balance:
+                    return f"Insufficient margin for short. Need ${margin_needed:,.2f}"
 
         return None
 
@@ -296,40 +312,79 @@ class PaperTradingEngine:
 
         with self._lock:
             if order.side == OrderSide.BUY:
-                cost = fill_price * order.quantity
-                portfolio.cash_balance -= cost
-
                 # Update or create position
                 pos = portfolio.positions.get(order.symbol)
-                if pos and pos.side == PositionSide.LONG:
-                    # Average up/down
-                    total_qty = pos.quantity + order.quantity
-                    pos.avg_entry_price = (
-                        (pos.avg_entry_price * pos.quantity + fill_price * order.quantity)
-                        / total_qty
-                    )
-                    pos.quantity = total_qty
+
+                if pos and pos.side == PositionSide.SHORT:
+                    # Buying to cover SHORT → close short position
+                    self._execute_close(portfolio, order, pos, market_price,
+                                        min(order.quantity, pos.quantity))
                 else:
-                    pos = PaperPosition(
-                        symbol=order.symbol,
-                        side=PositionSide.LONG,
-                        quantity=order.quantity,
-                        avg_entry_price=fill_price,
-                        current_price=fill_price,
-                        opened_at=datetime.now(timezone.utc),
-                        strategy=order.strategy,
-                    )
-                if stop_loss:
-                    pos.stop_loss = stop_loss
-                if take_profit:
-                    pos.take_profit = take_profit
-                pos.current_price = fill_price
-                portfolio.positions[order.symbol] = pos
+                    cost = fill_price * order.quantity
+                    portfolio.cash_balance -= cost
+
+                    if pos and pos.side == PositionSide.LONG:
+                        # Average up/down existing long
+                        total_qty = pos.quantity + order.quantity
+                        pos.avg_entry_price = (
+                            (pos.avg_entry_price * pos.quantity + fill_price * order.quantity)
+                            / total_qty
+                        )
+                        pos.quantity = total_qty
+                    else:
+                        pos = PaperPosition(
+                            symbol=order.symbol,
+                            side=PositionSide.LONG,
+                            quantity=order.quantity,
+                            avg_entry_price=fill_price,
+                            current_price=fill_price,
+                            opened_at=datetime.now(timezone.utc),
+                            strategy=order.strategy,
+                        )
+                    if stop_loss:
+                        pos.stop_loss = stop_loss
+                    if take_profit:
+                        pos.take_profit = take_profit
+                    pos.current_price = fill_price
+                    portfolio.positions[order.symbol] = pos
 
             elif order.side == OrderSide.SELL:
-                proceeds = fill_price * order.quantity
-                portfolio.cash_balance += proceeds
-                self._record_trade_close(portfolio, order, fill_price)
+                pos = portfolio.positions.get(order.symbol)
+
+                if pos and pos.side == PositionSide.LONG:
+                    # Closing long position
+                    proceeds = fill_price * order.quantity
+                    portfolio.cash_balance += proceeds
+                    self._record_trade_close(portfolio, order, fill_price)
+                else:
+                    # Opening or adding to SHORT position
+                    margin = fill_price * order.quantity * 0.5  # 50% margin
+                    portfolio.cash_balance -= margin
+
+                    if pos and pos.side == PositionSide.SHORT:
+                        # Average into existing short
+                        total_qty = pos.quantity + order.quantity
+                        pos.avg_entry_price = (
+                            (pos.avg_entry_price * pos.quantity + fill_price * order.quantity)
+                            / total_qty
+                        )
+                        pos.quantity = total_qty
+                    else:
+                        pos = PaperPosition(
+                            symbol=order.symbol,
+                            side=PositionSide.SHORT,
+                            quantity=order.quantity,
+                            avg_entry_price=fill_price,
+                            current_price=fill_price,
+                            opened_at=datetime.now(timezone.utc),
+                            strategy=order.strategy,
+                        )
+                    if stop_loss:
+                        pos.stop_loss = stop_loss
+                    if take_profit:
+                        pos.take_profit = take_profit
+                    pos.current_price = fill_price
+                    portfolio.positions[order.symbol] = pos
 
             portfolio.order_history.append(order)
             self._save(order.user_id)
