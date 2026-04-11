@@ -516,6 +516,34 @@ function PositionsPanel({ api, positions }) {
             </tr>
           ))}
         </tbody>
+        <tfoot className="bg-gray-800/70 border-t-2 border-gray-700">
+          <tr>
+            <td colSpan="4" className="px-4 py-3 text-white font-bold text-sm">
+              TOTAL ({entries.length} positions)
+            </td>
+            <td className="px-4 py-3"></td>
+            <td className="px-4 py-3 text-right font-bold">
+              <PnL value={entries.reduce((sum, [sym, pos]) => {
+                const lp = livePrices[sym] || pos.current_price || 0
+                if (pos.side === 'long') return sum + (lp - pos.avg_entry_price) * pos.quantity
+                if (pos.side === 'short') return sum + (pos.avg_entry_price - lp) * pos.quantity
+                return sum + (pos.unrealized_pnl || 0)
+              }, 0)} prefix="$" />
+            </td>
+            <td className="px-4 py-3 text-right font-bold">
+              <PnL value={(() => {
+                const pcts = entries.map(([sym, pos]) => {
+                  const lp = livePrices[sym] || pos.current_price || 0
+                  if (pos.side === 'long') return ((lp - pos.avg_entry_price) / pos.avg_entry_price) * 100
+                  if (pos.side === 'short') return ((pos.avg_entry_price - lp) / pos.avg_entry_price) * 100
+                  return 0
+                })
+                return pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0
+              })()} suffix="%" />
+            </td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   )
