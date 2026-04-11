@@ -132,6 +132,7 @@ class AutonomousTradingEngine:
         self._last_scan_at: Optional[str] = None
         self._scan_count: int = 0
         self._ws_broadcast = None  # Set by the API layer
+        self._user_id: str = ""   # Set when started via API
 
     def configure(
         self,
@@ -327,42 +328,73 @@ class AutonomousTradingEngine:
         })
 
     async def _execute_trade(self, record: TradeRecord) -> None:
-        """Execute a trade via the exchange gateway."""
+        """Execute a trade via the paper trading engine + exchange gateway."""
         try:
-            if self.exchange == "binance":
-                from alchemy.execution.crypto.binance_gateway import BinanceGateway
-                gw = BinanceGateway(market="futures_usdm", paper_trading=True, testnet=False)
-            elif self.exchange == "delta":
-                from alchemy.execution.crypto.delta_gateway import DeltaGateway
-                gw = DeltaGateway(paper_trading=True, testnet_mode=True)
-            else:
-                record.execution_error = f"Unsupported exchange: {self.exchange}"
-                return
-
-            loop = asyncio.get_running_loop()
-            if self.exchange == "binance":
-                side = "BUY" if record.direction == "long" else "SELL"
-                result = await loop.run_in_executor(None, lambda: gw.place_order(
-                    symbol=record.symbol,
-                    side=side,
-                    quantity=0.001,  # Minimum size for safety
-                    order_type="MARKET",
-                ))
-            else:
+            # ── Always record in paper trading engine for dashboard visibility ──
+            try:
+                from alchemy.paper_trading.engine import get_paper_engine
+                paper = get_paper_engine()
                 side = "buy" if record.direction == "long" else "sell"
-                result = await loop.run_in_executor(None, lambda: gw.place_order(
-                    symbol=record.symbol,
-                    side=side,
-                    size=1,  # Minimum contracts for safety
-                    order_type="market_order",
-                ))
+                price = record.entry_price
+
+                if side == "buy":
+                    paper.place_order(
+                        user_id=self._user_id or "autonomous",
+                        symbol=record.symbol,
+                        side=side,
+                        quantity=record.quantity if hasattr(record, 'quantity') and record.quantity else 0.001,
+                        current_price=price,
+                        order_type="market",
+                        strategy=f"auto_{record.strategy}",
+                        notes=f"Autonomous: {record.signal_strength:.0%} confidence",
+                    )
+                else:
+                    paper.close_position(
+                        user_id=self._user_id or "autonomous",
+                        symbol=record.symbol,
+                        current_price=price,
+                    )
+                log.info("autonomous.paper_recorded", symbol=record.symbol, side=side)
+            except Exception as pe:
+                log.warning("autonomous.paper_record_failed", error=str(pe))
+
+            # ── Execute on exchange if auto_execute is enabled ──
+            if self.auto_execute:
+                if self.exchange == "binance":
+                    from alchemy.execution.crypto.binance_gateway import BinanceGateway
+                    gw = BinanceGateway(market="futures_usdm", paper_trading=True, testnet=False)
+                elif self.exchange == "delta":
+                    from alchemy.execution.crypto.delta_gateway import DeltaGateway
+                    gw = DeltaGateway(paper_trading=True, testnet_mode=True)
+                else:
+                    record.execution_error = f"Unsupported exchange: {self.exchange}"
+                    return
+
+                loop = asyncio.get_running_loop()
+                if self.exchange == "binance":
+                    ex_side = "BUY" if record.direction == "long" else "SELL"
+                    result = await loop.run_in_executor(None, lambda: gw.place_order(
+                        symbol=record.symbol,
+                        side=ex_side,
+                        quantity=0.001,  # Minimum size for safety
+                        order_type="MARKET",
+                    ))
+                else:
+                    ex_side = "buy" if record.direction == "long" else "sell"
+                    result = await loop.run_in_executor(None, lambda: gw.place_order(
+                        symbol=record.symbol,
+                        side=ex_side,
+                        size=1,  # Minimum contracts for safety
+                        order_type="market_order",
+                    ))
+                # Binance returns "avgPrice"/"price", Delta returns "avg_fill_price"
+                fill = (result.get("avgPrice")
+                        or result.get("avg_fill_price")
+                        or result.get("price")
+                        or record.entry_price)
+                record.execution_price = float(fill)
+
             record.executed = True
-            # Binance returns "avgPrice"/"price", Delta returns "avg_fill_price"
-            fill = (result.get("avgPrice")
-                    or result.get("avg_fill_price")
-                    or result.get("price")
-                    or record.entry_price)
-            record.execution_price = float(fill)
             record.status = "executed"
             self._total_executed += 1
 
@@ -370,7 +402,8 @@ class AutonomousTradingEngine:
             await self._notify_execution(record)
 
             log.info("autonomous.executed",
-                     symbol=record.symbol, side=side, price=record.execution_price)
+                     symbol=record.symbol, direction=record.direction,
+                     price=record.execution_price or record.entry_price)
 
         except Exception as e:
             record.execution_error = str(e)

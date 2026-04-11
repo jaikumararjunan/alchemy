@@ -59,6 +59,7 @@ async def start_autonomous(
         ws_broadcast = None
 
     result = await engine.start(ws_broadcast=ws_broadcast)
+    engine._user_id = user.user_id  # Link trades to user's paper portfolio
     if not result["ok"]:
         raise HTTPException(400, result.get("error", "Failed to start"))
     return result
