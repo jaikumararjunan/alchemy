@@ -346,23 +346,26 @@ async def _execute_live(req: OrderRequest) -> OrderResult:
         if is_success and filled_price > 0:
             try:
                 from alchemy.paper_trading.engine import get_paper_engine
+                from alchemy.paper_trading import PositionSide
                 engine = get_paper_engine()
+                portfolio = engine.get_portfolio(req.user_id)
                 side_norm = "buy" if req.side.upper() in ("BUY", "LONG") else "sell"
+                qty = filled_qty or req.quantity
+                pos = portfolio.positions.get(req.symbol.upper())
 
-                if side_norm == "buy":
-                    engine.place_order(
-                        user_id=req.user_id, symbol=req.symbol, side="buy",
-                        quantity=filled_qty or req.quantity,
-                        current_price=filled_price,
-                        order_type="market",
-                        strategy=f"live_{req.exchange}",
-                        notes=f"Live trade via {req.exchange} | Order #{order_id}",
-                    )
+                # Smart: detect if closing existing or opening new
+                if side_norm == "buy" and pos and pos.side == PositionSide.SHORT:
+                    engine.close_position(user_id=req.user_id, symbol=req.symbol,
+                                           current_price=filled_price, quantity=qty)
+                elif side_norm == "sell" and pos and pos.side == PositionSide.LONG:
+                    engine.close_position(user_id=req.user_id, symbol=req.symbol,
+                                           current_price=filled_price, quantity=qty)
                 else:
-                    engine.close_position(
-                        user_id=req.user_id, symbol=req.symbol,
-                        current_price=filled_price,
-                        quantity=filled_qty or req.quantity,
+                    engine.place_order(
+                        user_id=req.user_id, symbol=req.symbol, side=side_norm,
+                        quantity=qty, current_price=filled_price,
+                        order_type="market", strategy=f"live_{req.exchange}",
+                        notes=f"Live via {req.exchange} | #{order_id}",
                     )
                 log.info("pipeline.live_recorded_in_portfolio",
                          symbol=req.symbol, side=req.side, price=filled_price)

@@ -26,21 +26,31 @@ def _record_trade_in_portfolio(user_id: str, symbol: str, side: str, quantity: f
     """Record a live trade in the paper trading engine for unified dashboard visibility."""
     try:
         from alchemy.paper_trading.engine import get_paper_engine
+        from alchemy.paper_trading import PositionSide
         engine = get_paper_engine()
+        portfolio = engine.get_portfolio(user_id)
         normalized_side = "buy" if side.upper() in ("BUY", "LONG") else "sell"
 
-        if normalized_side == "buy":
+        # Check if this is closing an existing position or opening new
+        pos = portfolio.positions.get(symbol.upper())
+
+        if normalized_side == "buy" and pos and pos.side == PositionSide.SHORT:
+            # Buying to close short
+            engine.close_position(user_id=user_id, symbol=symbol,
+                                   current_price=price, quantity=quantity)
+        elif normalized_side == "sell" and pos and pos.side == PositionSide.LONG:
+            # Selling to close long
+            engine.close_position(user_id=user_id, symbol=symbol,
+                                   current_price=price, quantity=quantity)
+        else:
+            # Opening new position (long or short)
             engine.place_order(
-                user_id=user_id, symbol=symbol, side="buy",
+                user_id=user_id, symbol=symbol, side=normalized_side,
                 quantity=quantity, current_price=price,
                 order_type="market", strategy=f"live_{exchange}",
-                notes=f"Live {exchange} trade recorded",
+                notes=f"Live {exchange} trade",
             )
-        else:
-            engine.close_position(
-                user_id=user_id, symbol=symbol,
-                current_price=price, quantity=quantity,
-            )
+
         import structlog
         structlog.get_logger(__name__).info(
             "live_trade.recorded", user_id=user_id[:8], symbol=symbol,
@@ -49,7 +59,6 @@ def _record_trade_in_portfolio(user_id: str, symbol: str, side: str, quantity: f
         import structlog
         structlog.get_logger(__name__).warning(
             "live_trade.record_failed", error=str(e), symbol=symbol)
-    return data
 
 
 router = APIRouter(prefix="/crypto", tags=["crypto"])
