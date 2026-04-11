@@ -138,7 +138,13 @@ function ExchangeCard({id, config, status}) {
       qc.invalidateQueries(['creds', id])
       setOpen(false)
     },
-    onError: (e) => toast.error(e.response?.data?.detail || `Failed: ${e.message}`),
+    onError: (e) => {
+      const detail = e.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail
+                : detail?.message ? detail.message
+                : `Failed: ${e.message}`
+      toast.error(msg)
+    },
   })
 
   const validateMut = useMutation({

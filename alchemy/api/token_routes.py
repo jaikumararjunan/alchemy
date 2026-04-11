@@ -80,8 +80,7 @@ class UpdateKiteTokenRequest(BaseModel):
 
 @token_router.post("/register")
 async def register_token(req: RegisterRequest,
-                          user: CurrentUser = Depends(get_current_user),
-                          _2fa: CurrentUser = Depends(require_2fa)):
+                          user: CurrentUser = Depends(get_current_user)):
     if req.exchange not in ("delta","binance","angel","kite","ib"):
         raise HTTPException(400, f"Unknown exchange: {req.exchange}")
     if not req.api_key:
