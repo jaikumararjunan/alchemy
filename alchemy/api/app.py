@@ -210,6 +210,7 @@ from alchemy.api.autonomous_routes  import router as autonomous_router
 from alchemy.api.investment_routes  import router as investment_router
 from alchemy.api.paper_trading_routes import router as paper_router
 from alchemy.api.capital_routes import router as capital_router
+from alchemy.api.features_routes import router as features_router
 from fastapi import APIRouter
 
 # /api/* prefix  (what the built React frontend calls)
@@ -226,6 +227,7 @@ api.include_router(autonomous_router)
 api.include_router(investment_router)
 api.include_router(paper_router)
 api.include_router(capital_router)
+api.include_router(features_router)
 app.include_router(metrics_router)
 api.include_router(audit_router)
 app.include_router(api)
@@ -242,6 +244,7 @@ app.include_router(autonomous_router)
 app.include_router(investment_router)
 app.include_router(paper_router)
 app.include_router(capital_router)
+app.include_router(features_router)
 
 
 # ── Core endpoints ────────────────────────────────────────────────────────────
