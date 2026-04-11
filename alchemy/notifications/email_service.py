@@ -31,11 +31,14 @@ class EmailConfig:
         self.enabled   = bool(self.username and self.password)
 
 
-_cfg = EmailConfig()
+def _get_cfg():
+    """Always read fresh config from env (not cached at import time)."""
+    return EmailConfig()
 
 
 def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
     """Send email. Returns True on success, False on failure."""
+    _cfg = _get_cfg()
     if not _cfg.enabled:
         log.warning("email.disabled — set SMTP_USER + SMTP_PASSWORD in .env.local")
         return False

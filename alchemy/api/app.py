@@ -358,6 +358,38 @@ async def rate_limiter_stats(user: CurrentUser = Depends(get_current_user)):
     return all_rate_limiter_stats()
 
 
+@app.get("/admin/smtp/status",     tags=["admin"])
+@app.get("/api/admin/smtp/status", tags=["admin"])
+async def smtp_status(user: CurrentUser = Depends(get_current_user)):
+    from alchemy.notifications.email_service import _get_cfg
+    cfg = _get_cfg()
+    return {
+        "enabled": cfg.enabled,
+        "host": cfg.host,
+        "port": cfg.port,
+        "user": cfg.username[:3] + "***" if cfg.username else "",
+        "from": cfg.from_addr,
+        "message": "SMTP configured and ready" if cfg.enabled
+                   else "SMTP not configured. Set SMTP_USER + SMTP_PASSWORD in .env",
+    }
+
+
+@app.post("/admin/smtp/test",     tags=["admin"])
+@app.post("/api/admin/smtp/test", tags=["admin"])
+async def smtp_test(body: dict, user: CurrentUser = Depends(get_current_user)):
+    from alchemy.notifications.email_service import send_email
+    to = body.get("to", user.email)
+    sent = send_email(
+        to=to,
+        subject="[Alchemy] SMTP Test",
+        html="<h2>SMTP is working!</h2><p>This is a test email from Alchemy Trading Platform.</p>",
+        text="SMTP is working! This is a test email from Alchemy.",
+    )
+    if sent:
+        return {"ok": True, "message": f"Test email sent to {to}"}
+    return {"ok": False, "message": "Failed to send. Check SMTP settings in .env"}
+
+
 @app.get("/risk/ws-stats",     tags=["risk"])
 @app.get("/api/risk/ws-stats", tags=["risk"])
 async def ws_reconnector_stats(user: CurrentUser = Depends(get_current_user)):

@@ -1,21 +1,21 @@
 """
 alchemy.notifications.providers.email_provider
 ================================================
-Gmail / SMTP email notification provider.
+Email notification provider using admin-configured SMTP server.
 
-Setup:
-  1. Enable 2-Step Verification on your Google Account
-  2. Go to https://myaccount.google.com/apppasswords
-  3. Generate an App Password for "Mail"
-  4. Use your Gmail address as smtp_user and the App Password as smtp_password
+SMTP is configured ONCE by admin in .env:
+    SMTP_HOST=smtp.gmail.com
+    SMTP_PORT=587
+    SMTP_USER=admin@yourdomain.com
+    SMTP_PASSWORD=your-app-password
+    SMTP_FROM=noreply@yourdomain.com
 
-Supports: Gmail, Outlook, SendGrid, AWS SES, any SMTP server.
-
-Docs: https://support.google.com/mail/answer/185833
+Users only provide their recipient email address when adding an email channel.
 """
 from __future__ import annotations
 
 import asyncio
+import os
 import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
@@ -34,7 +34,21 @@ from alchemy.notifications.models import (
 log = structlog.get_logger(__name__)
 
 
-# ── HTML email template for trade alerts ────────────────────────────────────
+# ── Admin SMTP config from environment ──────────────────────────────────────
+
+def _get_smtp_config() -> dict:
+    """Read SMTP config from environment (set by admin in .env)."""
+    return {
+        "host":     os.environ.get("SMTP_HOST", "smtp.gmail.com"),
+        "port":     int(os.environ.get("SMTP_PORT", "587")),
+        "user":     os.environ.get("SMTP_USER", ""),
+        "password": os.environ.get("SMTP_PASSWORD", ""),
+        "from_addr": os.environ.get("SMTP_FROM", "") or os.environ.get("SMTP_USER", ""),
+        "enabled":  bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASSWORD")),
+    }
+
+
+# ── HTML email template ─────────────────────────────────────────────────────
 
 ALERT_HTML = """\
 <!DOCTYPE html>
@@ -75,76 +89,40 @@ class EmailProvider(BaseNotificationProvider):
     """
     SMTP email notification provider.
 
-    Sends rich HTML emails for trade alerts, risk events, and system notifications.
-    Works with Gmail (App Passwords), Outlook, SendGrid, AWS SES, etc.
+    SMTP server is configured by admin in .env (SMTP_HOST, SMTP_USER, etc.)
+    Users only need to provide their recipient email address.
 
-    Config keys:
-        smtp_host     — SMTP server hostname (default: smtp.gmail.com)
-        smtp_port     — SMTP port (default: 587 for TLS)
-        smtp_user     — Email address / username
-        smtp_password — Password or App Password
-        from_address  — From address (defaults to smtp_user)
-        to_address    — Recipient email address
+    User config keys:
+        to_address — Where to send notifications (user's email)
     """
 
     provider_type = ProviderType.EMAIL
-    display_name  = "Email (Gmail/SMTP)"
+    display_name  = "Email"
     emoji_icon    = "📧"
 
     config_fields = [
         ConfigField(
-            key="smtp_host",
-            label="SMTP Host",
-            placeholder="smtp.gmail.com",
-            required=False,
-            help_text="SMTP server (default: smtp.gmail.com)",
-        ),
-        ConfigField(
-            key="smtp_port",
-            label="SMTP Port",
-            placeholder="587",
-            required=False,
-            help_text="587 for TLS, 465 for SSL",
-        ),
-        ConfigField(
-            key="smtp_user",
-            label="Email / Username",
-            placeholder="you@gmail.com",
-            required=True,
-            secret=False,
-            help_text="Your email address or SMTP username",
-        ),
-        ConfigField(
-            key="smtp_password",
-            label="Password / App Password",
-            placeholder="xxxx xxxx xxxx xxxx",
-            required=True,
-            secret=True,
-            help_text="Gmail: use App Password (myaccount.google.com/apppasswords)",
-        ),
-        ConfigField(
-            key="from_address",
-            label="From Address",
-            placeholder="alchemy@yourdomain.com",
-            required=False,
-            help_text="Defaults to your email address",
-        ),
-        ConfigField(
             key="to_address",
-            label="Recipient Email",
-            placeholder="alerts@yourdomain.com",
+            label="Your Email Address",
+            placeholder="you@example.com",
             required=True,
             secret=False,
-            help_text="Where to send notifications",
+            help_text="Email address where you want to receive notifications",
         ),
     ]
 
     def validate_config(self, config: dict[str, Any]) -> None:
-        self._check_required(config, "smtp_user", "smtp_password", "to_address")
-        if "@" not in config.get("smtp_user", ""):
-            raise ValueError("smtp_user should be a valid email address")
+        self._check_required(config, "to_address")
         if "@" not in config.get("to_address", ""):
-            raise ValueError("to_address should be a valid email address")
+            raise ValueError("Please enter a valid email address")
+
+        # Check admin SMTP is configured
+        smtp = _get_smtp_config()
+        if not smtp["enabled"]:
+            raise ValueError(
+                "Email notifications are not available yet. "
+                "The server administrator needs to configure SMTP settings."
+            )
 
     async def send(
         self,
@@ -152,37 +130,40 @@ class EmailProvider(BaseNotificationProvider):
         event: NotificationEvent,
     ) -> SendResult:
         try:
-            host = channel.config.get("smtp_host", "smtp.gmail.com")
-            port = int(channel.config.get("smtp_port", "587"))
-            user = channel.config["smtp_user"]
-            password = channel.config["smtp_password"]
-            from_addr = channel.config.get("from_address", user)
-            to_addr = channel.config["to_address"]
+            smtp = _get_smtp_config()
 
+            if not smtp["enabled"]:
+                return SendResult(
+                    success=False, provider="email",
+                    error="SMTP not configured by admin. Set SMTP_USER + SMTP_PASSWORD in .env",
+                    status=DeliveryStatus.FAILED,
+                )
+
+            to_addr = channel.config["to_address"]
             subject, html_body = self._format_email(event)
 
             # Build MIME message
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = f"Alchemy Trading <{from_addr}>"
+            msg["From"] = f"Alchemy Trading <{smtp['from_addr']}>"
             msg["To"] = to_addr
 
-            # Plain text fallback
             plain = f"{event.title}\n\n{event.message}"
             msg.attach(MIMEText(plain, "plain"))
             msg.attach(MIMEText(html_body, "html"))
 
-            # Send in thread pool to avoid blocking
+            # Send in thread pool
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None,
-                self._send_smtp, host, port, user, password, from_addr, to_addr, msg,
+                self._send_smtp,
+                smtp["host"], smtp["port"], smtp["user"], smtp["password"],
+                smtp["from_addr"], to_addr, msg,
             )
 
             log.info("email.sent", to=to_addr, subject=subject)
             return SendResult(
-                success=True,
-                provider="email",
+                success=True, provider="email",
                 message_id=f"email-{event.created_at.timestamp():.0f}",
                 status=DeliveryStatus.DELIVERED,
             )
@@ -190,10 +171,8 @@ class EmailProvider(BaseNotificationProvider):
         except Exception as e:
             log.error("email.send_failed", error=str(e))
             return SendResult(
-                success=False,
-                provider="email",
-                error=str(e),
-                status=DeliveryStatus.FAILED,
+                success=False, provider="email",
+                error=str(e), status=DeliveryStatus.FAILED,
             )
 
     @staticmethod
@@ -222,7 +201,6 @@ class EmailProvider(BaseNotificationProvider):
 
         subject = f"[Alchemy] {event.title}"
 
-        # Build data rows for key fields
         important = {
             k: v for k, v in event.data.items()
             if k in (
@@ -231,8 +209,8 @@ class EmailProvider(BaseNotificationProvider):
                 "pnl", "confidence", "status", "workflow_id",
             ) and v is not None
         }
+
         def _esc(text: str) -> str:
-            """HTML-escape and escape curly braces so str.format() doesn't choke on user content."""
             import html as _html
             return _html.escape(str(text)).replace("{", "&#123;").replace("}", "&#125;")
 
@@ -257,13 +235,20 @@ class EmailProvider(BaseNotificationProvider):
         return subject, html
 
     def get_setup_instructions(self) -> str:
+        smtp = _get_smtp_config()
+        if smtp["enabled"]:
+            return (
+                f"Email notifications are configured and ready!\n"
+                f"Server: {smtp['host']}:{smtp['port']}\n"
+                f"From: {smtp['from_addr']}\n\n"
+                f"Just enter your email address above to receive notifications."
+            )
         return (
-            "1. Go to your Google Account settings\n"
-            "2. Enable 2-Step Verification if not already enabled\n"
-            "3. Go to https://myaccount.google.com/apppasswords\n"
-            "4. Select 'Mail' and generate an App Password\n"
-            "5. Copy the 16-character password (e.g. 'abcd efgh ijkl mnop')\n"
-            "6. Enter your Gmail address as 'Email' and the App Password above\n"
-            "7. Set the recipient email where you want to receive alerts\n"
-            "8. Click Test Connection to verify"
+            "Email notifications are not yet configured.\n"
+            "Ask your administrator to set these in the server .env file:\n"
+            "  SMTP_HOST=smtp.gmail.com\n"
+            "  SMTP_PORT=587\n"
+            "  SMTP_USER=admin@domain.com\n"
+            "  SMTP_PASSWORD=app-password\n"
+            "  SMTP_FROM=noreply@domain.com"
         )
