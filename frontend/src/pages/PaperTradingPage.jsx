@@ -335,7 +335,7 @@ function QuickTradePanel({ api, portfolio }) {
           <div className="space-y-2.5">
             <StatRow label="Cash Available" value={`$${(cash).toLocaleString(undefined, {maximumFractionDigits: 0})}`} />
             <StatRow label="Open Positions" value={Object.keys(portfolio?.positions || {}).length} />
-            <StatRow label="Unrealized P&L" value={<PnL value={p.unrealized_pnl || 0} prefix="$" />} />
+            <StatRow label="Unrealized P&L" value={<PnL value={portfolio?.unrealized_pnl || 0} prefix="$" />} />
             <StatRow label="Total Trades" value={portfolio?.total_trades || 0} />
             <StatRow label="Win Rate" value={`${portfolio?.win_rate || 0}%`} />
           </div>
