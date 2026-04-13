@@ -11,6 +11,7 @@ import clsx from 'clsx'
 import { useAlchemyStore } from '@/store'
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import toast from 'react-hot-toast'
+import { getErrorMessage } from '@/utils/errorHandler'
 
 export default function PaperTradingPage() {
   const { apiClient } = useAuth()
@@ -309,8 +310,7 @@ function QuickTradePanel({ api, portfolio }) {
       setQuantity('')
     },
     onError: (e) => {
-      const detail = e.response?.data?.detail
-      toast.error(typeof detail?.message === 'string' ? detail.message : detail || 'Order failed')
+      toast.error(getErrorMessage(e, 'Order failed'))
     },
   })
 
@@ -532,6 +532,7 @@ function PositionsPanel({ api, positions }) {
   const qc = useQueryClient()
   const storePrices = useAlchemyStore(s => s.livePrices)
   const [polledPrices, setPolledPrices] = useState({})
+  const [closeConfirm, setCloseConfirm] = useState(null) // { sym, pos }
 
   // Merge: prefer WebSocket prices from store, fallback to polled
   const livePrices = useMemo(() => {
@@ -587,7 +588,7 @@ function PositionsPanel({ api, positions }) {
       qc.invalidateQueries({ queryKey: ['paper-portfolio'] })
       qc.invalidateQueries({ queryKey: ['paper-trades'] })
     },
-    onError: () => toast.error('Close failed'),
+    onError: (e) => toast.error(getErrorMessage(e, 'Close failed')),
   })
 
   const entries = Object.entries(positions)
@@ -602,6 +603,7 @@ function PositionsPanel({ api, positions }) {
   }
 
   return (
+    <>
     <div className="rounded-xl border border-gray-800 overflow-hidden">
       <table className="w-full">
         <thead className="bg-gray-800/50">
@@ -644,7 +646,7 @@ function PositionsPanel({ api, positions }) {
                 return pos.unrealized_pct || 0
               })()} suffix="%" /></td>
               <td className="px-4 py-3 text-center">
-                <button onClick={() => closeMut.mutate({ symbol: sym })}
+                <button onClick={() => setCloseConfirm({ sym, pos })}
                   disabled={closeMut.isPending}
                   className="px-3 py-1 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20">
                   Close
@@ -683,6 +685,69 @@ function PositionsPanel({ api, positions }) {
         </tfoot>
       </table>
     </div>
+
+    {/* Close Position Confirmation Modal */}
+    {closeConfirm && (() => {
+      const { sym, pos } = closeConfirm
+      const lp = livePrices[sym] || pos.current_price || 0
+      const pnl = pos.side === 'long'
+        ? (lp - pos.avg_entry_price) * pos.quantity
+        : (pos.avg_entry_price - lp) * pos.quantity
+      const pct = pos.avg_entry_price > 0
+        ? (pos.side === 'long'
+          ? ((lp - pos.avg_entry_price) / pos.avg_entry_price) * 100
+          : ((pos.avg_entry_price - lp) / pos.avg_entry_price) * 100)
+        : 0
+      return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setCloseConfirm(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-bold text-lg mb-4">Close Position</h3>
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Symbol</span>
+                <span className="text-white font-medium">{sym.replace('USDT','')}/USDT</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Side</span>
+                <span className={clsx('font-bold', pos.side === 'long' ? 'text-emerald-400' : 'text-red-400')}>
+                  {pos.side?.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Quantity</span>
+                <span className="text-white">{pos.quantity}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Entry Price</span>
+                <span className="text-white">${pos.avg_entry_price?.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Current Price</span>
+                <span className="text-white">${lp.toLocaleString()}</span>
+              </div>
+              <div className="border-t border-gray-700 pt-2 flex justify-between text-sm">
+                <span className="text-gray-400 font-medium">P&L</span>
+                <span className={clsx('font-bold', pnl >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                  {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setCloseConfirm(null)}
+                className="py-3 rounded-xl font-medium text-sm border border-gray-600 text-gray-300 hover:bg-gray-800">
+                Keep Open
+              </button>
+              <button onClick={() => { closeMut.mutate({ symbol: sym }); setCloseConfirm(null) }}
+                disabled={closeMut.isPending}
+                className="py-3 rounded-xl font-bold text-sm bg-red-600 hover:bg-red-500 text-white">
+                {closeMut.isPending ? 'Closing...' : 'Close Position'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    })()}
+    </>
   )
 }
 
@@ -702,7 +767,7 @@ function BacktestPanel({ api, strategies }) {
   const runMut = useMutation({
     mutationFn: (data) => api.post('/paper/backtest/run', data).then(r => r.data),
     onSuccess: (d) => { setResult(d); toast.success('Backtest completed!') },
-    onError: (e) => toast.error(e.response?.data?.detail?.message || 'Backtest failed'),
+    onError: (e) => toast.error(getErrorMessage(e, 'Backtest failed')),
   })
 
   const perf = result?.performance || {}
@@ -916,7 +981,7 @@ function CapitalPanel({ api }) {
       toast.success(d.message || 'Template applied!')
       qc.invalidateQueries({ queryKey: ['capital-fund'] })
     },
-    onError: () => toast.error('Failed to apply template'),
+    onError: (e) => toast.error(getErrorMessage(e, 'Failed to apply template')),
   })
 
   const p = portfolio || {}

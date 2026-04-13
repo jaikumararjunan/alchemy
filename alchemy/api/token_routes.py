@@ -102,8 +102,18 @@ async def register_token(req: RegisterRequest,
         "status":        "paper" if req.paper_trading else "active",
     }
     _save(user.user_id, req.exchange, data)
+
+    # Validate connection if not paper mode
+    test_result = None
+    try:
+        test_result = await _test_connection(req.exchange, data)
+    except Exception as e:
+        test_result = {"valid": False, "message": str(e)}
+
     return {"ok": True, "exchange": req.exchange, "status": data["status"],
-            "message": f"{req.exchange.title()} connected ({'paper' if req.paper_trading else 'live'} mode)"}
+            "connection_test": test_result,
+            "message": f"{req.exchange.title()} connected ({'paper' if req.paper_trading else 'live'} mode)"
+                       + (f" — {test_result.get('message','')}" if test_result else "")}
 
 
 @token_router.get("/status")
