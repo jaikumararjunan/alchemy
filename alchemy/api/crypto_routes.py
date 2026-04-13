@@ -66,7 +66,7 @@ router = APIRouter(prefix="/crypto", tags=["crypto"])
 
 # ── Proxy endpoints (CSP-safe fallback) ──────────────────────────────────────
 
-_SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,20}$")
+_SYMBOL_RE = re.compile(r"^[A-Za-z0-9]{2,20}$")
 _VALID_INTERVALS = frozenset(["1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M"])
 
 

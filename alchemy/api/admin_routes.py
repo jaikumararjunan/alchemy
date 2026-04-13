@@ -15,6 +15,12 @@ async def get_db():
 
 def _require_admin(): return require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN)
 
+def _validate_enum(value: str, enum_cls, field_name: str) -> None:
+    """Raise HTTP 400 if value is not a member of enum_cls."""
+    valid = {e.value for e in enum_cls}
+    if value not in valid:
+        raise HTTPException(400, f"Invalid {field_name}. Must be one of: {', '.join(sorted(valid))}")
+
 class CreateUserRequest(BaseModel):
     email: EmailStr; username: str = Field(..., min_length=3, max_length=32)
     full_name: str = Field(..., min_length=2, max_length=255)
@@ -73,14 +79,10 @@ async def update_user(user_id:str, req:UpdateUserRequest, db:AsyncSession=Depend
     user   = result.scalar_one_or_none()
     if not user: raise HTTPException(404,"Not found")
     if req.role:
-        valid_roles = {r.value for r in UserRole}
-        if req.role not in valid_roles:
-            raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(sorted(valid_roles))}")
+        _validate_enum(req.role, UserRole, "role")
         user.role = req.role
     if req.status:
-        valid_statuses = {s.value for s in UserStatus}
-        if req.status not in valid_statuses:
-            raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
+        _validate_enum(req.status, UserStatus, "status")
         user.status = req.status
     if req.full_name: user.full_name=req.full_name
     if req.must_change_password is not None: user.must_change_password=req.must_change_password

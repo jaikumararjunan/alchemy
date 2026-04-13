@@ -259,10 +259,13 @@ def get_client_ip(request: Request) -> str:
                 # any entries further left were forwarded from the client and can
                 # be spoofed (e.g. X-Forwarded-For: fake, real_client_ip).
                 addrs = [a.strip() for a in forwarded.split(",")]
-                # Walk from right to left and return the first parseable address
                 for addr in reversed(addrs):
                     if addr:
-                        return addr
+                        try:
+                            ipaddress.ip_address(addr)  # validate before returning
+                            return addr
+                        except ValueError:
+                            continue
         except ValueError:
             pass
 

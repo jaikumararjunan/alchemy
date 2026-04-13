@@ -74,8 +74,13 @@ async def process_video(
     # Validate URL to prevent SSRF — only YouTube links are accepted
     try:
         parsed = urlparse(url)
-        if parsed.scheme != "https" or not _ALLOWED_VIDEO_HOSTS.match(parsed.netloc or ""):
-            raise HTTPException(400, "Only YouTube URLs are accepted (youtube.com / youtu.be)")
+        if (
+            parsed.scheme != "https"
+            or not _ALLOWED_VIDEO_HOSTS.match(parsed.netloc or "")
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise HTTPException(400, "Only YouTube HTTPS URLs are accepted (youtube.com / youtu.be)")
     except HTTPException:
         raise
     except Exception:

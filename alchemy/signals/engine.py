@@ -13,11 +13,11 @@ log = structlog.get_logger(__name__)
 
 # ── Custom indicator formula allowlist ───────────────────────────────────────
 # Reject any formula that contains tokens outside the safe set:
-# allowed chars: word chars (\w), digits, whitespace, arithmetic operators, parens, comma.
-# The period (`.`) is intentionally excluded — decimal point literals are not
-# needed for indicator parameters (they use integer periods like 14, 20, 50).
-# Excluding `.` prevents all forms of attribute access at the character level.
-_FORMULA_SAFE_CHARS = re.compile(r"^[\w\s\+\-\*\/\(\)\,]+$")
+# allowed chars: letters (a-zA-Z, not \w which includes underscore), digits,
+# whitespace, arithmetic operators, parens, comma.
+# Underscore is excluded to prevent __import__, __builtins__, etc.
+# The period (`.`) is excluded to prevent all attribute access.
+_FORMULA_SAFE_CHARS = re.compile(r"^[a-zA-Z0-9\s\+\-\*\/\(\)\,]+$")
 _FORBIDDEN_TOKENS = re.compile(
     r"(__|\bimport\b|\beval\b|\bexec\b|\bopen\b|\bgetattr\b|\bsetattr\b|"
     r"\bhasattr\b|\bdelattr\b|['\"]|lambda\b|\bfor\b|\bwhile\b|\bwith\b)",

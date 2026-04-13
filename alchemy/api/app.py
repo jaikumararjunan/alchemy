@@ -72,12 +72,11 @@ async def lifespan(app: FastAPI):
     # 0. Fail-fast security checks (before accepting any traffic)
     _cfg_startup = get_config()
     if _cfg_startup.env == "production":
-        _dev_default = "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024"
-        if _cfg_startup.jwt_secret_key == _dev_default:
-            raise RuntimeError(
-                "FATAL: JWT_SECRET_KEY is set to the insecure dev default in production. "
-                "Set a strong random value via JWT_SECRET_KEY environment variable before starting."
-            )
+        try:
+            from alchemy.auth.security import _get_jwt_secret
+            _get_jwt_secret()   # raises RuntimeError if dev default is in use
+        except RuntimeError as _jwt_err:
+            raise RuntimeError(f"FATAL: {_jwt_err}") from _jwt_err
         _prod_cors = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
         if not _prod_cors:
             log.warning(
