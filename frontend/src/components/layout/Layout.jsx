@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Briefcase, Zap, Bitcoin, Key, GitBranch,
   ShieldAlert, BarChart3, BookOpen, Settings, Bell, Shield,
   LogOut, Radio, AlertTriangle, Menu, X, ChevronRight,
-  TrendingUp, Star, Bot, Wallet,
+  TrendingUp, Star, Bot, Wallet, BellRing,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -15,12 +15,14 @@ const NAV = [
   { to:'/dashboard',     icon:LayoutDashboard, label:'Dashboard',     group:'main' },
   { to:'/portfolio',     icon:Briefcase,       label:'Portfolio',     group:'main' },
   { to:'/crypto',        icon:Bitcoin,         label:'Crypto',        group:'main' },
+  { to:'/watchlist',     icon:Star,            label:'Watchlist',     group:'main' },
   { to:'/signals',       icon:Zap,             label:'AI Signals',    group:'trade' },
   { to:'/paper-trading', icon:Wallet,          label:'Paper Trade',   group:'trade' },
   { to:'/autonomous',    icon:Bot,             label:'Auto Trade',    group:'trade' },
   { to:'/strategy',      icon:BookOpen,        label:'Strategy',      group:'trade' },
   { to:'/analytics',     icon:BarChart3,       label:'Analytics',     group:'trade' },
   { to:'/risk',          icon:ShieldAlert,     label:'Risk',          group:'trade' },
+  { to:'/alerts',        icon:BellRing,        label:'Price Alerts',  group:'config' },
   { to:'/tokens',        icon:Key,             label:'Tokens',        group:'config' },
   { to:'/workflows',     icon:GitBranch,       label:'Workflows',     group:'config' },
   { to:'/notifications', icon:Bell,            label:'Notifications', group:'config' },
