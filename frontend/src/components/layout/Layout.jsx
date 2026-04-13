@@ -51,11 +51,31 @@ function NavItem({ to, icon: Icon, label, onClick }) {
 
 export default function Layout() {
   useAlchemySocket()
-  const { connected, emergencyStop, portfolioNAV, portfolioPnL } = useAlchemyStore()
-  const { user, logout, isAdmin } = useAuth()
+  const { connected, emergencyStop, portfolioNAV, portfolioPnL, setPortfolio } = useAlchemyStore()
+  const { user, logout, isAdmin, apiClient } = useAuth()
   const location  = useLocation()
   const [open, setOpen] = useState(false)
   const overlayRef = useRef(null)
+
+  // Fetch portfolio for header display
+  useEffect(() => {
+    const api = apiClient()
+    const fetchPortfolio = async () => {
+      try {
+        const { data } = await api.get('/paper/portfolio')
+        if (data) {
+          setPortfolio(
+            data.portfolio_value || 0,
+            (data.unrealized_pnl || 0) + (data.realized_pnl || 0),
+            data.open_positions || 0,
+          )
+        }
+      } catch {}
+    }
+    fetchPortfolio()
+    const interval = setInterval(fetchPortfolio, 15000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Close nav on route change
   useEffect(() => { setOpen(false) }, [location.pathname])
@@ -188,13 +208,13 @@ export default function Layout() {
             <div className="hidden sm:block text-right">
               <div className="text-[9px] text-gray-600 uppercase tracking-wider">Portfolio</div>
               <div className="text-xs font-bold text-white">
-                {portfolioNAV ? `₹${portfolioNAV.toLocaleString('en-IN')}` : '₹0'}
+                {portfolioNAV ? `$${portfolioNAV.toLocaleString()}` : '$0'}
               </div>
             </div>
             <div className="text-right">
               <div className="text-[9px] text-gray-600 uppercase tracking-wider">Day P&L</div>
               <div className={clsx('text-xs font-bold', portfolioPnL>=0?'text-emerald-400':'text-red-400')}>
-                {portfolioPnL>=0?'+':''}{portfolioPnL ? `₹${portfolioPnL.toLocaleString('en-IN')}` : '₹0'}
+                {portfolioPnL>=0?'+':''}{portfolioPnL ? `$${portfolioPnL.toLocaleString()}` : '$0'}
               </div>
             </div>
             <div className="hidden md:flex items-center gap-1 text-[10px] text-gray-600">

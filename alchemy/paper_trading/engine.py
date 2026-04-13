@@ -246,7 +246,10 @@ class PaperTradingEngine:
 
             if events:
                 self._save(user_id)
+                log.info("paper.sl_tp_triggered", user_id=user_id, events=events)
 
+        # Always save updated prices (for dashboard freshness)
+        self._save(user_id)
         return events
 
     # ── Internal Execution ────────────────────────────────────────────────────
@@ -434,7 +437,13 @@ class PaperTradingEngine:
         })
 
         # Update cash
-        portfolio.cash_balance += fill_price * quantity
+        if position.side == PositionSide.LONG:
+            # Selling long → receive proceeds
+            portfolio.cash_balance += fill_price * quantity
+        else:
+            # Closing short (buy to cover) → return margin + P&L
+            margin_locked = position.avg_entry_price * quantity * 0.5
+            portfolio.cash_balance += margin_locked + pnl - fee
 
         # Update position
         position.quantity -= quantity
@@ -466,28 +475,44 @@ class PaperTradingEngine:
     def _record_trade_close(
         self, portfolio: PaperPortfolio, order: PaperOrder, fill_price: float,
     ) -> None:
-        """Record P&L when selling from a long position."""
+        """Record P&L when closing a position (LONG or SHORT)."""
         pos = portfolio.positions.get(order.symbol)
         if not pos:
             return
 
         qty = min(order.quantity, pos.quantity)
-        pnl = (fill_price - pos.avg_entry_price) * qty
+
+        # P&L depends on position direction
+        if pos.side == PositionSide.LONG:
+            pnl = (fill_price - pos.avg_entry_price) * qty
+            close_side = "close_long"
+        elif pos.side == PositionSide.SHORT:
+            pnl = (pos.avg_entry_price - fill_price) * qty
+            close_side = "close_short"
+        else:
+            return
+
         fee = fill_price * qty * 0.001
+        cost = pos.avg_entry_price * qty
 
         portfolio.trade_log.append({
             "symbol": order.symbol,
-            "side": "close_long",
+            "side": close_side,
             "quantity": qty,
             "entry_price": round(pos.avg_entry_price, 6),
             "exit_price": round(fill_price, 6),
             "gross_pnl": round(pnl, 2),
             "fee": round(fee, 2),
             "net_pnl": round(pnl - fee, 2),
-            "return_pct": round((pnl / (pos.avg_entry_price * qty)) * 100, 2),
-            "strategy": order.strategy,
+            "return_pct": round((pnl / cost) * 100, 2) if cost > 0 else 0,
+            "strategy": pos.strategy or order.strategy,
             "closed_at": datetime.now(timezone.utc).isoformat(),
         })
+
+        # Return margin/cash for closed SHORT positions
+        if pos.side == PositionSide.SHORT:
+            margin_returned = pos.avg_entry_price * qty * 0.5  # Return locked margin
+            portfolio.cash_balance += margin_returned + pnl - fee
 
         pos.quantity -= qty
         if pos.quantity <= 0.000001:

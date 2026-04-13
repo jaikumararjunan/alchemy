@@ -11,8 +11,8 @@ from alchemy.auth.middleware import get_current_user, CurrentUser
 
 def _require_live(user_id: str, exchange: str) -> dict:
     """Raise 403 if token is in paper/testnet mode. Returns token data."""
-    from alchemy.api.token_routes import _load_token
-    data = _load_token(user_id, exchange)
+    from alchemy.api.token_routes import _load
+    data = _load(user_id, exchange)
     if not data:
         raise HTTPException(403, f"No {exchange} credentials. Connect in Tokens page first.")
     if data.get("paper_trading", True):
@@ -155,6 +155,12 @@ async def delta_orderbook(symbol: str,
 @router.get("/delta/positions")
 async def delta_positions(user: CurrentUser = Depends(get_current_user)):
     try:
+        from alchemy.api.token_routes import _load
+        data = _load(user.user_id, "delta")
+        if not data or data.get("paper_trading", True):
+            from alchemy.paper_trading.engine import get_paper_engine
+            portfolio = get_paper_engine().get_portfolio(user.user_id)
+            return [p.to_dict() for p in portfolio.positions.values()]
         return _delta(user.user_id).get_positions()
     except Exception as e:
         raise HTTPException(502, str(e))
@@ -163,9 +169,29 @@ async def delta_positions(user: CurrentUser = Depends(get_current_user)):
 @router.get("/delta/balance")
 async def delta_balance(user: CurrentUser = Depends(get_current_user)):
     try:
-        return _delta(user.user_id).get_wallet_balance()
+        from alchemy.api.token_routes import _load
+        data = _load(user.user_id, "delta")
+
+        # If no credentials or paper mode, return paper portfolio balance
+        if not data or data.get("paper_trading", True):
+            from alchemy.paper_trading.engine import get_paper_engine
+            portfolio = get_paper_engine().get_portfolio(user.user_id)
+            return {
+                "mode": "paper",
+                "balances": [{
+                    "asset": "USDT",
+                    "available_balance": round(portfolio.cash_balance, 2),
+                    "portfolio_value": round(portfolio.portfolio_value, 2),
+                    "unrealized_pnl": round(portfolio.total_unrealized_pnl, 2),
+                    "position_margin": round(portfolio.portfolio_value - portfolio.cash_balance, 2),
+                }]
+            }
+
+        # Live mode — fetch from Delta Exchange
+        gw = _delta(user.user_id)
+        return {"mode": "live", "balances": gw.get_wallet_balance()}
     except Exception as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, f"Delta balance error: {str(e)}")
 
 
 @router.get("/delta/funding/{symbol}")
@@ -229,14 +255,40 @@ async def binance_klines(symbol: str,
 @router.get("/binance/balance")
 async def binance_balance(user: CurrentUser = Depends(get_current_user)):
     try:
+        from alchemy.api.token_routes import _load
+        data = _load(user.user_id, "binance")
+
+        if not data or data.get("paper_trading", True):
+            from alchemy.paper_trading.engine import get_paper_engine
+            portfolio = get_paper_engine().get_portfolio(user.user_id)
+            return {
+                "mode": "paper",
+                "totalWalletBalance": str(round(portfolio.portfolio_value, 2)),
+                "availableBalance": str(round(portfolio.cash_balance, 2)),
+                "totalUnrealizedProfit": str(round(portfolio.total_unrealized_pnl, 2)),
+                "totalMarginBalance": str(round(portfolio.portfolio_value, 2)),
+                "assets": [{
+                    "asset": "USDT",
+                    "walletBalance": str(round(portfolio.portfolio_value, 2)),
+                    "availableBalance": str(round(portfolio.cash_balance, 2)),
+                    "unrealizedProfit": str(round(portfolio.total_unrealized_pnl, 2)),
+                }]
+            }
+
         return _binance(user.user_id).get_balance()
     except Exception as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, f"Balance error: {str(e)}")
 
 
 @router.get("/binance/positions")
 async def binance_positions(user: CurrentUser = Depends(get_current_user)):
     try:
+        from alchemy.api.token_routes import _load
+        data = _load(user.user_id, "binance")
+        if not data or data.get("paper_trading", True):
+            from alchemy.paper_trading.engine import get_paper_engine
+            portfolio = get_paper_engine().get_portfolio(user.user_id)
+            return [p.to_dict() for p in portfolio.positions.values()]
         return _binance(user.user_id).get_positions()
     except Exception as e:
         raise HTTPException(502, str(e))
