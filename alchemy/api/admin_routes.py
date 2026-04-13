@@ -76,12 +76,12 @@ async def update_user(user_id:str, req:UpdateUserRequest, db:AsyncSession=Depend
         valid_roles = {r.value for r in UserRole}
         if req.role not in valid_roles:
             raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(sorted(valid_roles))}")
-        user.role=req.role
+        user.role = req.role
     if req.status:
         valid_statuses = {s.value for s in UserStatus}
         if req.status not in valid_statuses:
             raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
-        user.status=req.status
+        user.status = req.status
     if req.full_name: user.full_name=req.full_name
     if req.must_change_password is not None: user.must_change_password=req.must_change_password
     await db.commit(); return {"user":user.safe_dict()}

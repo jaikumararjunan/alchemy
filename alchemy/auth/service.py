@@ -9,6 +9,7 @@ Failed logins trigger account lockout after 5 attempts.
 from __future__ import annotations
 
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
@@ -194,9 +195,8 @@ class AuthService:
                 raise AuthError("Invalid 2FA code", "invalid_totp")
 
             # Remove used backup code (timing-safe lookup)
-            import secrets as _secrets
             matched = next(
-                (c for c in backup_codes if _secrets.compare_digest(c.upper(), totp_code.upper())),
+                (c for c in backup_codes if secrets.compare_digest(c.upper(), totp_code.upper())),
                 None,
             )
             if matched:

@@ -177,7 +177,7 @@ async def lifespan(app: FastAPI):
 
 # ── App creation ──────────────────────────────────────────────────────────────
 
-_cfg     = get_config()
+_cfg = get_config()
 _is_prod = _cfg.env == "production"
 
 # Disable interactive API docs in production to reduce attack surface

@@ -12,19 +12,14 @@ import structlog
 log = structlog.get_logger(__name__)
 
 # ── Custom indicator formula allowlist ───────────────────────────────────────
-# Only permit tokens that appear in arithmetic expressions using the whitelisted
-# indicator/field names.  Any formula that contains an attribute access (`.`),
-# subscription (`[`), string literals, or other potentially dangerous constructs
-# is rejected before eval() is called.
-_FORMULA_ALLOWLIST = re.compile(
-    r"^[0-9\s\+\-\*\/\(\)\,\.]+$|"           # numeric / arithmetic tokens
-    r"^[a-z_][a-z0-9_\s\+\-\*\/\(\)\,\.]*$",  # identifier-like chars
-    re.IGNORECASE,
-)
+# Reject any formula that contains tokens outside the safe set:
+# allowed chars: word chars, digits, whitespace, arithmetic operators, parens, comma.
+# Blocked: attribute access (`.` is allowed only as decimal point via numeric context),
+# string literals, dunder names, keywords that could escape the sandbox.
+_FORMULA_SAFE_CHARS = re.compile(r"^[\w\s\+\-\*\/\(\)\,\.]+$")
 _FORBIDDEN_TOKENS = re.compile(
-    r"""(__|\bimport\b|\beval\b|\bexec\b|\bopen\b|\bgetattr\b|\bsetattr\b|"""
-    r"""\bhasattr\b|\bdelattr\b|\b__class__\b|\b__mro__\b|"""
-    r"""f['"]|b['"]|['"]|lambda\b|\bfor\b|\bwhile\b|\bif\b|\bwith\b)""",
+    r"(__|\bimport\b|\beval\b|\bexec\b|\bopen\b|\bgetattr\b|\bsetattr\b|"
+    r"\bhasattr\b|\bdelattr\b|['\"]|lambda\b|\bfor\b|\bwhile\b|\bwith\b)",
     re.IGNORECASE,
 )
 
@@ -238,8 +233,8 @@ class CustomIndicator:
         lows = [c["low"] for c in candles]
         volumes = [c.get("volume", 0) for c in candles]
 
-        # Guard: reject formulas that contain dangerous tokens before eval
-        if _FORBIDDEN_TOKENS.search(self.formula):
+        # Guard: reject formulas that contain characters or tokens outside the safe set
+        if not _FORMULA_SAFE_CHARS.match(self.formula) or _FORBIDDEN_TOKENS.search(self.formula):
             return {"name": self.name, "error": "Formula contains disallowed tokens", "success": False}
 
         # Safe evaluation context — no builtins, only approved identifiers

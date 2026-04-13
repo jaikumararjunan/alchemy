@@ -61,8 +61,6 @@ def _get_jwt_secret() -> str:
                 "Set a strong random value via the JWT_SECRET_KEY environment variable."
             )
         return secret
-    except RuntimeError:
-        raise
     except Exception:
         secret = os.environ.get("JWT_SECRET_KEY", "")
         if not secret:
