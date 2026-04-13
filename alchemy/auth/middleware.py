@@ -254,19 +254,15 @@ def get_client_ip(request: Request) -> str:
         try:
             peer = ipaddress.ip_address(direct_ip)
             if peer.is_private or peer.is_loopback:
-                # Trusted proxy — take the rightmost public IP in the chain.
-                # Leftmost entries can be spoofed by the client; the rightmost
-                # entry added by the trusted proxy represents the last untrusted hop.
+                # Trusted proxy — return the rightmost entry in the chain.
+                # The trusted proxy appends the real client IP as the last entry;
+                # any entries further left were forwarded from the client and can
+                # be spoofed (e.g. X-Forwarded-For: fake, real_client_ip).
                 addrs = [a.strip() for a in forwarded.split(",")]
+                # Walk from right to left and return the first parseable address
                 for addr in reversed(addrs):
-                    try:
-                        parsed = ipaddress.ip_address(addr)
-                        if not parsed.is_private and not parsed.is_loopback:
-                            return addr
-                    except ValueError:
-                        continue
-                # All addresses in chain are private/loopback — return the leftmost
-                return addrs[0] if addrs else direct_ip
+                    if addr:
+                        return addr
         except ValueError:
             pass
 
