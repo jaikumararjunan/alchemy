@@ -28,6 +28,8 @@ import SettingsPage       from '@/pages/SettingsPage'
 // Admin pages
 import AdminDashboard from '@/pages/admin/AdminDashboard'
 import SubscriptionPage from '@/pages/SubscriptionPage'
+import WatchlistPage from '@/pages/WatchlistPage'
+import AlertsPage from '@/pages/AlertsPage'
 
 export default function App() {
   return (
@@ -56,6 +58,8 @@ export default function App() {
           <Route path="paper-trading" element={<PaperTradingPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings"      element={<SettingsPage />} />
+          <Route path="watchlist"     element={<WatchlistPage />} />
+          <Route path="alerts"        element={<AlertsPage />} />
 
           {/* Admin-only */}
           <Route path="subscription" element={<SubscriptionPage />} />

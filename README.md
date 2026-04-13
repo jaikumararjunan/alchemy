@@ -1,7 +1,7 @@
 # 🔮 Alchemy — AI Trading Platform
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-134%20passing-green)](tests/)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-152%20passing-green)](tests/)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](requirements.local.txt)
 [![License](https://img.shields.io/badge/license-proprietary-red)](#)
 
@@ -26,6 +26,7 @@ Open http://localhost:8000 · Login: `admin@alchemy.in` / `Alchemy#Admin!2024`
 
 | Document | Description |
 |----------|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **End-to-end architecture** — 18 sections covering system, data flows, security, deployment |
 | [CLAUDE.md](CLAUDE.md) | AI assistant context — read first before any changes |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Complete deployment guide with version details |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and upgrade notes |
@@ -49,6 +50,9 @@ Monitor:  Prometheus + Grafana + Alertmanager
 - **Real-time Charts:** SVG candlestick with RSI, MACD, BB, EMA indicators  
 - **AI Strategies:** Scalping, Momentum, Breakout, News-Driven
 - **Emotional Intelligence:** Fear & Greed index with 5 market regimes
+- **Watchlist:** Personal symbol tracking with notes and target prices  ← *new*
+- **Price Alerts:** Above/below threshold alerts with notification dispatch  ← *new*
+- **CVaR Risk Metrics:** Expected Shortfall + Kelly Criterion position sizing  ← *new*
 - **Security:** AES-256-GCM vault, 2FA enforcement, credential stuffing detection
 - **Alerts:** Telegram, WhatsApp, Gmail notifications
 - **Admin Panel:** User management, audit logs, subscription control
@@ -66,5 +70,5 @@ Monitor:  Prometheus + Grafana + Alertmanager
 
 ```bash
 python3 -m pytest tests/unit/ --no-cov -q
-# 134 passed
+# 152 passed
 ```

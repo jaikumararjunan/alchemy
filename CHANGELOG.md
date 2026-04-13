@@ -6,6 +6,39 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.8.0] — 2026-04-13 — *Atlas*
+
+### Added
+- **Watchlist** — Per-user symbol watchlist (`/watchlist` page + `/api/watchlist` REST API)
+  - Add/remove/edit symbols with optional notes and target prices
+  - Upsert semantics: adding a duplicate symbol updates its metadata
+  - SQLite table `watchlist_items` created with auto-migration on startup
+- **Price Alerts** — Threshold-based price alerts (`/alerts` page + `/api/alerts` REST API)
+  - Create `above` / `below` alerts for any symbol on any exchange
+  - Alert states: `active → triggered → disabled`
+  - `POST /api/alerts/check` evaluates active alerts against supplied prices
+  - SQLite table `price_alerts` with indexed `(user_id, status)` for fast lookup
+- **CVaR / Expected Shortfall** (`alchemy/risk/cvar.py`)
+  - `expected_shortfall(returns, confidence=0.95)` — coherent risk measure per Basel III/IV
+  - `kelly_fraction(win_rate, avg_win, avg_loss, fraction=0.25)` — Quarter-Kelly position sizing
+  - `portfolio_cvar(position_returns, weights)` — weighted portfolio CVaR
+  - `annualise_cvar(daily_cvar)` — √T scaling for annualisation
+- **CVaR enrichment on `/api/risk/status`** — Response now includes `cvar_95`, `var_95`,
+  `kelly_fraction`, and `worst_loss_pct` computed from user's last 100 trades
+- **End-to-end Architecture Documentation** (`docs/ARCHITECTURE.md`)
+  - 18-section reference covering system overview, tech stack, data flows, security,
+    deployment, observability, API summary, and known constraints
+- **18 unit tests** for CVaR module (`tests/unit/test_cvar.py`) — all passing
+
+### Changed
+- `alchemy/api/database.py`: added `_get_sqlite_db_path()` public helper for raw sqlite3
+  access (used by watchlist and alert routes, consistent with token_routes pattern)
+- `frontend/src/components/layout/Layout.jsx`: added **Watchlist** (Markets group) and
+  **Price Alerts** (Configuration group) to sidebar navigation
+- `frontend/src/App.jsx`: registered `/watchlist` and `/alerts` protected routes
+
+---
+
 ## [0.7.0] — 2026-04-05 — *Meridian*
 
 ### Added

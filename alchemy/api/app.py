@@ -67,7 +67,7 @@ manager = ConnectionManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("alchemy.startup", version="0.7.0")
+    log.info("alchemy.startup", version="0.8.0")
 
     # 0. Fail-fast security checks (before accepting any traffic)
     _cfg_startup = get_config()
@@ -237,6 +237,8 @@ from alchemy.api.investment_routes  import router as investment_router
 from alchemy.api.paper_trading_routes import router as paper_router
 from alchemy.api.capital_routes import router as capital_router
 from alchemy.api.features_routes import router as features_router
+from alchemy.api.watchlist_routes   import router as watchlist_router
+from alchemy.api.alert_routes       import router as alert_router
 from fastapi import APIRouter
 
 # /api/* prefix  (what the built React frontend calls)
@@ -254,6 +256,8 @@ api.include_router(investment_router)
 api.include_router(paper_router)
 api.include_router(capital_router)
 api.include_router(features_router)
+api.include_router(watchlist_router)
+api.include_router(alert_router)
 app.include_router(metrics_router)
 api.include_router(audit_router)
 app.include_router(api)
@@ -271,6 +275,8 @@ app.include_router(investment_router)
 app.include_router(paper_router)
 app.include_router(capital_router)
 app.include_router(features_router)
+app.include_router(watchlist_router)
+app.include_router(alert_router)
 
 
 # ── Core endpoints ────────────────────────────────────────────────────────────
@@ -379,7 +385,29 @@ async def pipeline_status(user: CurrentUser = Depends(get_current_user)):
 @app.get("/api/risk/status",  tags=["risk"])
 async def risk_status(user: CurrentUser = Depends(get_current_user)):
     from alchemy.risk.manager import RiskManager
-    return RiskManager().status()
+    base = RiskManager().status()
+    # Enrich with CVaR if recent trade history is available
+    try:
+        from alchemy.analytics_db.store import get_analytics_db
+        from alchemy.risk.cvar import expected_shortfall, kelly_fraction
+        trades = get_analytics_db().get_user_trades(user.user_id, limit=100)
+        returns = [t.get("pnl_pct", 0) for t in trades if t.get("pnl_pct") is not None]
+        if len(returns) >= 5:
+            cvar_result = expected_shortfall(returns, confidence=0.95)
+            wins = [r for r in returns if r > 0]
+            losses = [r for r in returns if r < 0]
+            kelly = kelly_fraction(
+                win_rate=len(wins) / len(returns) if returns else 0.5,
+                avg_win=sum(wins) / len(wins) if wins else 0.01,
+                avg_loss=-sum(losses) / len(losses) if losses else 0.01,
+            )
+            base["cvar_95"] = round(cvar_result.cvar * 100, 2)  # as %
+            base["var_95"] = round(cvar_result.var * 100, 2)
+            base["kelly_fraction"] = round(kelly * 100, 2)       # as %
+            base["worst_loss_pct"] = round(cvar_result.worst_loss * 100, 2)
+    except Exception:
+        pass  # CVaR is best-effort; never break the risk status endpoint
+    return base
 
 
 @app.post("/risk/emergency-stop",     tags=["risk"])
