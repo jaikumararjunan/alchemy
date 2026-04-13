@@ -238,8 +238,24 @@ def require_admin() -> Callable:
 # ── Audit Helper ──────────────────────────────────────────────────────────────
 
 def get_client_ip(request: Request) -> str:
-    """Extract real IP respecting X-Forwarded-For (behind load balancer)."""
+    """
+    Extract real IP respecting X-Forwarded-For (behind load balancer).
+
+    SECURITY: Only trust X-Forwarded-For when the direct peer is a private/loopback
+    address (i.e., a trusted reverse proxy). When the direct peer is a public IP the
+    header can be spoofed by the client — in that case fall back to the peer address.
+    """
+    import ipaddress
+    direct_ip = request.client.host if request.client else "unknown"
+
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+        try:
+            peer = ipaddress.ip_address(direct_ip)
+            if peer.is_private or peer.is_loopback:
+                # Trusted proxy — take the leftmost address from the chain
+                return forwarded.split(",")[0].strip()
+        except ValueError:
+            pass
+
+    return direct_ip

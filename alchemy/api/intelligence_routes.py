@@ -4,10 +4,17 @@ alchemy.api.intelligence_routes
 REST API for the intelligence, strategy, EI, and analytics systems.
 """
 from __future__ import annotations
+import re
 from typing import Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 from alchemy.auth.middleware import CurrentUser, get_current_user
+
+# Allowlist of hostnames accepted for video transcript requests
+_ALLOWED_VIDEO_HOSTS = re.compile(
+    r"^(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)$", re.IGNORECASE
+)
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 
@@ -63,6 +70,16 @@ async def process_video(
     """Submit a YouTube URL for analysis."""
     url = body.get("url","")
     if not url: raise HTTPException(400, "url required")
+
+    # Validate URL to prevent SSRF — only YouTube links are accepted
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https", "http") or not _ALLOWED_VIDEO_HOSTS.match(parsed.netloc or ""):
+            raise HTTPException(400, "Only YouTube URLs are accepted (youtube.com / youtu.be)")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(400, "Invalid URL format")
 
     async def _process(video_url: str):
         from alchemy.intelligence.crawlers.market_crawler import get_orchestrator

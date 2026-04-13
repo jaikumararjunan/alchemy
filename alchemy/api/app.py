@@ -177,23 +177,33 @@ async def lifespan(app: FastAPI):
 
 # ── App creation ──────────────────────────────────────────────────────────────
 
+_cfg     = get_config()
+_is_prod = _cfg.env == "production"
+
+# Disable interactive API docs in production to reduce attack surface
 app = FastAPI(
     title="Alchemy Trading Platform",
     version="0.7.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
+
+# CORS: dev allows localhost origins; production reads ALLOWED_ORIGINS env var.
+_dev_origins  = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
+_prod_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+_cors_origins = _dev_origins if not _is_prod else _prod_origins
 
 # Middleware (order matters: added last = runs first)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 
 
@@ -518,7 +528,8 @@ async def generate_signal(
         await manager.broadcast("signal", sig.to_dict())
         return sig.to_dict()
     except Exception as e:
-        raise HTTPException(500, str(e))
+        log.error("signal.generation_failed", error=str(e))
+        raise HTTPException(500, "Signal generation failed. Check server logs for details.")
 
 
 # ── WebSocket  ────────────────────────────────────────────────────────────────

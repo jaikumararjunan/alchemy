@@ -507,10 +507,16 @@ async def get_me(user: CurrentUser = Depends(get_current_user)):
             "subscription": getattr(user, "subscription", None) or "free"}
 
 
-@router.get("/password/strength")
-async def password_strength(password: str):
-    errors = PasswordPolicy.validate(password)
-    return {"score": PasswordPolicy.strength_score(password), "errors": errors, "valid": not errors}
+class PasswordStrengthRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+@router.post("/password/strength")
+async def password_strength(req: PasswordStrengthRequest, request: Request):
+    """Check password strength. POST so the password never appears in server logs or browser history."""
+    check_rate_limit(request, "api.general")
+    errors = PasswordPolicy.validate(req.password)
+    return {"score": PasswordPolicy.strength_score(req.password), "errors": errors, "valid": not errors}
 
 
 @router.post("/rate-limit/reset")

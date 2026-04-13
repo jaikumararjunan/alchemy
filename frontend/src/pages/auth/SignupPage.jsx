@@ -9,7 +9,8 @@ import axios from 'axios'
 const checkStrength = async (pwd) => {
   if (pwd.length < 3) return { score: 0, errors: [] }
   try {
-    const { data } = await axios.get(`/api/auth/password/strength`, { params: { password: pwd } })
+    // POST so the password never appears in server access logs or browser history
+    const { data } = await axios.post(`/api/auth/password/strength`, { password: pwd })
     return data
   } catch { return { score: 0, errors: [] } }
 }

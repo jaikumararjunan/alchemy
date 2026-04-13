@@ -44,7 +44,11 @@ async def list_users(page:int=Query(1,ge=1), limit:int=Query(50,ge=1,le=200),
 @router.get("/users/{user_id}")
 async def get_user(user_id:str, db:AsyncSession=Depends(get_db), admin:CurrentUser=Depends(_require_admin())):
     from sqlalchemy import select; from alchemy.users.models import User; from uuid import UUID
-    result = await db.execute(select(User).where(User.id==UUID(user_id)))
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user_id format")
+    result = await db.execute(select(User).where(User.id==uid))
     user   = result.scalar_one_or_none()
     if not user: raise HTTPException(404,"User not found")
     return user.safe_dict()
@@ -61,11 +65,23 @@ async def create_user(req:CreateUserRequest, db:AsyncSession=Depends(get_db), ad
 @router.patch("/users/{user_id}")
 async def update_user(user_id:str, req:UpdateUserRequest, db:AsyncSession=Depends(get_db), admin:CurrentUser=Depends(_require_admin())):
     from sqlalchemy import select; from alchemy.users.models import User; from uuid import UUID
-    result = await db.execute(select(User).where(User.id==UUID(user_id)))
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user_id format")
+    result = await db.execute(select(User).where(User.id==uid))
     user   = result.scalar_one_or_none()
     if not user: raise HTTPException(404,"Not found")
-    if req.role:     user.role=req.role
-    if req.status:   user.status=req.status
+    if req.role:
+        valid_roles = {r.value for r in UserRole}
+        if req.role not in valid_roles:
+            raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(sorted(valid_roles))}")
+        user.role=req.role
+    if req.status:
+        valid_statuses = {s.value for s in UserStatus}
+        if req.status not in valid_statuses:
+            raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}")
+        user.status=req.status
     if req.full_name: user.full_name=req.full_name
     if req.must_change_password is not None: user.must_change_password=req.must_change_password
     await db.commit(); return {"user":user.safe_dict()}
@@ -74,17 +90,25 @@ async def update_user(user_id:str, req:UpdateUserRequest, db:AsyncSession=Depend
 async def ban_user(user_id:str, db:AsyncSession=Depends(get_db), admin:CurrentUser=Depends(_require_admin())):
     from sqlalchemy import select,update; from alchemy.users.models import User,UserSession; from uuid import UUID
     if user_id==admin.user_id: raise HTTPException(400,"Cannot ban yourself")
-    result = await db.execute(select(User).where(User.id==UUID(user_id)))
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user_id format")
+    result = await db.execute(select(User).where(User.id==uid))
     user   = result.scalar_one_or_none()
     if not user: raise HTTPException(404,"Not found")
     user.status="banned"
-    await db.execute(update(UserSession).where(UserSession.user_id==UUID(user_id)).values(is_active=False))
+    await db.execute(update(UserSession).where(UserSession.user_id==uid).values(is_active=False))
     await db.commit(); return {"message":f"{user.email} banned"}
 
 @router.post("/users/{user_id}/unlock")
 async def unlock_user(user_id:str, db:AsyncSession=Depends(get_db), admin:CurrentUser=Depends(_require_admin())):
     from sqlalchemy import select; from alchemy.users.models import User; from uuid import UUID
-    result = await db.execute(select(User).where(User.id==UUID(user_id)))
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user_id format")
+    result = await db.execute(select(User).where(User.id==uid))
     user   = result.scalar_one_or_none()
     if not user: raise HTTPException(404,"Not found")
     user.status="active"; user.failed_login_count=0; user.locked_until=None
@@ -146,7 +170,11 @@ async def update_subscription(user_id: str, plan: str,
     valid = {"free", "pro", "team", "enterprise"}
     if plan not in valid:
         raise HTTPException(400, f"Plan must be one of: {', '.join(valid)}")
-    result = await db.execute(select(User).where(User.id == UUID(user_id)))
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user_id format")
+    result = await db.execute(select(User).where(User.id == uid))
     user = result.scalar_one_or_none()
     if not user: raise HTTPException(404, "User not found")
     user.subscription = plan
@@ -167,7 +195,11 @@ async def get_audit_logs(page:int=Query(1,ge=1), limit:int=Query(100,ge=1,le=500
                           db:AsyncSession=Depends(get_db), admin:CurrentUser=Depends(_require_admin())):
     from sqlalchemy import select, desc; from alchemy.users.models import AuditLog; from uuid import UUID
     q=select(AuditLog).order_by(desc(AuditLog.timestamp))
-    if user_id: q=q.where(AuditLog.user_id==UUID(user_id))
+    if user_id:
+        try:
+            q=q.where(AuditLog.user_id==UUID(user_id))
+        except ValueError:
+            raise HTTPException(400, "Invalid user_id format")
     if action:  q=q.where(AuditLog.action.ilike(f"%{action}%"))
     if min_risk:q=q.where(AuditLog.risk_score>=min_risk)
     q=q.offset((page-1)*limit).limit(limit)
