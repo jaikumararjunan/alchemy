@@ -20,6 +20,7 @@ All strategies consume:
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -218,7 +219,6 @@ class ScalpingStrategy:
         near_vwap_short = current >= vwap * 0.997
         rsi_overbought  = rsi > 62
 
-        import uuid
         stop_dist = max(atr * 0.5, current * 0.003)  # Min 0.3%
 
         if (near_lower_bb or near_vwap_long) and rsi_oversold and market_bias != "bearish":
@@ -290,7 +290,6 @@ class MomentumStrategy:
         current = closes[-1]
         if adx < 20: return None  # No trend
 
-        import uuid
         # Bullish momentum
         if (ema9[-1] > ema21[-1] > ema50[-1] and
             ema9[-2] <= ema21[-2] and  # Fresh crossover
@@ -362,7 +361,6 @@ class BreakoutStrategy:
 
         vol_surge = curr_vol > avg_vol * 1.5  # 50% above average
 
-        import uuid
         # Upward breakout
         if current > resistance * 1.002 and vol_surge and market_bias != "bearish":
             return TradeIdea(
@@ -385,6 +383,7 @@ class BreakoutStrategy:
 
         # Downward breakout
         if current < support * 0.998 and vol_surge and market_bias != "bullish":
+            breakdown_dist = support - current  # distance below broken support level
             return TradeIdea(
                 id=str(uuid.uuid4())[:8],
                 strategy=StrategyType.BREAKOUT,
@@ -392,9 +391,9 @@ class BreakoutStrategy:
                 direction=TradeDirection.SHORT,
                 entry_price=current,
                 stop_loss=support + atr * 0.5,
-                take_profit_1=current - (resistance - current) * 0.5,
-                take_profit_2=current - (resistance - current),
-                take_profit_3=current - (resistance - current) * 1.5,
+                take_profit_1=current - breakdown_dist * 0.5,
+                take_profit_2=current - breakdown_dist,
+                take_profit_3=current - breakdown_dist * 1.5,
                 position_size_pct=0.025,
                 timeframe="daily",
                 confidence=0.70,
@@ -414,7 +413,6 @@ class NewsIntelligenceStrategy:
     def generate_from_signals(self, signals: list[dict],
                                market_bias: str = "neutral") -> list[TradeIdea]:
         """Generate trade ideas from intelligence signals."""
-        import uuid
         ideas = []
         for sig in signals[-10:]:  # Use latest 10 signals
             if abs(sig.get("impact_score", 0)) < 0.4:

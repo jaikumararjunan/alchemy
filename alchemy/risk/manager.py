@@ -120,10 +120,10 @@ class RiskManager:
         return RiskVeto(False, "OK")
 
     def _check_daily_loss(self, signal: TradingSignal, _: float) -> RiskVeto:
-        if abs(self._pnl.realised_pnl) >= self.cfg.max_daily_loss_usd:
+        if self._pnl.realised_pnl <= -self.cfg.max_daily_loss_usd:
             return RiskVeto(True,
                 f"Daily loss limit reached: "
-                f"${abs(self._pnl.realised_pnl):,.0f} >= ${self.cfg.max_daily_loss_usd:,.0f}")
+                f"-${abs(self._pnl.realised_pnl):,.0f} >= -${self.cfg.max_daily_loss_usd:,.0f}")
         return RiskVeto(False, "OK")
 
     def _check_drawdown(self, signal: TradingSignal, _: float) -> RiskVeto:
@@ -214,3 +214,19 @@ class RiskManager:
                 peak_portfolio_value=portfolio_value,
                 current_portfolio_value=portfolio_value,
             )
+
+
+# ── Singleton accessor ────────────────────────────────────────────────────────
+
+_risk_manager_instance: Optional[RiskManager] = None
+_risk_manager_lock = threading.Lock()
+
+
+def get_risk_manager() -> RiskManager:
+    """Return the process-wide singleton RiskManager instance."""
+    global _risk_manager_instance
+    if _risk_manager_instance is None:
+        with _risk_manager_lock:
+            if _risk_manager_instance is None:
+                _risk_manager_instance = RiskManager()
+    return _risk_manager_instance
