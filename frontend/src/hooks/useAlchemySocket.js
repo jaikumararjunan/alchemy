@@ -46,12 +46,22 @@ export function useAlchemySocket() {
           const msg = JSON.parse(e.data)
           switch (msg.event) {
             case 'price_tick':
-              updatePrice(msg.symbol, msg)
+            case 'price_update':
+              updatePrice(msg.data?.symbol || msg.symbol, {
+                price: msg.data?.price || msg.price,
+                change_pct: msg.data?.change_pct || msg.change_pct || 0,
+                ts: msg.data?.ts || Date.now(),
+              })
               break
             case 'signal':
-              addSignal(msg)
-              const color = msg.signal === 'BUY' ? '🟢' : msg.signal === 'SELL' ? '🔴' : '🟡'
-              toast(`${color} ${msg.signal} ${msg.ticker}`, { duration: 5000 })
+            case 'autonomous_signal':
+              addSignal(msg.data || msg)
+              const color = (msg.data?.direction || msg.signal) === 'BUY' ? '🟢' : '🔴'
+              toast(`${color} ${msg.data?.direction || msg.signal} ${msg.data?.symbol || msg.ticker}`, { duration: 5000 })
+              break
+            case 'autonomous_execution':
+              addNotification({ type: 'trade', ...msg.data, ts: new Date().toISOString() })
+              toast.success(`Auto-trade: ${msg.data?.direction} ${msg.data?.symbol}`, { duration: 4000 })
               break
             case 'risk_alert':
               setRiskStatus(msg)
@@ -63,7 +73,6 @@ export function useAlchemySocket() {
               toast.success(`Order filled: ${msg.side} ${msg.quantity} ${msg.symbol}`)
               break
             case 'subscribed':
-              // Subscription confirmed — no action needed
               break
           }
         } catch { /* ignore malformed messages */ }

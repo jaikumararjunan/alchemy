@@ -326,3 +326,26 @@ async def get_backtest_detail(
     if not result:
         raise HTTPException(404, "Backtest not found")
     return result.to_dict()
+
+
+# ── Equity Curve ──────────────────────────────────────────────────────────────
+
+@router.get("/equity-curve")
+async def get_equity_curve(
+    days: int = Query(30, ge=1, le=365),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Get portfolio equity curve data points."""
+    from alchemy.services.price_stream import get_equity_curve
+    points = get_equity_curve(user.user_id, days=days)
+    return {"points": points, "count": len(points)}
+
+
+# ── Live Prices (from WebSocket cache) ────────────────────────────────────────
+
+@router.get("/live-prices")
+async def get_live_prices(user: CurrentUser = Depends(get_current_user)):
+    """Get latest cached prices from Binance WebSocket stream."""
+    from alchemy.services.price_stream import get_latest_prices
+    prices = get_latest_prices()
+    return {"prices": prices, "source": "binance_ws" if prices else "cache_empty"}

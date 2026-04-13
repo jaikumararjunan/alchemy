@@ -8,6 +8,8 @@ import {
   Shield, Flame, Award, LineChart, WifiOff
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useAlchemyStore } from '@/store'
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import toast from 'react-hot-toast'
 
 export default function PaperTradingPage() {
@@ -148,6 +150,9 @@ export default function PaperTradingPage() {
         />
       </div>
 
+      {/* Equity Curve Mini Chart */}
+      <EquityCurveChart api={api} />
+
       {/* Tab Navigation */}
       <div className="flex gap-1 bg-gray-900/50 p-1 rounded-xl border border-gray-800">
         {[
@@ -183,6 +188,59 @@ export default function PaperTradingPage() {
       {activeTab === 'history' && <TradeHistoryPanel trades={trades} />}
       {activeTab === 'capital' && <CapitalPanel api={api} />}
       {activeTab === 'leaderboard' && <LeaderboardPanel data={leaderboard} />}
+    </div>
+  )
+}
+
+// ── Equity Curve Chart ────────────────────────────────────────────────────────
+function EquityCurveChart({ api }) {
+  const { data: curve } = useQuery({
+    queryKey: ['equity-curve'],
+    queryFn: () => api.get('/paper/equity-curve?days=7').then(r => r.data),
+    refetchInterval: 60000,
+    retry: 1,
+  })
+
+  const points = curve?.points || []
+  if (points.length < 2) return null
+
+  const chartData = points.map(p => ({
+    time: new Date(p.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    value: p.portfolio_value,
+    pnl: p.unrealized_pnl + p.realized_pnl,
+  }))
+
+  const first = chartData[0]?.value || 100000
+  const last = chartData[chartData.length - 1]?.value || 100000
+  const isUp = last >= first
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-gray-400 text-xs font-medium">PORTFOLIO EQUITY CURVE (7D)</span>
+        <span className={clsx('text-xs font-bold', isUp ? 'text-emerald-400' : 'text-red-400')}>
+          {isUp ? '+' : ''}{((last - first) / first * 100).toFixed(2)}%
+        </span>
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.3}/>
+              <stop offset="95%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#6b7280' }} interval="preserveStartEnd" />
+          <YAxis domain={['dataMin - 100', 'dataMax + 100']} tick={{ fontSize: 10, fill: '#6b7280' }} width={60}
+            tickFormatter={v => `$${(v/1000).toFixed(1)}k`} />
+          <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
+            labelStyle={{ color: '#9ca3af' }}
+            formatter={(v) => [`$${v.toLocaleString(undefined, {maximumFractionDigits: 0})}`, 'Portfolio']} />
+          <Area type="monotone" dataKey="value" stroke={isUp ? '#10b981' : '#ef4444'}
+            fill="url(#eqGrad)" strokeWidth={2} dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   )
 }
@@ -256,8 +314,15 @@ function QuickTradePanel({ api, portfolio }) {
     },
   })
 
+  const [showConfirm, setShowConfirm] = useState(false)
+
   const handleOrder = () => {
     if (!quantity || !price) return
+    setShowConfirm(true)
+  }
+
+  const confirmOrder = () => {
+    setShowConfirm(false)
     orderMut.mutate({
       symbol, side, quantity: parseFloat(quantity),
       current_price: parseFloat(price), order_type: 'market',
@@ -270,6 +335,62 @@ function QuickTradePanel({ api, portfolio }) {
   const cash = portfolio?.cash_balance || 100000
 
   return (
+    <>
+    {/* Trade Confirmation Modal */}
+    {showConfirm && (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
+        <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+          <h3 className="text-white font-bold text-lg mb-4">Confirm Trade</h3>
+          <div className="space-y-3 mb-6">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Symbol</span>
+              <span className="text-white font-medium">{symbol}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Side</span>
+              <span className={clsx('font-bold', side === 'buy' ? 'text-emerald-400' : 'text-red-400')}>
+                {side === 'buy' ? 'BUY / LONG' : 'SELL / SHORT'}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Quantity</span>
+              <span className="text-white">{parseFloat(quantity || 0).toFixed(6)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Price</span>
+              <span className="text-white">${parseFloat(price || 0).toLocaleString()}</span>
+            </div>
+            <div className="border-t border-gray-700 pt-2 flex justify-between text-sm">
+              <span className="text-gray-400 font-medium">Total Value</span>
+              <span className="text-white font-bold">${orderValue.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+            </div>
+            {stopLoss > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-red-400">Stop Loss</span>
+                <span className="text-red-400">${parseFloat(stopLoss).toLocaleString()}</span>
+              </div>
+            )}
+            {takeProfit > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-emerald-400">Take Profit</span>
+                <span className="text-emerald-400">${parseFloat(takeProfit).toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => setShowConfirm(false)}
+              className="py-3 rounded-xl font-medium text-sm border border-gray-600 text-gray-300 hover:bg-gray-800">
+              Cancel
+            </button>
+            <button onClick={confirmOrder}
+              className={clsx('py-3 rounded-xl font-bold text-sm text-white',
+                side === 'buy' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500')}>
+              Confirm {side === 'buy' ? 'BUY' : 'SELL'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Order Form */}
       <div className="lg:col-span-2 rounded-xl border border-gray-800 bg-gray-900/50 p-5">
@@ -391,6 +512,7 @@ function QuickTradePanel({ api, portfolio }) {
         </div>
       </div>
     </div>
+    </>
   )
 }
 
@@ -408,30 +530,45 @@ function StatRow({ label, value }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function PositionsPanel({ api, positions }) {
   const qc = useQueryClient()
-  const [livePrices, setLivePrices] = useState({})
+  const storePrices = useAlchemyStore(s => s.livePrices)
+  const [polledPrices, setPolledPrices] = useState({})
 
-  // Fetch live prices every 5 seconds and update backend
+  // Merge: prefer WebSocket prices from store, fallback to polled
+  const livePrices = useMemo(() => {
+    const merged = { ...polledPrices }
+    Object.entries(storePrices).forEach(([sym, data]) => {
+      if (data?.price) merged[sym] = data.price
+    })
+    return merged
+  }, [storePrices, polledPrices])
+
+  // Polling fallback + push to backend every 10s
   useEffect(() => {
     const symbols = Object.keys(positions)
     if (symbols.length === 0) return
 
-    const fetchAndUpdate = async () => {
+    const fetchAndPush = async () => {
       try {
         const prices = {}
         for (const sym of symbols) {
-          const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
-          const d = await resp.json()
-          prices[sym] = parseFloat(d.price)
+          // Use store price if fresh, else fetch
+          if (storePrices[sym]?.price) {
+            prices[sym] = storePrices[sym].price
+          } else {
+            const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`)
+            const d = await resp.json()
+            prices[sym] = parseFloat(d.price)
+          }
         }
-        setLivePrices(prices)
-        // Push prices to backend (updates P&L, triggers SL/TP)
+        setPolledPrices(prices)
+        // Push to backend for SL/TP checks
         await api.post('/paper/update-prices', { prices }).catch(() => {})
         qc.invalidateQueries({ queryKey: ['paper-portfolio'] })
       } catch {}
     }
 
-    fetchAndUpdate()
-    const interval = setInterval(fetchAndUpdate, 5000)
+    fetchAndPush()
+    const interval = setInterval(fetchAndPush, 10000)
     return () => clearInterval(interval)
   }, [JSON.stringify(Object.keys(positions))])
 

@@ -175,9 +175,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning("daily_summary.start_failed", error=str(e))
 
+    # 5. Start real-time price stream (Binance WebSocket)
+    try:
+        from alchemy.services.price_stream import start_price_stream
+        await start_price_stream(broadcast_fn=manager.broadcast)
+    except Exception as e:
+        log.warning("price_stream.start_failed", error=str(e))
+
     yield  # ← app runs here
 
     # Shutdown
+    try:
+        from alchemy.services.price_stream import stop_price_stream
+        await stop_price_stream()
+    except Exception:
+        pass
     try:
         from alchemy.notifications.daily_summary import stop_daily_summary_cron
         await stop_daily_summary_cron()

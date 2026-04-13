@@ -47,7 +47,7 @@ from alchemy.paper_trading import (
 
 log = structlog.get_logger(__name__)
 
-DATA_DIR = os.environ.get("ALCHEMY_PAPER_DIR", "data/paper_trading")
+DATA_DIR = os.environ.get("ALCHEMY_PAPER_DIR", "/data/paper_trading")
 DEFAULT_BALANCE = float(os.environ.get("PAPER_TRADING_BALANCE", "100000"))
 
 
