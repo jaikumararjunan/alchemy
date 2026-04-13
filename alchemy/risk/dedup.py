@@ -72,7 +72,7 @@ class OrderDeduplicator:
         Returns True if duplicate (should be blocked).
         Returns False if safe to proceed.
         """
-        cooldown = cooldown_override or self._cooldown
+        cooldown = cooldown_override if cooldown_override is not None else self._cooldown
         key = self._make_key(strategy, symbol, side)
         now = time.time()
 
