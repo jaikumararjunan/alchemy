@@ -84,8 +84,9 @@ async def send_otp(req: SendOTPRequest, request: Request):
 
 
 @router.post("/verify")
-async def verify_email_otp(req: VerifyOTPRequest):
+async def verify_email_otp(req: VerifyOTPRequest, request: Request):
     """Verify OTP. Activates account if purpose=verification."""
+    check_rate_limit(request, "auth.otp_verify")  # independent limit from send — prevents brute-force
     ok = verify_otp(req.purpose, req.email, req.otp)
     if not ok:
         raise HTTPException(400, "Invalid or expired OTP. Request a new one.")
@@ -178,7 +179,6 @@ async def confirm_2fa_setup(req: Setup2FARequest,
     return {
         "enabled":  True,
         "message":  "2FA enabled successfully.",
-        "backup_hint": "Save your TOTP secret as backup: " + secret[:8] + "…",
     }
 
 

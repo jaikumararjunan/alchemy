@@ -89,8 +89,8 @@ async def activate_kill_switch(
 
     # Step 1: Set emergency stop
     try:
-        from alchemy.risk.manager import RiskManager
-        rm = RiskManager()
+        from alchemy.risk.manager import get_risk_manager
+        rm = get_risk_manager()
         rm.trigger_emergency_stop(f"Kill switch by {triggered_by}: {reason}")
     except Exception as e:
         result.errors.append(f"RiskManager.trigger_emergency_stop failed: {e}")
@@ -294,7 +294,7 @@ async def _close_all_positions(gateway_cls, exchange_name: str) -> int:
 def is_kill_switch_active() -> bool:
     """Check if emergency stop is currently active."""
     try:
-        from alchemy.risk.manager import RiskManager
-        return RiskManager()._emergency_stop
+        from alchemy.risk.manager import get_risk_manager
+        return get_risk_manager()._emergency_stop
     except Exception:
         return False

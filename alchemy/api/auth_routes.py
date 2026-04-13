@@ -291,7 +291,7 @@ async def login(req: LoginRequest, request: Request, response: Response,
         status_code = 429 if code == "account_locked" else 401
         raise HTTPException(status_code, {
             "code":    code,
-            "message": messages.get(code, str(e)),
+            "message": messages.get(code, msg("auth_login_invalid")),
         })
     except Exception as e:
         log.error("auth.login_failed", error=str(e), exc_info=True)
@@ -392,14 +392,14 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
         }
         raise HTTPException(400, {
             "code":    code,
-            "message": msg_map.get(code, str(e)),
+            "message": msg_map.get(code, msg("auth_signup_server_error")),
         })
     except ValueError as e:
         raise HTTPException(422, {
             "code":    "validation_error",
             "message": msg("auth_signup_username_invalid") if "username" in str(e).lower()
                        else msg("auth_signup_password_weak") if "password" in str(e).lower()
-                       else str(e),
+                       else msg("auth_signup_server_error"),
         })
     except Exception as e:
         log.error("auth.signup_failed", error=str(e), exc_info=True)
@@ -507,10 +507,16 @@ async def get_me(user: CurrentUser = Depends(get_current_user)):
             "subscription": getattr(user, "subscription", None) or "free"}
 
 
-@router.get("/password/strength")
-async def password_strength(password: str):
-    errors = PasswordPolicy.validate(password)
-    return {"score": PasswordPolicy.strength_score(password), "errors": errors, "valid": not errors}
+class PasswordStrengthRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+@router.post("/password/strength")
+async def password_strength(req: PasswordStrengthRequest, request: Request):
+    """Check password strength. POST so the password never appears in server logs or browser history."""
+    check_rate_limit(request, "api.general")
+    errors = PasswordPolicy.validate(req.password)
+    return {"score": PasswordPolicy.strength_score(req.password), "errors": errors, "valid": not errors}
 
 
 @router.post("/rate-limit/reset")

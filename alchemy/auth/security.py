@@ -4,7 +4,7 @@ alchemy.auth.security
 Industry-grade security primitives for Alchemy Platform.
 
 Implements:
-  - JWT access tokens (15 min) + refresh tokens (7 days) — RS256 signed
+  - JWT access tokens (15 min) + refresh tokens (7 days) — HS256 signed (HMAC-SHA256)
   - bcrypt password hashing (cost=12) with timing-safe comparison
   - TOTP 2FA with pyotp — Google Authenticator / Authy compatible
   - Fernet symmetric encryption for TOTP secrets at rest
@@ -52,10 +52,20 @@ def _get_jwt_secret() -> str:
     """Single source of truth for JWT secret — always uses config."""
     try:
         from alchemy.core.config import get_config
-        return get_config().jwt_secret_key
+        cfg = get_config()
+        secret = cfg.jwt_secret_key
+        # Refuse to start in production with the insecure default
+        if cfg.env == "production" and secret == "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024":
+            raise RuntimeError(
+                "JWT_SECRET_KEY is set to the insecure dev default in production. "
+                "Set a strong random value via the JWT_SECRET_KEY environment variable."
+            )
+        return secret
     except Exception:
-        secret = os.environ.get("JWT_SECRET_KEY", "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024")
-        log.warning("security.jwt_secret_missing", msg="Set JWT_SECRET_KEY env var.")
+        secret = os.environ.get("JWT_SECRET_KEY", "")
+        if not secret:
+            log.warning("security.jwt_secret_missing", msg="Set JWT_SECRET_KEY env var.")
+            secret = "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024"
         return secret
 
 def _get_fernet_key() -> Optional[bytes]:
@@ -248,9 +258,14 @@ class TOTPManager:
         Returns:
             True if valid. Uses timing-safe comparison internally.
         """
-        # Backup code check (constant-time)
-        if backup_codes and code in backup_codes:
-            return True
+        # Backup code check (constant-time to prevent timing attacks)
+        if backup_codes:
+            for stored_code in backup_codes:
+                if secrets.compare_digest(
+                    stored_code.upper().encode(),
+                    code.upper().encode(),
+                ):
+                    return True
 
         totp = TOTPManager.get_totp(secret)
         return totp.verify(code, valid_window=TOTPManager.VALID_WINDOW)

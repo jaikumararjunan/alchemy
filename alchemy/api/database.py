@@ -62,6 +62,15 @@ _engine = None
 _session_factory = None
 
 
+def _get_sqlite_db_path() -> str:
+    """Return the resolved SQLite file path string for raw sqlite3 access.
+
+    Used by watchlist_routes, alert_routes and other modules that need
+    synchronous sqlite3 access (token_routes pattern).
+    """
+    return str(_resolve_sqlite_file_path(DATABASE_URL))
+
+
 def get_engine():
     global _engine
     if _engine is None:

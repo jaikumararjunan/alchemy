@@ -4,12 +4,25 @@ alchemy.signals — AI Signal Generator + News Sentiment + Custom Indicators
 Features 5, 10, 18 from the roadmap.
 """
 from __future__ import annotations
-import math, time, hashlib, json, os
+import math, re, time, hashlib, json, os
 from datetime import datetime, timezone
 from typing import Optional
 import structlog
 
 log = structlog.get_logger(__name__)
+
+# ── Custom indicator formula allowlist ───────────────────────────────────────
+# Reject any formula that contains tokens outside the safe set:
+# allowed chars: letters (a-zA-Z, not \w which includes underscore), digits,
+# whitespace, arithmetic operators, parens, comma.
+# Underscore is excluded to prevent __import__, __builtins__, etc.
+# The period (`.`) is excluded to prevent all attribute access.
+_FORMULA_SAFE_CHARS = re.compile(r"^[a-zA-Z0-9\s\+\-\*\/\(\)\,]+$")
+_FORBIDDEN_TOKENS = re.compile(
+    r"(__|\bimport\b|\beval\b|\bexec\b|\bopen\b|\bgetattr\b|\bsetattr\b|"
+    r"\bhasattr\b|\bdelattr\b|['\"]|lambda\b|\bfor\b|\bwhile\b|\bwith\b)",
+    re.IGNORECASE,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -221,7 +234,11 @@ class CustomIndicator:
         lows = [c["low"] for c in candles]
         volumes = [c.get("volume", 0) for c in candles]
 
-        # Safe evaluation context
+        # Guard: reject formulas that contain characters or tokens outside the safe set
+        if not _FORMULA_SAFE_CHARS.match(self.formula) or _FORBIDDEN_TOKENS.search(self.formula):
+            return {"name": self.name, "error": "Formula contains disallowed tokens", "success": False}
+
+        # Safe evaluation context — no builtins, only approved identifiers
         ctx = {
             "close": closes, "high": highs, "low": lows, "volume": volumes,
             "sma": lambda d, p: _sma(d, p),
@@ -230,7 +247,7 @@ class CustomIndicator:
             "abs": abs, "max": max, "min": min, "len": len,
         }
         try:
-            result = eval(self.formula, {"__builtins__": {}}, ctx)
+            result = eval(self.formula, {"__builtins__": {}}, ctx)  # noqa: S307
             return {"name": self.name, "values": result, "success": True}
         except Exception as e:
             return {"name": self.name, "error": str(e), "success": False}
