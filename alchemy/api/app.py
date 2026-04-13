@@ -67,7 +67,7 @@ manager = ConnectionManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("alchemy.startup", version="0.8.0")
+    log.info("alchemy.startup", version="0.9.0")
 
     # 0. Fail-fast security checks (before accepting any traffic)
     _cfg_startup = get_config()
@@ -198,8 +198,8 @@ _is_prod = _cfg.env == "production"
 
 # Disable interactive API docs in production to reduce attack surface
 app = FastAPI(
-    title="Alchemy Trading Platform",
-    version="0.7.0",
+    title="Alchemy AI Trading Platform",
+    version="0.9.0",
     lifespan=lifespan,
     docs_url=None if _is_prod else "/docs",
     redoc_url=None if _is_prod else "/redoc",

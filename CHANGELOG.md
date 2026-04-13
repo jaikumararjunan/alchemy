@@ -1,8 +1,105 @@
-# Alchemy Trading Platform — Changelog
+# Alchemy AI Trading Platform — Changelog
+
+**Application:** Alchemy AI Trading Platform  
+**Production:** https://akilamirthya.in  
+**Repository:** https://github.com/jaikumararjunan/alchemy
 
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+For the full versioned architecture, end-to-end flows, and platform roadmap see:
+- [`docs/PLATFORM_EVOLUTION.md`](docs/PLATFORM_EVOLUTION.md)
+- [`docs/API_GATEWAY_MICROSERVICES.md`](docs/API_GATEWAY_MICROSERVICES.md)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
+---
+
+## [Unreleased] — v1.0.0 — *Horizon* (Planned Q3 2026)
+
+### Added
+- **8 independent microservices** — Auth, Trading, Market Data, Intelligence, Risk, Notification, Admin, WebSocket Hub
+- **PostgreSQL + TimescaleDB** replacing SQLite in production
+- **React Native mobile app v1.0** — iOS (App Store) + Android (Google Play)
+  - Full trading, watchlist, alerts, push notifications, biometric auth
+  - Offline-first with WatermelonDB sync
+- **Celery + Redis task queue** — Background jobs out of web workers
+- **GraphQL API** — Strawberry at `/graphql` alongside REST
+- **Kubernetes Helm chart** — HPA for Market Data and WebSocket Hub
+- **CDN** — Cloudflare for static assets (50ms → 5ms global)
+- **mTLS** — Kong mTLS plugin for inter-service security
+- **Jaeger distributed tracing** — End-to-end span propagation
+- **PgBouncer** — PostgreSQL connection pooling
+- **React Native push notifications** — FCM + APNS live delivery
+
+### Changed
+- All microservices use RS256 JWT (asymmetric keys, public key distributed)
+- Per-service PostgreSQL database schemas
+- WebSocket Hub scales to 5 replicas (Redis pub/sub backbone)
+
+---
+
+## [Unreleased] — v0.9.0 — *Nexus* (Planned Q2 2026)
+
+### Added
+- **Kong API Gateway** — Single entry point for all clients (web, mobile, bots)
+  - JWT verification offloaded from services to gateway
+  - `/api/v1/` URL versioning prefix on all routes
+  - Response caching for market data (2-second TTL via Kong Proxy Cache plugin)
+  - WebSocket passthrough with JWT token verification
+  - Canary deployment support (% traffic routing)
+  - Per-plan rate limiting (free/pro/team/enterprise) backed by Redis
+- **Redis Rate Limiter** (`RedisRateLimiter`) — Replaces `InMemoryRateLimiter`
+  - Shared across all workers and containers
+  - Survives deploys (no drift on redeploy)
+  - Per-user rate limits (not just per-IP) in production mode
+- **Redis WebSocket Pub/Sub** — Replaces in-memory `ConnectionManager`
+  - Broadcasts work across multiple uvicorn workers and containers
+  - Kill-switch propagates via Redis key `alchemy:kill_switch` (no singleton dependency)
+  - Supports 5,000+ concurrent WebSocket connections
+- **Refresh Token API** — Full dual-token authentication for mobile
+  - `POST /api/v1/auth/refresh` — Rotate refresh token (30-day TTL)
+  - `POST /api/v1/auth/revoke` — Blacklist token on logout
+  - Refresh tokens stored as SHA-256 hashes in `user_sessions` with device fingerprint
+  - Web: HttpOnly Secure cookie; Mobile: iOS Keychain / Android Keystore
+- **Push Notification Infrastructure**
+  - `push_tokens` table — `(user_id, device_token, platform, last_seen_at)`
+  - `POST /api/v1/push/register` — Register FCM/APNS device token
+  - `POST /api/v1/push/revoke` — Remove token on logout
+  - Price alert trigger → FCM (Android) + APNS (iOS) delivery pipeline
+  - Firebase Admin SDK + APNs HTTP/2 providers
+- **Market Data Redis Cache**
+  - Spot prices cached in Redis with 2-second TTL
+  - Order book cached at 10-second TTL
+  - P95 latency for cached prices: 350ms → 15ms
+- **Async Task Queue** (Celery + Redis)
+  - Daily analytics, P&L tear-sheet generation moved to background workers
+  - Notification dispatch (email, Telegram, WhatsApp, push) fully async
+  - Scheduled strategy evaluation out of web worker
+- **OpenTelemetry tracing** — `traceparent` header propagated to all services
+- **Offline sync** — `?since=<unix_ts>` delta sync on watchlist and alerts endpoints
+- **Sparse fieldsets** — `?fields=price,symbol` projection on market data endpoints
+- **CDN static assets** — Cloudflare proxy for `/assets/*` (global edge caching)
+- **API versioning** — `/api/v1/` prefix on all routes; `Accept-Version` header support
+- **Comprehensive documentation**
+  - `docs/API_GATEWAY_MICROSERVICES.md` — Full gateway + microservices + end-to-end flows
+  - `docs/PLATFORM_EVOLUTION.md` — Versioned roadmap, all recommendations, feature matrix
+
+### Changed
+- `docker-compose.prod.yml` — Kong and Redis added as first-class services
+- `alchemy/auth/middleware.py` — `InMemoryRateLimiter` replaced by `RedisRateLimiter`
+- `alchemy/api/app.py` — `ConnectionManager` replaced by `RedisConnectionManager`
+- `alchemy/api/app.py` — `APIRouter(prefix="/api")` → `APIRouter(prefix="/api/v1")`
+- `alchemy/api/crypto_routes.py` — Redis cache layer on all price endpoints
+- `alchemy/api/auth_routes.py` — New refresh + revoke endpoints
+- All Kong-managed security (JWT, rate limiting, CORS) moves from FastAPI middleware to gateway
+
+### Security
+- JWT RS256 upgrade (asymmetric keys — private key in Auth Service, public key at gateway)
+- Refresh token device fingerprinting prevents token theft from one device used on another
+- CSRF protection via SameSite cookie attribute + CSRF token
+- Per-user rate limiting (not just per-IP) via Kong consumer groups
+- Redis-backed OTP store (replaces in-memory — OTPs survive restarts)
 
 ---
 
@@ -155,12 +252,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ```
 MAJOR.MINOR.PATCH — Codename
 
-MAJOR: Breaking API or DB schema changes
+MAJOR: Breaking API or DB schema changes requiring migration
 MINOR: New features, backward compatible
-PATCH: Bug fixes, security patches
+PATCH: Bug fixes, security patches only
 ```
 
+## Release Codenames
+
+| Version | Codename | Theme | Status |
+|---|---|---|---|
+| 0.4.0 | Genesis | Foundation | ✅ Released |
+| 0.5.0 | Quantum | Trading engine | ✅ Released |
+| 0.6.0 | Stellar | Security + subscriptions | ✅ Released |
+| 0.7.0 | Meridian | Admin + stability | ✅ Released |
+| 0.8.0 | Atlas | Risk + watchlist | ✅ Released |
+| 0.9.0 | Nexus | API Gateway + Redis + Mobile prep | 🔄 In development |
+| 1.0.0 | Horizon | Full microservices + mobile app | 📋 Planned Q3 2026 |
+| 1.1.0 | Apex | ML predictions + copy trading | 📋 Planned Q4 2026 |
+| 2.0.0 | Zenith | White-label + enterprise API | 📋 Planned Q2 2027 |
+
 ## Upgrade Notes
+
+### 0.8.x → 0.9.0
+- **API URL change:** All routes now under `/api/v1/` (from `/api/`). Update any hardcoded API URLs.
+- **Redis required:** Add `REDIS_URL=redis://:password@redis:6379/0` to `.env.production`
+- **New Docker service:** Kong gateway added to `docker-compose.prod.yml`
+- **No DB migration needed** — new tables (`push_tokens`) are auto-created on startup
+- Run `alchemy-update` after updating `.env.production`
+
+### 0.7.x → 0.8.0
+- **No manual DB migration needed** — `create_tables()` auto-migrates on startup
+- CVaR columns computed dynamically from trade history — no schema change
 
 ### 0.6.x → 0.7.0
 - **No manual DB migration needed** — `create_tables()` auto-migrates on startup
@@ -170,4 +292,13 @@ PATCH: Bug fixes, security patches
   ADMIN_PASSWORD=YourNew#Password2024!
   ```
 - Run `alchemy-update` after updating `.env.production`
-# CI trigger 2026-04-05
+
+### 0.x → 1.0.0 (SQLite → PostgreSQL)
+```bash
+# One-time migration — run before upgrading
+pip install pgloader
+pgloader sqlite:////data/alchemy.db postgresql://alchemy:pass@localhost/alchemy
+# Update .env.production:
+DATABASE_URL=postgresql+asyncpg://alchemy:pass@postgres:5432/alchemy
+```
+
