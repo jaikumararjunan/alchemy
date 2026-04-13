@@ -127,7 +127,10 @@ async def delete_user(user_id: str, db: AsyncSession = Depends(get_db),
     if user_id == admin.user_id:
         raise HTTPException(400, "Cannot delete your own account")
 
-    uid = UUID(user_id)
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid user_id format")
     result = await db.execute(select(User).where(User.id == uid))
     user = result.scalar_one_or_none()
     if not user:

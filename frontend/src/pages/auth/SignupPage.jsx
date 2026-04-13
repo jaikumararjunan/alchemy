@@ -240,7 +240,7 @@ export default function SignupPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-400 mb-1 block">Email</label>
                 <input type="email" value={form.email} onChange={f('email')}

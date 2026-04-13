@@ -291,7 +291,7 @@ async def login(req: LoginRequest, request: Request, response: Response,
         status_code = 429 if code == "account_locked" else 401
         raise HTTPException(status_code, {
             "code":    code,
-            "message": messages.get(code, str(e)),
+            "message": messages.get(code, msg("auth_login_invalid")),
         })
     except Exception as e:
         log.error("auth.login_failed", error=str(e), exc_info=True)
@@ -392,14 +392,14 @@ async def signup(req: SignupRequest, request: Request, response: Response, db: A
         }
         raise HTTPException(400, {
             "code":    code,
-            "message": msg_map.get(code, str(e)),
+            "message": msg_map.get(code, msg("auth_signup_server_error")),
         })
     except ValueError as e:
         raise HTTPException(422, {
             "code":    "validation_error",
             "message": msg("auth_signup_username_invalid") if "username" in str(e).lower()
                        else msg("auth_signup_password_weak") if "password" in str(e).lower()
-                       else str(e),
+                       else msg("auth_signup_server_error"),
         })
     except Exception as e:
         log.error("auth.signup_failed", error=str(e), exc_info=True)

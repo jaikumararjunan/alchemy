@@ -262,7 +262,10 @@ app.include_router(features_router)
 @app.get("/health",      tags=["core"])
 @app.get("/api/health",  tags=["core"])
 async def health():
-    return {"status": "ok", "version": "1.0.0", "env": get_config().env}
+    resp: dict = {"status": "ok", "version": "1.0.0"}
+    if not _is_prod:
+        resp["env"] = get_config().env
+    return resp
 
 
 # ── Unified Trading Pipeline ─────────────────────────────────────────────────

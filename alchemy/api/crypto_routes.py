@@ -4,6 +4,7 @@ Returns REAL data from Delta Exchange and Binance.
 Uses stored user credentials from token_routes.
 """
 from __future__ import annotations
+import re
 from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
@@ -65,27 +66,50 @@ router = APIRouter(prefix="/crypto", tags=["crypto"])
 
 # ── Proxy endpoints (CSP-safe fallback) ──────────────────────────────────────
 
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,20}$")
+_VALID_INTERVALS = frozenset(["1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M"])
+
+
 @router.get("/proxy/klines")
-async def proxy_klines(symbol: str, interval: str = "1m", limit: int = 250):
+async def proxy_klines(
+    symbol: str,
+    interval: str = "1m",
+    limit: int = 250,
+    user: CurrentUser = Depends(get_current_user),
+):
     """Proxy Binance klines through backend (bypasses browser CSP)."""
     import httpx
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    if not _SYMBOL_RE.match(symbol.upper()):
+        raise HTTPException(400, "Invalid symbol")
+    if interval not in _VALID_INTERVALS:
+        raise HTTPException(400, "Invalid interval")
+    if not 1 <= limit <= 1500:
+        raise HTTPException(400, "limit must be 1–1500")
+    url = (
+        f"https://api.binance.com/api/v3/klines"
+        f"?symbol={symbol.upper()}&interval={interval}&limit={limit}"
+    )
     try:
         r = httpx.get(url, timeout=10)
         return r.json()
-    except Exception as e:
-        raise HTTPException(502, f"Binance proxy error: {e}")
+    except Exception:
+        raise HTTPException(502, "Upstream data unavailable. Please try again.")
 
 
 @router.get("/proxy/ticker/{symbol}")
-async def proxy_ticker(symbol: str):
+async def proxy_ticker(symbol: str, user: CurrentUser = Depends(get_current_user)):
     """Proxy Binance ticker price through backend."""
     import httpx
+    if not _SYMBOL_RE.match(symbol.upper()):
+        raise HTTPException(400, "Invalid symbol")
     try:
-        r = httpx.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}", timeout=5)
+        r = httpx.get(
+            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}",
+            timeout=5,
+        )
         return r.json()
-    except Exception as e:
-        raise HTTPException(502, str(e))
+    except Exception:
+        raise HTTPException(502, "Upstream data unavailable. Please try again.")
 
 
 
