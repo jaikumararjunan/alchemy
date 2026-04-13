@@ -134,6 +134,16 @@ class AutonomousTradingEngine:
         self._ws_broadcast = None  # Set by the API layer
         self._user_id: str = ""   # Set when started via API
 
+        # Cached strategy instances — instantiated once, reused across scans
+        from alchemy.trading.strategies.engine import (
+            ScalpingStrategy, MomentumStrategy, BreakoutStrategy,
+        )
+        self._strategy_map = {
+            "scalping": ScalpingStrategy(),
+            "momentum": MomentumStrategy(),
+            "breakout": BreakoutStrategy(),
+        }
+
     def configure(
         self,
         symbols: Optional[list[str]] = None,
@@ -245,17 +255,6 @@ class AutonomousTradingEngine:
             "timestamp": self._last_scan_at,
         })
 
-        from alchemy.trading.strategies.engine import (
-            ScalpingStrategy, MomentumStrategy, BreakoutStrategy,
-            StrategyType,
-        )
-
-        strategy_map = {
-            "scalping": ScalpingStrategy(),
-            "momentum": MomentumStrategy(),
-            "breakout": BreakoutStrategy(),
-        }
-
         for symbol in self.symbols:
             ohlcv = await _fetch_binance_klines(symbol, self.timeframe, 100)
             if not ohlcv:
@@ -263,7 +262,7 @@ class AutonomousTradingEngine:
                 continue
 
             for strategy_name in self.strategies:
-                strategy = strategy_map.get(strategy_name)
+                strategy = self._strategy_map.get(strategy_name)
                 if not strategy:
                     continue
 

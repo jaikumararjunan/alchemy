@@ -1,6 +1,7 @@
 # Alchemy AI Trading Platform — End-to-End Architecture Documentation
 
-**Version:** 0.8.0 · **Updated:** April 2026  
+**Application:** Alchemy AI Trading Platform  
+**Version:** 0.9.0 · **Updated:** April 2026  
 **Production:** https://akilamirthya.in  
 **Repository:** https://github.com/jaikumararjunan/alchemy
 
@@ -45,6 +46,9 @@
 16. [Configuration Reference](#16-configuration-reference)
 17. [API Reference Summary](#17-api-reference-summary)
 18. [Known Constraints & Decisions](#18-known-constraints--decisions)
+19. [API Gateway Architecture (v0.9.0+)](#19-api-gateway-architecture-v090)
+20. [Microservices Architecture (v1.0.0)](#20-microservices-architecture-v100)
+21. [Mobile Communication Architecture (v0.9.0+)](#21-mobile-communication-architecture-v090)
 
 ---
 
@@ -955,4 +959,99 @@ All configuration is via environment variables (`.env.local` for dev, `.env.prod
 
 ---
 
-*This document is auto-maintained alongside the codebase. For questions, see [CLAUDE.md](../CLAUDE.md) for AI assistant context or [DEPLOYMENT.md](../DEPLOYMENT.md) for ops procedures.*
+## 19. API Gateway Architecture (v0.9.0+)
+
+> Full specification: [`docs/API_GATEWAY_MICROSERVICES.md`](API_GATEWAY_MICROSERVICES.md)
+
+### Gateway Position in the Stack
+
+```
+Internet
+    │ :443 HTTPS / WSS
+    ▼
+Nginx (TLS termination, DDoS limits, HSTS)
+    │ :8443 internal
+    ▼
+Kong API Gateway  ← NEW in v0.9.5
+    │  JWT verify · Rate limit per plan · Cache market data
+    │  Route by /api/v1/{service}/ · Canary · mTLS (internal)
+    ▼
+FastAPI microservices (or monolith during transition)
+```
+
+### Kong Plugins in Use
+
+| Plugin | Purpose |
+|---|---|
+| `jwt` | Verify RS256 token without a DB call per request |
+| `rate-limiting` | Redis-backed, per-consumer, plan-aware limits |
+| `proxy-cache` | Cache market data GET responses (2s TTL) |
+| `cors` | Replace FastAPI `CORSMiddleware` |
+| `ip-restriction` | Block non-admin IPs from `/api/v1/admin/**` |
+| `response-transformer` | Add `X-API-Version`, `X-Powered-By` headers |
+| `canary` | Route % of traffic to v2 for gradual rollouts |
+| `file-log` | Forward access logs to Promtail → Loki |
+| `opentelemetry` | Inject `traceparent` for distributed tracing |
+
+---
+
+## 20. Microservices Architecture (v1.0.0)
+
+> Full specification with end-to-end flows: [`docs/API_GATEWAY_MICROSERVICES.md`](API_GATEWAY_MICROSERVICES.md)
+
+### Service Map
+
+| Service | Port | Source modules | Database |
+|---|---|---|---|
+| Auth Service | 8001 | `alchemy/auth/`, `alchemy/users/` | `alchemy_auth` (PostgreSQL) |
+| Trading Service | 8002 | `alchemy/trading/`, `alchemy/execution/`, `alchemy/paper_trading/` | `alchemy_trading` (PostgreSQL) |
+| Risk Service | 8003 | `alchemy/risk/` | Redis (kill switch), PostgreSQL (trades) |
+| Market Data Service | 8004 | `alchemy/execution/crypto/` | Redis (cache), PostgreSQL (history) |
+| Intelligence Service | 8005 | `alchemy/intelligence/`, `alchemy/agents/` | ChromaDB, PostgreSQL |
+| Notification Service | 8006 | `alchemy/notifications/` | `alchemy_notify` (PostgreSQL) |
+| Admin Service | 8007 | `alchemy/admin/` | Read replicas |
+| WebSocket Hub | 8008 | `alchemy/api/app.py` (ConnectionManager) | Redis pub/sub |
+
+### Inter-Service Communication
+
+- **Synchronous** — gRPC for latency-critical calls (Trading → Risk pre-trade check: <50ms)
+- **Asynchronous** — Redis Streams for fire-and-forget (order fills → notifications → analytics)
+- **Pub/Sub** — Redis channels for real-time fan-out (market prices → WS Hub → clients)
+
+---
+
+## 21. Mobile Communication Architecture (v0.9.0+)
+
+### Communication Protocols
+
+| Protocol | Use case | Transport |
+|---|---|---|
+| REST (HTTPS) | All CRUD operations, trading, auth | HTTPS/2 |
+| WebSocket (WSS) | Real-time prices, signals, alerts | WSS |
+| Push (FCM/APNS) | Background alerts, order fills | FCM / APNs HTTP/2 |
+| SSE | Fallback when WS blocked by corporate proxy | HTTPS SSE |
+
+### Mobile-Specific API Features (v0.9.0)
+
+- `?since=<unix_ts>` — Delta sync: only return records changed after timestamp
+- `?fields=price,symbol` — Sparse fieldsets: reduce payload size for slow networks
+- `POST /api/v1/push/register` — Register FCM/APNS device token
+- `POST /api/v1/auth/refresh` — Rotate refresh token (30-day TTL for mobile)
+- `POST /api/v1/auth/revoke` — Revoke token on logout or app uninstall
+
+### Push Notification Events
+
+| Event | Trigger | Deep link |
+|---|---|---|
+| `price_alert_triggered` | Threshold price crossed | `/alerts/{id}` |
+| `order_filled` | Exchange confirms fill | `/portfolio` |
+| `kill_switch_activated` | Emergency stop activated | `/risk` |
+| `ai_signal` | New strong AI signal generated | `/signals` |
+| `daily_pnl_milestone` | Daily P&L target reached | `/analytics` |
+
+---
+
+*This document is auto-maintained alongside the codebase.*  
+*For questions, see [CLAUDE.md](../CLAUDE.md) for AI assistant context or [DEPLOYMENT.md](../DEPLOYMENT.md) for ops procedures.*  
+*For API Gateway + microservices: [`docs/API_GATEWAY_MICROSERVICES.md`](API_GATEWAY_MICROSERVICES.md)*  
+*For versioned roadmap + all recommendations: [`docs/PLATFORM_EVOLUTION.md`](PLATFORM_EVOLUTION.md)*
