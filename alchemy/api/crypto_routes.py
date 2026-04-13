@@ -92,7 +92,9 @@ async def proxy_klines(
     try:
         r = httpx.get(url, timeout=10)
         return r.json()
-    except Exception:
+    except Exception as e:
+        import structlog
+        structlog.get_logger(__name__).warning("proxy.klines_failed", symbol=symbol, error=str(e))
         raise HTTPException(502, "Upstream data unavailable. Please try again.")
 
 
@@ -108,7 +110,9 @@ async def proxy_ticker(symbol: str, user: CurrentUser = Depends(get_current_user
             timeout=5,
         )
         return r.json()
-    except Exception:
+    except Exception as e:
+        import structlog
+        structlog.get_logger(__name__).warning("proxy.ticker_failed", symbol=symbol, error=str(e))
         raise HTTPException(502, "Upstream data unavailable. Please try again.")
 
 
