@@ -69,6 +69,23 @@ manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     log.info("alchemy.startup", version="0.7.0")
 
+    # 0. Fail-fast security checks (before accepting any traffic)
+    _cfg_startup = get_config()
+    if _cfg_startup.env == "production":
+        _dev_default = "AlchemyLocalDev!JWT_Secret_Key_32chars_Min_2024"
+        if _cfg_startup.jwt_secret_key == _dev_default:
+            raise RuntimeError(
+                "FATAL: JWT_SECRET_KEY is set to the insecure dev default in production. "
+                "Set a strong random value via JWT_SECRET_KEY environment variable before starting."
+            )
+        _prod_cors = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+        if not _prod_cors:
+            log.warning(
+                "security.cors_origins_empty",
+                msg="ALLOWED_ORIGINS is not set in production — all cross-origin requests will be blocked. "
+                    "Set ALLOWED_ORIGINS=https://your-domain.com in the environment.",
+            )
+
     # 1. Database tables + admin seed
     try:
         from alchemy.api.database import create_tables, get_session_factory

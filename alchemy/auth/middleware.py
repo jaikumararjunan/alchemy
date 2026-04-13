@@ -66,7 +66,8 @@ RATE_LIMITS = {
     "auth.reset":    (50,  60)   if _IS_DEV else (3,   3600),
     "api.general":   (500, 60),
     "api.trade":     (100, 60),
-    "auth.otp_send": (3,   600) if not _IS_DEV else (100, 60),   # 3 OTPs per 10 min
+    "auth.otp_send":   (3,   600) if not _IS_DEV else (100, 60),   # 3 sends per 10 min
+    "auth.otp_verify": (5,   600) if not _IS_DEV else (100, 60),   # separate limit for verify
 }
 
 
@@ -253,8 +254,19 @@ def get_client_ip(request: Request) -> str:
         try:
             peer = ipaddress.ip_address(direct_ip)
             if peer.is_private or peer.is_loopback:
-                # Trusted proxy — take the leftmost address from the chain
-                return forwarded.split(",")[0].strip()
+                # Trusted proxy — take the rightmost public IP in the chain.
+                # Leftmost entries can be spoofed by the client; the rightmost
+                # entry added by the trusted proxy represents the last untrusted hop.
+                addrs = [a.strip() for a in forwarded.split(",")]
+                for addr in reversed(addrs):
+                    try:
+                        parsed = ipaddress.ip_address(addr)
+                        if not parsed.is_private and not parsed.is_loopback:
+                            return addr
+                    except ValueError:
+                        continue
+                # All addresses in chain are private/loopback — return the leftmost
+                return addrs[0] if addrs else direct_ip
         except ValueError:
             pass
 
