@@ -69,6 +69,22 @@ manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     log.info("alchemy.startup", version="0.7.0")
 
+    # 0. Fail-fast security checks (before accepting any traffic)
+    _cfg_startup = get_config()
+    if _cfg_startup.env == "production":
+        try:
+            from alchemy.auth.security import _get_jwt_secret
+            _get_jwt_secret()   # raises RuntimeError if dev default is in use
+        except RuntimeError as _jwt_err:
+            raise RuntimeError(f"FATAL: {_jwt_err}") from _jwt_err
+        _prod_cors = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+        if not _prod_cors:
+            log.warning(
+                "security.cors_origins_empty",
+                msg="ALLOWED_ORIGINS is not set in production — all cross-origin requests will be blocked. "
+                    "Set ALLOWED_ORIGINS=https://your-domain.com in the environment.",
+            )
+
     # 1. Database tables + admin seed
     try:
         from alchemy.api.database import create_tables, get_session_factory
@@ -177,23 +193,33 @@ async def lifespan(app: FastAPI):
 
 # ── App creation ──────────────────────────────────────────────────────────────
 
+_cfg = get_config()
+_is_prod = _cfg.env == "production"
+
+# Disable interactive API docs in production to reduce attack surface
 app = FastAPI(
     title="Alchemy Trading Platform",
     version="0.7.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
+
+# CORS: dev allows localhost origins; production reads ALLOWED_ORIGINS env var.
+_dev_origins  = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
+_prod_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+_cors_origins = _dev_origins if not _is_prod else _prod_origins
 
 # Middleware (order matters: added last = runs first)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 
 
@@ -252,7 +278,10 @@ app.include_router(features_router)
 @app.get("/health",      tags=["core"])
 @app.get("/api/health",  tags=["core"])
 async def health():
-    return {"status": "ok", "version": "1.0.0", "env": get_config().env}
+    resp: dict = {"status": "ok", "version": "1.0.0"}
+    if not _is_prod:
+        resp["env"] = get_config().env
+    return resp
 
 
 # ── Unified Trading Pipeline ─────────────────────────────────────────────────
@@ -518,7 +547,8 @@ async def generate_signal(
         await manager.broadcast("signal", sig.to_dict())
         return sig.to_dict()
     except Exception as e:
-        raise HTTPException(500, str(e))
+        log.error("signal.generation_failed", error=str(e))
+        raise HTTPException(500, "Signal generation failed. Check server logs for details.")
 
 
 # ── WebSocket  ────────────────────────────────────────────────────────────────

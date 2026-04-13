@@ -40,6 +40,7 @@ class TestOrderDeduplicator:
         assert self.dedup.is_duplicate("sma", "BTCUSDT", "SELL") is False
 
     def test_cooldown_expires(self):
+        from alchemy.risk.dedup import OrderDeduplicator
         self.dedup = OrderDeduplicator(cooldown_seconds=0)
         self.dedup.record("sma", "BTCUSDT", "BUY")
         time.sleep(0.05)

@@ -66,7 +66,8 @@ RATE_LIMITS = {
     "auth.reset":    (50,  60)   if _IS_DEV else (3,   3600),
     "api.general":   (500, 60),
     "api.trade":     (100, 60),
-    "auth.otp_send": (3,   600) if not _IS_DEV else (100, 60),   # 3 OTPs per 10 min
+    "auth.otp_send":   (3,   600) if not _IS_DEV else (100, 60),   # 3 sends per 10 min
+    "auth.otp_verify": (5,   600) if not _IS_DEV else (100, 60),   # separate limit for verify
 }
 
 
@@ -238,8 +239,41 @@ def require_admin() -> Callable:
 # ── Audit Helper ──────────────────────────────────────────────────────────────
 
 def get_client_ip(request: Request) -> str:
-    """Extract real IP respecting X-Forwarded-For (behind load balancer)."""
+    """
+    Extract real IP respecting X-Forwarded-For (behind load balancer).
+
+    SECURITY: Only trust X-Forwarded-For when the direct peer is a private/loopback
+    address (i.e., a trusted reverse proxy). When the direct peer is a public IP the
+    header can be spoofed by the client — in that case fall back to the peer address.
+    """
+    import ipaddress
+    direct_ip = request.client.host if request.client else "unknown"
+
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+        try:
+            peer = ipaddress.ip_address(direct_ip)
+            if peer.is_private or peer.is_loopback:
+                # Trusted proxy — find the rightmost PUBLIC IP in the chain.
+                # In a single-proxy setup (client → nginx → app):
+                #   X-Forwarded-For: real_client_ip           → return real_client_ip
+                # When a client spoofs by injecting a header:
+                #   X-Forwarded-For: spoofed_ip, real_client_ip (nginx appends last)
+                #   → rightmost public = real_client_ip (CORRECT)
+                # In multi-proxy chains (client → proxy1 → proxy2 → app):
+                #   X-Forwarded-For: client_ip, proxy1_ip
+                #   → rightmost public that is not an internal proxy = client_ip
+                addrs = [a.strip() for a in forwarded.split(",")]
+                for addr in reversed(addrs):
+                    try:
+                        parsed = ipaddress.ip_address(addr)
+                        if not parsed.is_private and not parsed.is_loopback:
+                            return addr
+                    except ValueError:
+                        continue
+                # All addresses are private/loopback (e.g. all-internal network)
+                # — fall through to direct_ip
+        except ValueError:
+            pass
+
+    return direct_ip
