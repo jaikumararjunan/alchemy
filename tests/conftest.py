@@ -14,6 +14,7 @@ TEST_DIR = tempfile.mkdtemp(prefix="alchemy_test_")
 os.environ["ALCHEMY_PAPER_DIR"] = TEST_DIR
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DIR}/test_alchemy.db"
 os.environ["SECRET_KEY"] = "test-secret-key-for-tests-only-0123456789"
+os.environ["CREDENTIAL_STUFFING_LIMIT"] = "200"
 os.environ["JWT_SECRET"] = "test-jwt-secret-key-0123456789abcdef"
 
 
@@ -24,6 +25,15 @@ def _reset_engine():
     eng._engine = None
     yield
     eng._engine = None
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _reset_rate_limiters():
+    """Clear rate limiters between test modules so full suite doesn't get blocked."""
+    from alchemy.auth.guards import reset_credential_stuffing
+    reset_credential_stuffing()
+    yield
+    reset_credential_stuffing()
 
 
 @pytest.fixture

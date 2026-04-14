@@ -21,6 +21,7 @@ Usage:
         ...
 """
 from __future__ import annotations
+import os
 import time
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
@@ -134,7 +135,11 @@ def audit_action(action: str, resource: Optional[str] = None):
 
 _login_attempts: dict[str, list[float]] = {}
 _CREDENTIAL_STUFFING_WINDOW = 300   # 5 minutes
-_CREDENTIAL_STUFFING_LIMIT  = 20    # >20 attempts from 1 IP = stuffing
+_CREDENTIAL_STUFFING_LIMIT  = int(os.environ.get("CREDENTIAL_STUFFING_LIMIT", "20"))    # >20 attempts from 1 IP = stuffing
+
+def reset_credential_stuffing():
+    """Reset all login attempt tracking (for tests)."""
+    _login_attempts.clear()
 
 def check_credential_stuffing(ip: str) -> None:
     """
