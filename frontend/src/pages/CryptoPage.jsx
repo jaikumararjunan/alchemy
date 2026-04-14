@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import LiveChart from '@/components/charts/LiveChart'
+import CandlestickChart from '@/components/charts/CandlestickChart'
 import { RefreshCw, AlertCircle, Lock, Wifi, TrendingUp, TrendingDown, Activity } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -313,7 +314,10 @@ export default function CryptoPage() {
 
       {/* Main chart */}
       <div className="card overflow-hidden">
-        <LiveChart defaultSymbol={chartSymbol} height={300}/>
+        <CandlestickChart defaultSymbol={chartSymbol} height={380}/>
+        <div className="mt-4">
+          <LiveChart defaultSymbol={chartSymbol} height={200}/>
+        </div>
       </div>
 
       {/* Order book · Trade feed · Order form */}

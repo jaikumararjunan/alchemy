@@ -255,6 +255,16 @@ class AutonomousTradingEngine:
             "timestamp": self._last_scan_at,
         })
 
+        # Update paper positions with live prices from delta bridge
+        try:
+            from alchemy.trading.delta_bridge import get_delta_bridge
+            bridge = get_delta_bridge()
+            live_prices = await bridge.fetch_live_prices()
+            if live_prices:
+                bridge.update_paper_positions(live_prices)
+        except Exception:
+            pass  # Non-critical — continue with Binance candles
+
         for symbol in self.symbols:
             ohlcv = await _fetch_binance_klines(symbol, self.timeframe, 100)
             if not ohlcv:
