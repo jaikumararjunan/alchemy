@@ -182,17 +182,24 @@ async def update_prices(
     from alchemy.paper_trading.engine import get_paper_engine
     events = get_paper_engine().update_prices(user.user_id, body.prices)
 
-    # Send push notification for SL/TP triggers
+    # Send push + email notification for SL/TP triggers
     if events:
         try:
             from alchemy.api.push_routes import notify_sl_tp_trigger
+            from alchemy.notifications.email_service import send_trade_alert_email
             for event in events:
                 parts = event.split(": ")
                 trigger = "take_profit" if "TAKE_PROFIT" in event else "stop_loss"
                 sym_price = parts[1] if len(parts) > 1 else ""
                 symbol = sym_price.split(" @ ")[0] if " @ " in sym_price else ""
                 price = float(sym_price.split(" @ ")[1]) if " @ " in sym_price else 0
+                # Push notification
                 await notify_sl_tp_trigger(user.user_id, symbol, trigger, price, 0)
+                # Email notification
+                try:
+                    send_trade_alert_email(user.email, trigger, symbol, "close", price)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -364,3 +371,93 @@ async def get_live_prices(user: CurrentUser = Depends(get_current_user)):
     from alchemy.services.price_stream import get_latest_prices
     prices = get_latest_prices()
     return {"prices": prices, "source": "binance_ws" if prices else "cache_empty"}
+
+
+# ── Position Sizing Calculator ────────────────────────────────────────────────
+
+@router.post("/position-size")
+async def calculate_position_size(
+    body: dict,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Calculate optimal position size based on risk parameters.
+    Body: { account_size, risk_pct, entry_price, stop_loss_price }
+    """
+    account = body.get("account_size", 0)
+    risk_pct = body.get("risk_pct", 1.0)
+    entry = body.get("entry_price", 0)
+    sl = body.get("stop_loss_price", 0)
+
+    if not account or not entry or not sl:
+        raise HTTPException(400, "account_size, entry_price, stop_loss_price required")
+
+    risk_amount = account * (risk_pct / 100)
+    price_diff = abs(entry - sl)
+    if price_diff == 0:
+        raise HTTPException(400, "Entry and SL cannot be the same price")
+
+    quantity = risk_amount / price_diff
+    position_value = quantity * entry
+    max_loss = risk_amount
+    risk_reward = body.get("take_profit_price", 0)
+    rr_ratio = abs(body.get("take_profit_price", entry) - entry) / price_diff if price_diff else 0
+
+    return {
+        "quantity": round(quantity, 6),
+        "position_value": round(position_value, 2),
+        "risk_amount": round(risk_amount, 2),
+        "max_loss": round(max_loss, 2),
+        "risk_reward_ratio": round(rr_ratio, 2),
+        "position_pct": round((position_value / account) * 100, 2) if account else 0,
+    }
+
+
+# ── Strategy Performance Comparison ───────────────────────────────────────────
+
+@router.get("/strategy-comparison")
+async def strategy_comparison(user: CurrentUser = Depends(get_current_user)):
+    """Compare performance across different trading strategies."""
+    from alchemy.paper_trading.engine import get_paper_engine
+    portfolio = get_paper_engine().get_portfolio(user.user_id)
+
+    strategies = {}
+    for trade in portfolio.trade_log:
+        strat = trade.get("strategy", "manual")
+        if strat not in strategies:
+            strategies[strat] = {"trades": 0, "wins": 0, "losses": 0,
+                                  "total_pnl": 0, "total_return": 0, "pnls": []}
+        s = strategies[strat]
+        s["trades"] += 1
+        pnl = trade.get("net_pnl", 0)
+        s["total_pnl"] += pnl
+        s["total_return"] += trade.get("return_pct", 0)
+        s["pnls"].append(pnl)
+        if pnl > 0:
+            s["wins"] += 1
+        else:
+            s["losses"] += 1
+
+    result = []
+    for name, s in strategies.items():
+        avg_return = s["total_return"] / s["trades"] if s["trades"] else 0
+        win_rate = (s["wins"] / s["trades"] * 100) if s["trades"] else 0
+        avg_win = sum(p for p in s["pnls"] if p > 0) / max(s["wins"], 1)
+        avg_loss = sum(p for p in s["pnls"] if p <= 0) / max(s["losses"], 1)
+        profit_factor = abs(avg_win * s["wins"]) / abs(avg_loss * s["losses"]) if s["losses"] and avg_loss else 0
+
+        result.append({
+            "strategy": name,
+            "trades": s["trades"],
+            "wins": s["wins"],
+            "losses": s["losses"],
+            "win_rate": round(win_rate, 1),
+            "total_pnl": round(s["total_pnl"], 2),
+            "avg_return_pct": round(avg_return, 2),
+            "avg_win": round(avg_win, 2),
+            "avg_loss": round(avg_loss, 2),
+            "profit_factor": round(profit_factor, 2),
+        })
+
+    result.sort(key=lambda x: x["total_pnl"], reverse=True)
+    return {"strategies": result, "total_closed": len(portfolio.trade_log)}

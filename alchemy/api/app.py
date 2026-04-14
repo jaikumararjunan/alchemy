@@ -252,6 +252,7 @@ from alchemy.api.features_routes import router as features_router
 from alchemy.api.watchlist_routes   import router as watchlist_router
 from alchemy.api.alert_routes       import router as alert_router
 from alchemy.api.push_routes        import router as push_router
+from alchemy.api.journal_routes     import router as journal_router
 from fastapi import APIRouter
 
 # /api/* prefix  (what the built React frontend calls)
@@ -272,6 +273,7 @@ api.include_router(features_router)
 api.include_router(watchlist_router)
 api.include_router(alert_router)
 api.include_router(push_router)
+api.include_router(journal_router)
 app.include_router(metrics_router)
 api.include_router(audit_router)
 app.include_router(api)
@@ -292,6 +294,7 @@ app.include_router(features_router)
 app.include_router(watchlist_router)
 app.include_router(alert_router)
 app.include_router(push_router)
+app.include_router(journal_router)
 
 
 # ── Core endpoints ────────────────────────────────────────────────────────────

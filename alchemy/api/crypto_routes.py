@@ -62,6 +62,26 @@ def _record_trade_in_portfolio(user_id: str, symbol: str, side: str, quantity: f
             "live_trade.record_failed", error=str(e), symbol=symbol)
 
 
+
+def _check_duplicate_position(user_id: str, symbol: str, side: str) -> str | None:
+    """Check if user already has position. Returns warning message or None."""
+    try:
+        from alchemy.paper_trading.engine import get_paper_engine
+        from alchemy.paper_trading import PositionSide
+        portfolio = get_paper_engine().get_portfolio(user_id)
+        pos = portfolio.positions.get(symbol.upper())
+        if pos and pos.quantity > 0.000001:
+            same_dir = (side.upper() in ("BUY","LONG") and pos.side == PositionSide.LONG) or \
+                       (side.upper() in ("SELL","SHORT") and pos.side == PositionSide.SHORT)
+            if same_dir:
+                return (f"WARNING: Existing {pos.side.value.upper()} position for {symbol}: "
+                        f"qty={pos.quantity}, entry=${pos.avg_entry_price:,.2f}. "
+                        f"This order will ADD to your position.")
+    except Exception:
+        pass
+    return None
+
+
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
 # ── Proxy endpoints (CSP-safe fallback) ──────────────────────────────────────
@@ -234,6 +254,8 @@ async def delta_funding(symbol: str, user: CurrentUser = Depends(get_current_use
 async def delta_place_order(req: OrderRequest,
                               user: CurrentUser = Depends(get_current_user)):
     _require_live(user.user_id, "delta")
+    # Duplicate position warning
+    dup_warning = _check_duplicate_position(user.user_id, req.symbol, req.side)
     try:
         gw = _delta(user.user_id)
         result = gw.place_order(
@@ -245,6 +267,8 @@ async def delta_place_order(req: OrderRequest,
         fill_price = float(result.get("avg_fill_price", 0) or result.get("price", 0) or req.price or 0)
         _record_trade_in_portfolio(user.user_id, req.symbol, req.side,
                                     float(req.size), fill_price, "delta")
+        if dup_warning:
+            result["duplicate_warning"] = dup_warning
         return result
     except Exception as e:
         raise HTTPException(502, str(e))
@@ -334,6 +358,7 @@ async def binance_funding(symbol: str, user: CurrentUser = Depends(get_current_u
 async def binance_place_order(req: OrderRequest,
                                user: CurrentUser = Depends(get_current_user)):
     _require_live(user.user_id, "binance")
+    dup_warning = _check_duplicate_position(user.user_id, req.symbol, req.side)
     try:
         gw = _binance(user.user_id)
         result = gw.place_order(
@@ -346,6 +371,8 @@ async def binance_place_order(req: OrderRequest,
         fill_qty = float(result.get("executedQty", 0) or req.size or 0)
         _record_trade_in_portfolio(user.user_id, req.symbol, req.side,
                                     fill_qty, fill_price, "binance")
+        if dup_warning:
+            result["duplicate_warning"] = dup_warning
         return result
     except Exception as e:
         raise HTTPException(502, str(e))

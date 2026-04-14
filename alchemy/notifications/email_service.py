@@ -129,3 +129,40 @@ def send_2fa_enabled_email(to: str) -> bool:
         expires_in="permanent",
     )
     return send_email(to, "2FA Enabled — Alchemy", html)
+
+
+# ── Trade Alert Emails ────────────────────────────────────────────────────────
+
+def send_trade_alert_email(to: str, event_type: str, symbol: str,
+                             side: str, price: float, pnl: float = 0,
+                             quantity: float = 0) -> bool:
+    """Send email alert for trade events (SL/TP trigger, fill, etc.)."""
+    emoji = "🎯" if event_type == "take_profit" else "🛑" if event_type == "stop_loss" else "📊"
+    label = {
+        "take_profit": "Take Profit Triggered",
+        "stop_loss": "Stop Loss Triggered",
+        "trade_fill": "Trade Filled",
+        "signal": "New Signal",
+    }.get(event_type, event_type.replace("_", " ").title())
+
+    pnl_color = "#10b981" if pnl >= 0 else "#ef4444"
+    pnl_str = f"+${pnl:,.2f}" if pnl >= 0 else f"-${abs(pnl):,.2f}"
+
+    subject = f"{emoji} Alchemy: {label} — {symbol}"
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#0f172a;color:#f1f5f9;padding:24px;border-radius:16px;">
+        <h2 style="margin:0 0 16px;color:#3b82f6;">{emoji} {label}</h2>
+        <table style="width:100%;border-collapse:collapse;">
+            <tr><td style="padding:8px 0;color:#94a3b8;">Symbol</td><td style="text-align:right;font-weight:bold;">{symbol}</td></tr>
+            <tr><td style="padding:8px 0;color:#94a3b8;">Side</td><td style="text-align:right;font-weight:bold;">{side.upper()}</td></tr>
+            <tr><td style="padding:8px 0;color:#94a3b8;">Price</td><td style="text-align:right;">${price:,.2f}</td></tr>
+            {"<tr><td style='padding:8px 0;color:#94a3b8;'>Quantity</td><td style='text-align:right;'>" + f"{quantity}" + "</td></tr>" if quantity else ""}
+            <tr style="border-top:1px solid #334155;"><td style="padding:12px 0;color:#94a3b8;font-weight:bold;">P&L</td>
+                <td style="text-align:right;font-weight:bold;font-size:18px;color:{pnl_color};">{pnl_str}</td></tr>
+        </table>
+        <p style="margin-top:20px;font-size:12px;color:#64748b;">
+            Alchemy AI Trading Platform — <a href="http://213.199.38.90" style="color:#3b82f6;">Open Dashboard</a>
+        </p>
+    </div>
+    """
+    return send_email(to, subject, html)
