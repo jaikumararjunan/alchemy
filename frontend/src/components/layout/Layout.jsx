@@ -47,14 +47,16 @@ const ROLE_CLR = {
 
 function NavItem({ to, icon: Icon, label, onClick }) {
   return (
-    <NavLink to={to} onClick={onClick}
+    <NavLink
+      to={to}
+      onClick={onClick}
       className={({ isActive }) => clsx(
-        'flex items-center gap-3 px-3 py-2 text-[13px] rounded-xl transition-all duration-200 mx-2 mb-0.5 relative',
+        'flex items-center gap-3 px-3 py-2 text-[13px] rounded-xl transition-all duration-150 mx-2 mb-0.5 relative cursor-pointer select-none no-underline',
         isActive
           ? 'bg-gradient-to-r from-blue-600/15 to-indigo-600/10 text-blue-400 font-semibold nav-active'
-          : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.03] active:scale-[0.98]'
+          : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.03]'
       )}>
-      <Icon size={15} className="flex-shrink-0"/>
+      <Icon size={15} className="flex-shrink-0" />
       <span className="truncate">{label}</span>
     </NavLink>
   )
@@ -215,7 +217,7 @@ export default function Layout() {
           )}
 
           {/* Notification bell */}
-          <NotificationBell onClick={() => setNotifOpen(true)} count={(useAlchemyStore.getState().notifications || []).length} />
+          <NotificationBell onClick={() => setNotifOpen(true)} />
 
           {/* Portfolio metrics — right side */}
           <div className="flex items-center gap-5 ml-auto">
