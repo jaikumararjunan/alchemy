@@ -24,6 +24,7 @@ import TokenManagerPage   from '@/pages/TokenManagerPage'
 import WorkflowPage       from '@/pages/WorkflowPage'
 import NotificationsPage  from '@/pages/NotificationsPage'
 import SettingsPage       from '@/pages/SettingsPage'
+import SecurityDashboardPage from '@/pages/SecurityDashboardPage'
 
 // Admin pages
 import AdminDashboard from '@/pages/admin/AdminDashboard'

@@ -32,6 +32,7 @@ const NAV_GROUPS = [
     { to:'/alerts',        icon:BellRing,        label:'Price Alerts' },
   ]},
   { label: 'SETTINGS', items: [
+    { to:'/security',      icon:Shield,          label:'Security' },
     { to:'/tokens',        icon:Key,             label:'Exchange Keys' },
     { to:'/workflows',     icon:GitBranch,       label:'Workflows' },
     { to:'/notifications', icon:Bell,            label:'Notifications' },

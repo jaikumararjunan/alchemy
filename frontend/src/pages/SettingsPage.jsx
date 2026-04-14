@@ -9,7 +9,7 @@ import { useTheme } from '@/context/ThemeContext'
 export default function SettingsPage() {
   const { user, apiClient } = useAuth()
   const api = apiClient()
-  const { theme, toggle: toggleTheme } = useTheme()
+  const { theme, setTheme, themes } = useTheme()
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' })
   const [show, setShow] = useState({})
 
@@ -93,24 +93,31 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Theme Toggle */}
+      {/* Theme Selector */}
       <div className="card">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {theme === 'dark'
-              ? <Moon size={18} className="text-blue-400" />
-              : <Sun size={18} className="text-yellow-400" />}
-            <div>
-              <h2 className="text-sm font-semibold text-white">Theme</h2>
-              <p className="text-xs text-gray-500">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</p>
-            </div>
+        <div className="flex items-center gap-3 mb-4">
+          <Moon size={18} className="text-blue-400" />
+          <div>
+            <h2 className="text-sm font-semibold text-white">Appearance</h2>
+            <p className="text-xs text-gray-500">Choose your preferred theme</p>
           </div>
-          <button onClick={toggleTheme}
-            className={clsx('w-12 h-6 rounded-full transition-colors relative',
-              theme === 'dark' ? 'bg-blue-600' : 'bg-gray-400')}>
-            <div className={clsx('w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform',
-              theme === 'dark' ? 'translate-x-6' : 'translate-x-0.5')} />
-          </button>
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {Object.entries(themes).map(([key, t]) => (
+            <button key={key} onClick={() => setTheme(key)}
+              className={clsx(
+                'flex flex-col items-center gap-2 p-3 rounded-xl border transition-all duration-200',
+                theme === key
+                  ? 'border-blue-500/40 bg-blue-500/10 shadow-sm shadow-blue-500/10'
+                  : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.1]'
+              )}>
+              <div className="w-8 h-8 rounded-lg border border-white/10 overflow-hidden flex">
+                <div className="w-1/2 h-full" style={{background: t.s0}} />
+                <div className="w-1/2 h-full" style={{background: t.s2}} />
+              </div>
+              <span className={clsx('text-[11px] font-medium', theme === key ? 'text-blue-400' : 'text-gray-500')}>{t.label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
