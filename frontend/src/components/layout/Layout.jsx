@@ -10,6 +10,8 @@ import {
   TrendingUp, Star, Bot, Wallet, BellRing,
 } from 'lucide-react'
 import clsx from 'clsx'
+import OnboardingWizard, { useOnboarding } from '@/components/OnboardingWizard'
+import NotificationPanel, { NotificationBell } from '@/components/NotificationPanel'
 
 const NAV_GROUPS = [
   { label: 'MARKETS', items: [
@@ -68,6 +70,8 @@ export default function Layout() {
   const { user, logout, isAdmin, apiClient } = useAuth()
   const location  = useLocation()
   const [open, setOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const { showOnboarding, completeOnboarding } = useOnboarding()
   const overlayRef = useRef(null)
 
   // Fetch portfolio for header display
@@ -217,6 +221,9 @@ export default function Layout() {
             </div>
           )}
 
+          {/* Notification bell */}
+          <NotificationBell onClick={() => setNotifOpen(true)} count={(useAlchemyStore.getState().notifications || []).length} />
+
           {/* Portfolio metrics — right side */}
           <div className="flex items-center gap-5 ml-auto">
             {/* Connection status */}
@@ -278,6 +285,11 @@ export default function Layout() {
           </button>
         </nav>
       </div>
+      {/* Notification slide-out panel */}
+      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
+
+      {/* First-time onboarding wizard */}
+      {showOnboarding && <OnboardingWizard onComplete={completeOnboarding} />}
     </div>
   )
 }
