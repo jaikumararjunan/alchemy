@@ -325,3 +325,102 @@ async def workflow_states(user: CurrentUser = Depends(get_current_user)): return
 @workflow_router.get("/route-preview")
 async def route_preview(ticker: str="NIFTY50", user: CurrentUser = Depends(get_current_user)):
     return {"ticker": ticker, "route": "paper_mode"}
+
+
+# ── Multi-Account Support ─────────────────────────────────────────────────────
+
+@token_router.get("/accounts/{exchange}")
+async def list_accounts(exchange: str, user: CurrentUser = Depends(get_current_user)):
+    """List all accounts for an exchange (multi-account support)."""
+    with _conn() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS exchange_accounts (
+            user_id TEXT NOT NULL,
+            exchange TEXT NOT NULL,
+            account_name TEXT NOT NULL,
+            data TEXT NOT NULL DEFAULT '{}',
+            is_default INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, exchange, account_name)
+        )""")
+        rows = c.execute(
+            "SELECT account_name, data, is_default, created_at FROM exchange_accounts WHERE user_id=? AND exchange=?",
+            (user.user_id, exchange)).fetchall()
+
+    accounts = []
+    for r in rows:
+        d = json.loads(r[1])
+        accounts.append({
+            "account_name": r[0],
+            "api_key": _mask(d.get("api_key", "")),
+            "paper_trading": d.get("paper_trading", True),
+            "testnet": d.get("testnet", True),
+            "is_default": bool(r[2]),
+            "created_at": r[3],
+        })
+
+    # Also include the main token as "default" account
+    main = _load(user.user_id, exchange)
+    if main:
+        accounts.insert(0, {
+            "account_name": "default",
+            "api_key": _mask(main.get("api_key", "")),
+            "paper_trading": main.get("paper_trading", True),
+            "testnet": main.get("testnet", True),
+            "is_default": True,
+            "created_at": "",
+        })
+
+    return {"exchange": exchange, "accounts": accounts, "count": len(accounts)}
+
+
+@token_router.post("/accounts/{exchange}")
+async def add_account(exchange: str, body: dict, user: CurrentUser = Depends(get_current_user)):
+    """Add a new account for an exchange."""
+    name = body.get("account_name", "").strip()
+    if not name:
+        raise HTTPException(400, "account_name required")
+    if not body.get("api_key"):
+        raise HTTPException(400, "api_key required")
+
+    data = {
+        "exchange": exchange,
+        "api_key": body["api_key"],
+        "api_secret": body.get("api_secret", ""),
+        "paper_trading": body.get("paper_trading", True),
+        "testnet": body.get("testnet", True),
+        "market_type": body.get("market_type", "futures_usdm"),
+    }
+
+    with _conn() as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS exchange_accounts (
+            user_id TEXT NOT NULL, exchange TEXT NOT NULL,
+            account_name TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
+            is_default INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, exchange, account_name)
+        )""")
+        c.execute("INSERT OR REPLACE INTO exchange_accounts (user_id, exchange, account_name, data) VALUES (?,?,?,?)",
+                  (user.user_id, exchange, name, json.dumps(data)))
+
+    return {"ok": True, "message": f"Account '{name}' added for {exchange}"}
+
+
+@token_router.delete("/accounts/{exchange}/{account_name}")
+async def remove_account(exchange: str, account_name: str,
+                           user: CurrentUser = Depends(get_current_user)):
+    """Remove an account."""
+    with _conn() as c:
+        c.execute("DELETE FROM exchange_accounts WHERE user_id=? AND exchange=? AND account_name=?",
+                  (user.user_id, exchange, account_name))
+    return {"ok": True}
+
+
+@token_router.post("/accounts/{exchange}/{account_name}/default")
+async def set_default_account(exchange: str, account_name: str,
+                                user: CurrentUser = Depends(get_current_user)):
+    """Set an account as default for trading."""
+    with _conn() as c:
+        c.execute("UPDATE exchange_accounts SET is_default=0 WHERE user_id=? AND exchange=?",
+                  (user.user_id, exchange))
+        c.execute("UPDATE exchange_accounts SET is_default=1 WHERE user_id=? AND exchange=? AND account_name=?",
+                  (user.user_id, exchange, account_name))
+    return {"ok": True, "message": f"'{account_name}' set as default for {exchange}"}

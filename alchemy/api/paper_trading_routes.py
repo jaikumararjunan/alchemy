@@ -584,3 +584,114 @@ async def get_ai_recommendations(user: CurrentUser = Depends(get_current_user)):
         "portfolio_summary": portfolio_rec,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ── Portfolio Heatmap Data ────────────────────────────────────────────────────
+
+@router.get("/heatmap")
+async def portfolio_heatmap(user: CurrentUser = Depends(get_current_user)):
+    """Get portfolio data formatted for treemap/heatmap visualization."""
+    from alchemy.paper_trading.engine import get_paper_engine
+    portfolio = get_paper_engine().get_portfolio(user.user_id)
+    positions = portfolio.positions
+
+    if not positions:
+        return {"cells": [], "total_value": portfolio.portfolio_value}
+
+    cells = []
+    for sym, pos in positions.items():
+        value = pos.current_price * pos.quantity
+        pnl = pos.unrealized_pnl
+        pnl_pct = pos.unrealized_pct
+        cells.append({
+            "symbol": sym.replace("USDT", ""),
+            "full_symbol": sym,
+            "side": pos.side.value,
+            "value": round(value, 2),
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "quantity": pos.quantity,
+            "entry": round(pos.avg_entry_price, 2),
+            "current": round(pos.current_price, 2),
+            "weight_pct": round(value / portfolio.portfolio_value * 100, 2) if portfolio.portfolio_value else 0,
+        })
+
+    # Add cash
+    cash_pct = portfolio.cash_balance / portfolio.portfolio_value * 100 if portfolio.portfolio_value else 100
+    cells.append({
+        "symbol": "CASH", "full_symbol": "CASH", "side": "cash",
+        "value": round(portfolio.cash_balance, 2), "pnl": 0, "pnl_pct": 0,
+        "quantity": 0, "entry": 0, "current": 0,
+        "weight_pct": round(cash_pct, 2),
+    })
+
+    cells.sort(key=lambda x: abs(x["value"]), reverse=True)
+    return {"cells": cells, "total_value": round(portfolio.portfolio_value, 2)}
+
+
+# ── Correlation Matrix ────────────────────────────────────────────────────────
+
+@router.get("/correlation")
+async def correlation_matrix(
+    symbols: str = Query("BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT"),
+    interval: str = Query("1h"),
+    limit: int = Query(100, ge=20, le=500),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Calculate correlation matrix between symbols using recent price data."""
+    import httpx
+
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    price_series = {}
+
+    for sym in sym_list:
+        try:
+            resp = httpx.get(
+                f"https://api.binance.com/api/v3/klines?symbol={sym}&interval={interval}&limit={limit}",
+                timeout=10)
+            klines = resp.json()
+            closes = [float(k[4]) for k in klines]  # close price
+            if len(closes) >= 20:
+                # Calculate returns
+                returns = [(closes[i] - closes[i-1]) / closes[i-1]
+                           for i in range(1, len(closes))]
+                price_series[sym] = returns
+        except Exception:
+            continue
+
+    if len(price_series) < 2:
+        return {"matrix": {}, "symbols": list(price_series.keys()), "error": "Need at least 2 symbols"}
+
+    # Calculate correlation matrix
+    syms = list(price_series.keys())
+    n = len(syms)
+    matrix = {}
+
+    for i in range(n):
+        matrix[syms[i]] = {}
+        for j in range(n):
+            if i == j:
+                matrix[syms[i]][syms[j]] = 1.0
+            else:
+                a, b = price_series[syms[i]], price_series[syms[j]]
+                min_len = min(len(a), len(b))
+                a, b = a[:min_len], b[:min_len]
+                mean_a = sum(a) / len(a)
+                mean_b = sum(b) / len(b)
+                cov = sum((a[k] - mean_a) * (b[k] - mean_b) for k in range(min_len)) / min_len
+                std_a = (sum((x - mean_a)**2 for x in a) / len(a)) ** 0.5
+                std_b = (sum((x - mean_b)**2 for x in b) / len(b)) ** 0.5
+                corr = cov / (std_a * std_b) if std_a > 0 and std_b > 0 else 0
+                matrix[syms[i]][syms[j]] = round(corr, 4)
+
+    # Diversification score
+    off_diag = [abs(matrix[syms[i]][syms[j]]) for i in range(n) for j in range(n) if i != j]
+    avg_corr = sum(off_diag) / len(off_diag) if off_diag else 0
+    diversification = "excellent" if avg_corr < 0.3 else "good" if avg_corr < 0.5 else "moderate" if avg_corr < 0.7 else "poor"
+
+    return {
+        "matrix": matrix,
+        "symbols": syms,
+        "avg_correlation": round(avg_corr, 4),
+        "diversification": diversification,
+    }
