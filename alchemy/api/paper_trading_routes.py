@@ -181,6 +181,21 @@ async def update_prices(
     """Update current prices for your positions. Triggers stop-loss/take-profit if hit."""
     from alchemy.paper_trading.engine import get_paper_engine
     events = get_paper_engine().update_prices(user.user_id, body.prices)
+
+    # Send push notification for SL/TP triggers
+    if events:
+        try:
+            from alchemy.api.push_routes import notify_sl_tp_trigger
+            for event in events:
+                parts = event.split(": ")
+                trigger = "take_profit" if "TAKE_PROFIT" in event else "stop_loss"
+                sym_price = parts[1] if len(parts) > 1 else ""
+                symbol = sym_price.split(" @ ")[0] if " @ " in sym_price else ""
+                price = float(sym_price.split(" @ ")[1]) if " @ " in sym_price else 0
+                await notify_sl_tp_trigger(user.user_id, symbol, trigger, price, 0)
+        except Exception:
+            pass
+
     return {
         "ok": True,
         "events": events,

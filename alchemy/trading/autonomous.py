@@ -480,6 +480,19 @@ class AutonomousTradingEngine:
             await self._broadcast_event("autonomous_execution", record.to_dict())
             await self._notify_execution(record)
 
+            # Send push notification to mobile
+            try:
+                from alchemy.api.push_routes import notify_trade_fill
+                await notify_trade_fill(
+                    user_id=user_id,
+                    symbol=record.symbol,
+                    side=record.direction,
+                    quantity=quantity,
+                    price=record.execution_price or record.entry_price,
+                )
+            except Exception:
+                pass
+
             log.info("autonomous.executed",
                      symbol=record.symbol, direction=record.direction,
                      price=record.execution_price or record.entry_price)
