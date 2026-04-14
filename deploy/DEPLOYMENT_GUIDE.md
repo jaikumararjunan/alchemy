@@ -1,300 +1,418 @@
-# 🔮 Alchemy Trading Platform — Hostinger VPS Deployment Guide
+# Alchemy AI Trading Platform — Contabo VPS Deployment Guide
 
-## One-Click Deployment
-
-```bash
-# Set your domain first, then run:
-DOMAIN=alchemy.yourdomain.com \
-ADMIN_EMAIL=admin@yourdomain.com \
-bash <(curl -fsSL https://raw.githubusercontent.com/jaikumararjunan/alchemy/main/deploy/install.sh)
-```
-
-That's it. The script handles everything: Python, Node.js, Nginx, SSL, systemd.
+**VPS:** Contabo 213.199.38.90  
+**Domain:** akilamirthya.in (Hostinger DNS)  
+**Stack:** Docker Compose → Nginx + FastAPI + React + SQLite  
+**Commits:** 205 | **Routes:** 303 | **Tests:** 403 pass
 
 ---
 
-## Requirements
+## Prerequisites
 
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| Plan | KVM2 (4 vCPU, 8 GB) | KVM4 (8 vCPU, 16 GB) |
-| OS | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS |
-| Storage | 50 GB SSD | 100 GB NVMe |
-| Bandwidth | 200 Mbps | 400 Mbps |
-
-**Get a VPS:** https://www.hostinger.in/vps-hosting
-
----
-
-## Step-by-Step Manual Deployment
-
-### 1. Order Hostinger VPS
-
-1. Go to hostinger.in → VPS Hosting → Select **KVM 2** or higher
-2. Choose **Ubuntu 22.04 LTS**
-3. Set a strong root password or SSH key
-4. Note your VPS IP address
-
-### 2. Point DNS
-
-In your domain registrar (or Hostinger DNS):
-```
-A    alchemy.yourdomain.com    →  YOUR_VPS_IP
-A    www.alchemy.yourdomain.com →  YOUR_VPS_IP
-```
-Wait 5-15 minutes for propagation.
-
-### 3. SSH into your VPS
-
-```bash
-ssh root@YOUR_VPS_IP
-# Or with SSH key:
-ssh -i ~/.ssh/your_key root@YOUR_VPS_IP
-```
-
-### 4. Run One-Click Installer
-
-```bash
-# Option A: Pipe to bash (fastest)
-DOMAIN=alchemy.yourdomain.com \
-ADMIN_EMAIL=your@email.com \
-bash <(curl -fsSL https://raw.githubusercontent.com/jaikumararjunan/alchemy/main/deploy/install.sh)
-
-# Option B: Clone then run
-git clone https://github.com/jaikumararjunan/alchemy.git /opt/alchemy
-DOMAIN=alchemy.yourdomain.com bash /opt/alchemy/deploy/install.sh
-```
-
-### 5. First Login
-
-After installation completes:
-1. Open `https://alchemy.yourdomain.com`
-2. Click **Sign In**
-3. Email: `admin@alchemy.in` (or your ADMIN_EMAIL)
-4. Password: shown at end of install script (also in `/opt/alchemy/.env`)
+| Item | Status | Notes |
+|------|--------|-------|
+| Contabo VPS access | ✅ | SSH root@213.199.38.90 |
+| Domain DNS | ⚠️ Check | A record: akilamirthya.in → 213.199.38.90 |
+| Docker installed | ✅ | docker + docker compose |
+| Git installed | ✅ | Git 2.x |
+| GitHub PAT | ✅ | `YOUR_GITHUB_PAT` |
 
 ---
 
-## What the Installer Configures
+## Step 1: SSH into VPS
 
-```
-/opt/alchemy/                     ← Application root
-├── .env                          ← Auto-generated secrets
-├── .venv/                        ← Python 3.11 virtual env
-├── static/                       ← Built React frontend
-├── data/
-│   ├── alchemy.db               ← SQLite database
-│   ├── chromadb/                ← Vector DB for EI system
-│   └── logs/api.log             ← Application logs
-├── alchemy/                      ← Python backend
-└── frontend/                     ← React source
-
-/etc/systemd/system/
-└── alchemy-api.service          ← Systemd service
-
-/etc/nginx/sites-available/
-└── alchemy                      ← Nginx config with SSL
+```bash
+ssh root@213.199.38.90
 ```
 
 ---
 
-## Post-Installation: Configure Exchange APIs
+## Step 2: Clone or Update Repository
 
-### Method 1: Via API (recommended)
+### First Time Setup (if /opt/alchemy doesn't exist):
+
 ```bash
-# Get your access token first
-TOKEN=$(curl -s -X POST https://alchemy.yourdomain.com/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@alchemy.in","password":"YOUR_PASSWORD"}' \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+# Clone repo
+cd /opt
+git clone https://YOUR_GITHUB_PAT@github.com/jaikumararjunan/alchemy.git
+cd alchemy
 
-# Register Delta Exchange (paper mode for safety)
-curl -X POST https://alchemy.yourdomain.com/tokens/register \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
+# Create data directory
+mkdir -p /data /var/lib/alchemy
+chmod 777 /data /var/lib/alchemy
+```
+
+### If Already Cloned (update to latest):
+
+```bash
+cd /opt/alchemy
+git pull origin main
+```
+
+---
+
+## Step 3: Configure Environment Variables
+
+```bash
+# Create .env file from template
+cp .env.example .env
+
+# Generate secrets
+JWT_SECRET=$(openssl rand -hex 32)
+VAULT_KEY=$(openssl rand -hex 32)
+FERNET_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" 2>/dev/null || echo "generate-later")
+
+# Edit .env with your values
+cat > /opt/alchemy/.env << 'ENVEOF'
+# ── Application ──
+ENV=production
+LOG_LEVEL=info
+ENABLE_AI_AGENTS=true
+
+# ── Security (CHANGE THESE) ──
+JWT_SECRET_KEY=PASTE_YOUR_JWT_SECRET_HERE
+ALCHEMY_VAULT_KEY=PASTE_YOUR_VAULT_KEY_HERE
+ALCHEMY_FERNET_KEY=PASTE_YOUR_FERNET_KEY_HERE
+
+# ── Database ──
+DATABASE_URL=sqlite+aiosqlite:////data/alchemy.db
+
+# ── Admin Bootstrap ──
+ADMIN_EMAIL=admin@akilamirthya.in
+ADMIN_PASSWORD=YourStrongAdminPassword123!
+
+# ── Delta Exchange (optional — testnet) ──
+DELTA_API_KEY=
+DELTA_API_SECRET=
+DELTA_TESTNET=true
+
+# ── Telegram Bot (optional) ──
+TELEGRAM_BOT_TOKEN=
+
+# ── Rate Limiting ──
+CREDENTIAL_STUFFING_LIMIT=20
+ENVEOF
+
+# Now paste your generated secrets:
+sed -i "s/PASTE_YOUR_JWT_SECRET_HERE/$JWT_SECRET/" .env
+sed -i "s/PASTE_YOUR_VAULT_KEY_HERE/$VAULT_KEY/" .env
+
+echo "✅ .env configured"
+echo "⚠️  Edit .env to add FERNET_KEY, DELTA keys, TELEGRAM token"
+```
+
+---
+
+## Step 4: Build and Deploy
+
+```bash
+cd /opt/alchemy
+
+# Build Docker image (includes frontend build)
+docker compose -f docker-compose.prod.yml build --no-cache alchemy
+
+# Start services
+docker compose -f docker-compose.prod.yml up -d
+
+# Verify
+docker compose -f docker-compose.prod.yml ps
+```
+
+Expected output:
+```
+NAME       IMAGE           STATUS                    PORTS
+alchemy    alchemy:latest  Up 30 seconds (healthy)   8000/tcp
+nginx      nginx:alpine    Up 30 seconds             0.0.0.0:80->80/tcp
+```
+
+---
+
+## Step 5: Verify Health
+
+```bash
+# Health check
+curl -s http://localhost:8000/health | python3 -m json.tool
+
+# Expected:
+# {
+#     "status": "ok",
+#     "version": "0.6.0",
+#     "routes": 303
+# }
+
+# Check from outside (browser):
+# http://213.199.38.90
+# http://akilamirthya.in (if DNS resolves)
+```
+
+---
+
+## Step 6: SSL/HTTPS Setup
+
+### 6a. Verify DNS First
+
+```bash
+# Check if domain points to VPS
+dig +short akilamirthya.in
+
+# Should return: 213.199.38.90
+# If not, go to Hostinger DNS panel:
+#   Type: A, Name: @, Value: 213.199.38.90, TTL: 3600
+#   Type: A, Name: www, Value: 213.199.38.90, TTL: 3600
+# Wait 5-30 minutes for propagation
+```
+
+### 6b. Run SSL Setup
+
+```bash
+cd /opt/alchemy
+bash deploy/setup-ssl.sh
+```
+
+This will:
+1. Check DNS resolution
+2. Install certbot if needed
+3. Get Let's Encrypt certificate
+4. Configure nginx for HTTPS
+5. Set up auto-renewal cron (daily 3 AM)
+
+After success:
+```
+https://akilamirthya.in  ← Your trading platform!
+```
+
+---
+
+## Step 7: Create Admin Account
+
+```bash
+# The first signup becomes admin, or use the bootstrap:
+curl -X POST http://localhost:8000/api/auth/signup \
+  -H "Content-Type: application/json" \
   -d '{
-    "exchange": "delta",
-    "api_key": "YOUR_DELTA_API_KEY",
-    "api_secret": "YOUR_DELTA_SECRET",
-    "paper_mode": true,
-    "testnet": true
+    "email": "your@email.com",
+    "password": "YourStrongPassword123!",
+    "username": "jai",
+    "full_name": "Jai Kumar"
   }'
 ```
 
-### Method 2: Edit .env directly
+---
+
+## Step 8: Optional — Configure Telegram Bot
+
 ```bash
-nano /opt/alchemy/.env
-# Add:
-DELTA_API_KEY=your_key
-DELTA_API_SECRET=your_secret
-systemctl restart alchemy-api
+# 1. Message @BotFather on Telegram
+#    Send: /newbot
+#    Choose name: Alchemy Trading Bot
+#    Get token: 1234567890:ABCdefGHIjklMNOpqrSTUVwxyz
+
+# 2. Add token to .env
+echo "TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrSTUVwxyz" >> /opt/alchemy/.env
+
+# 3. Restart
+docker compose -f docker-compose.prod.yml restart alchemy
+
+# 4. Message your bot /start on Telegram
+# 5. Register via API:
+curl -X POST http://localhost:8000/api/telegram/register \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"chat_id": "YOUR_CHAT_ID"}'
 ```
 
 ---
 
-## Notification Setup
-
-### Telegram (Recommended)
-```bash
-curl -X POST https://alchemy.yourdomain.com/notifications/channels \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "My Telegram",
-    "provider": "telegram",
-    "config": {
-      "bot_token": "YOUR_BOT_TOKEN",
-      "chat_id": "YOUR_CHAT_ID"
-    }
-  }'
-```
-
-### Test notifications
-```bash
-curl -X POST https://alchemy.yourdomain.com/notifications/channels/CHANNEL_ID/test \
-  -H "Authorization: Bearer $TOKEN"
-```
-
----
-
-## Upgrade to PostgreSQL (Production)
+## Step 9: Optional — Delta Exchange Testnet
 
 ```bash
-# 1. Configure PostgreSQL
-sudo -u postgres psql -c "CREATE USER alchemy WITH PASSWORD 'strong_password';"
-sudo -u postgres psql -c "CREATE DATABASE alchemy OWNER alchemy;"
-
-# 2. Update .env
-sed -i "s|DATABASE_URL=sqlite.*|DATABASE_URL=postgresql+asyncpg://alchemy:strong_password@localhost:5432/alchemy|" /opt/alchemy/.env
-
-# 3. Run migration
-/opt/alchemy/.venv/bin/python3 -c "
-import asyncio
-from alchemy.api.database import create_tables
-asyncio.run(create_tables())
-print('PostgreSQL tables created')
-"
+# 1. Create testnet account: https://testnet.delta.exchange
+# 2. Generate API keys in testnet dashboard
+# 3. Add to .env:
+cat >> /opt/alchemy/.env << 'EOF'
+DELTA_API_KEY=your_testnet_key
+DELTA_API_SECRET=your_testnet_secret
+DELTA_TESTNET=true
+EOF
 
 # 4. Restart
-systemctl restart alchemy-api
+docker compose -f docker-compose.prod.yml restart alchemy
+
+# 5. Verify:
+curl -s http://localhost:8000/api/delta/status \
+  -H "Authorization: Bearer YOUR_TOKEN" | python3 -m json.tool
 ```
 
 ---
 
-## Monitoring & Maintenance
+## Daily Operations
 
-### Check service status
-```bash
-systemctl status alchemy-api
-journalctl -u alchemy-api -f          # Live logs
-tail -f /opt/alchemy/data/logs/api.log
-```
-
-### Update to latest version
-```bash
-sudo bash /opt/alchemy/deploy/update.sh
-```
-
-### Backup
-```bash
-# Daily backup script
-cat > /etc/cron.daily/alchemy-backup << 'CRON'
-#!/bin/bash
-DATE=$(date +%Y%m%d)
-BACKUP_DIR=/var/backups/alchemy
-mkdir -p $BACKUP_DIR
-cp /opt/alchemy/data/alchemy.db $BACKUP_DIR/alchemy_$DATE.db
-cp /opt/alchemy/.env $BACKUP_DIR/env_$DATE.bak
-# Keep 30 days
-find $BACKUP_DIR -mtime +30 -delete
-CRON
-chmod +x /etc/cron.daily/alchemy-backup
-```
-
-### SSL renewal (automatic via certbot)
-```bash
-certbot renew --dry-run     # Test
-certbot renew               # Force renew
-```
-
----
-
-## Security Hardening (Post-Install)
+### View Logs
 
 ```bash
-# Change SSH port
-sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config
-ufw allow 2222/tcp && ufw delete allow ssh
-systemctl restart sshd
+# All logs
+docker compose -f docker-compose.prod.yml logs -f alchemy
 
-# Disable root login
-sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-systemctl restart sshd
+# Last 100 lines
+docker compose -f docker-compose.prod.yml logs --tail=100 alchemy
 
-# Enable automatic security updates
-apt install unattended-upgrades -y
-dpkg-reconfigure -f noninteractive unattended-upgrades
-
-# Set up Fail2ban for API
-cat > /etc/fail2ban/jail.d/alchemy.conf << 'F2B'
-[alchemy-auth]
-enabled = true
-port = 80,443
-filter = alchemy-auth
-logpath = /opt/alchemy/data/logs/api.log
-maxretry = 10
-bantime = 3600
-F2B
-systemctl restart fail2ban
+# Filter errors
+docker compose -f docker-compose.prod.yml logs alchemy 2>&1 | grep -i error
 ```
 
----
+### Update to Latest Code
 
-## Hostinger-Specific Tips
+```bash
+cd /opt/alchemy
+bash deploy/rebuild.sh
 
-1. **Snapshot before deployment**: Take a Hostinger snapshot before running the installer
-2. **Firewall**: Hostinger has a panel firewall — also enable UFW as defence-in-depth
-3. **IPv6**: Add AAAA records if your VPS has IPv6
-4. **Cloudflare** (optional): Put Cloudflare in front for DDoS protection + CDN
-5. **Private networking**: Use Hostinger private networks if running Redis/DB on separate VPS
+# Or manually:
+git pull origin main
+docker compose -f docker-compose.prod.yml build --no-cache alchemy
+docker compose -f docker-compose.prod.yml up -d alchemy
+```
+
+### Restart Services
+
+```bash
+# Restart app only
+docker compose -f docker-compose.prod.yml restart alchemy
+
+# Restart everything
+docker compose -f docker-compose.prod.yml restart
+
+# Full stop + start
+docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Database Backup
+
+```bash
+# SQLite backup
+cp /data/alchemy.db /data/backups/alchemy_$(date +%Y%m%d_%H%M).db
+
+# Auto backup cron (add this):
+(crontab -l; echo "0 2 * * * cp /data/alchemy.db /data/backups/alchemy_\$(date +\%Y\%m\%d).db") | crontab -
+mkdir -p /data/backups
+```
+
+### Monitor Disk Usage
+
+```bash
+df -h /
+du -sh /data/alchemy.db
+docker system df
+```
+
+### Clean Docker Cache
+
+```bash
+# Remove old images
+docker image prune -f
+
+# Full cleanup (careful!)
+docker system prune -f
+```
 
 ---
 
 ## Troubleshooting
 
-| Issue | Command | Fix |
-|-------|---------|-----|
-| API not starting | `systemctl status alchemy-api` | Check `.env` file |
-| 502 Bad Gateway | `curl localhost:8000/health` | Restart API service |
-| SSL not working | `certbot certificates` | Run `certbot --nginx -d domain` |
-| DB locked | `ls -la /opt/alchemy/data/` | Switch to PostgreSQL |
-| Login fails | `curl -X POST localhost:8000/auth/login -d '...'` | Check DB tables |
+### App Won't Start
 
-### Reset admin password
 ```bash
-/opt/alchemy/.venv/bin/python3 << 'EOF'
-import asyncio, os
-os.chdir('/opt/alchemy')
-# Load env
-for line in open('.env').readlines():
-    if '=' in line and not line.startswith('#'):
-        k,v = line.strip().split('=',1)
-        os.environ.setdefault(k,v)
+# Check container status
+docker compose -f docker-compose.prod.yml ps
 
-async def reset():
-    from alchemy.api.database import get_session_factory
-    from alchemy.auth.service import AuthService
-    from sqlalchemy import select
-    from alchemy.users.models import User
-    async with get_session_factory()() as db:
-        result = await db.execute(select(User).where(User.email=="admin@alchemy.in"))
-        user = result.scalar_one_or_none()
-        if user:
-            from alchemy.auth.security import hash_password
-            user.password_hash = hash_password("NewAlchemy#Admin!2024")
-            await db.commit()
-            print("Password reset to: NewAlchemy#Admin!2024")
+# Check logs
+docker compose -f docker-compose.prod.yml logs --tail=50 alchemy
 
-asyncio.run(reset())
-EOF
+# Common fixes:
+# 1. Missing .env → cp .env.example .env and edit
+# 2. Port conflict → lsof -i :8000
+# 3. Permission issue → chmod 777 /data
+# 4. Build failed → docker compose build --no-cache alchemy
 ```
+
+### 502 Bad Gateway
+
+```bash
+# Nginx can't reach alchemy container
+docker compose -f docker-compose.prod.yml restart alchemy
+sleep 10
+curl -s http://localhost:8000/health
+```
+
+### Database Locked
+
+```bash
+# SQLite locking issue (too many concurrent writes)
+# Option A: Restart
+docker compose -f docker-compose.prod.yml restart alchemy
+
+# Option B: Migrate to PostgreSQL (recommended for production)
+# Install postgres:
+apt install postgresql postgresql-contrib
+sudo -u postgres createuser alchemy --password
+sudo -u postgres createdb alchemy_prod --owner=alchemy
+
+# Run migration:
+python3 scripts/migrate_to_postgres.py \
+  --sqlite /data/alchemy.db \
+  --postgres postgresql://alchemy:yourpass@localhost:5432/alchemy_prod
+
+# Update .env:
+# DATABASE_URL=postgresql+asyncpg://alchemy:yourpass@localhost:5432/alchemy_prod
+```
+
+### SSL Certificate Renewal Failed
+
+```bash
+# Manual renewal
+certbot renew --force-renewal
+cp /etc/letsencrypt/live/akilamirthya.in/*.pem /opt/alchemy/ssl/
+docker compose -f docker-compose.prod.yml restart nginx
+```
+
+---
+
+## Quick Reference Card
+
+```
+SSH:      ssh root@213.199.38.90
+App:      http://213.199.38.90 (or https://akilamirthya.in after SSL)
+API:      http://213.199.38.90/api/health
+Logs:     docker compose -f docker-compose.prod.yml logs -f alchemy
+Restart:  docker compose -f docker-compose.prod.yml restart alchemy
+Update:   cd /opt/alchemy && bash deploy/rebuild.sh
+Backup:   cp /data/alchemy.db /data/backups/alchemy_$(date +%Y%m%d).db
+```
+
+---
+
+## Architecture on VPS
+
+```
+                    ┌─────────────────┐
+     Port 80/443   │     Nginx       │  Reverse proxy + SSL
+                    │  (Docker)       │  Rate limiting
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+     Port 8000     │    Alchemy      │  FastAPI + React (built-in)
+     (internal)    │   (Docker)      │  303 API routes
+                    │                 │  WebSocket price stream
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  /data/         │  SQLite database
+                    │  alchemy.db     │  Paper trading state
+                    │                 │  Audit logs
+                    └─────────────────┘
+```
+
+---
+
+*Alchemy AI Trading Platform — Contabo VPS Deployment Guide*
+*VPS: 213.199.38.90 | Domain: akilamirthya.in | 205 commits*
