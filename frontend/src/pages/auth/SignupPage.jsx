@@ -151,7 +151,7 @@ export default function SignupPage() {
   }
 
   if (success) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'var(--surface-0)'}}>
       <div className="text-center max-w-sm">
         <CheckCircle size={48} className="text-emerald-400 mx-auto mb-4" />
         <h2 className="text-xl font-bold text-white mb-2">Account Created!</h2>
@@ -163,17 +163,17 @@ export default function SignupPage() {
 
   // ── OTP Verification Screen ──
   if (otpMode) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'var(--surface-0)'}}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">📧</div>
-          <h1 className="text-2xl font-bold text-white">Verify Your Email</h1>
+          <h1 className="text-2xl font-display font-bold text-white tracking-tight">Verify Your Email</h1>
           <p className="text-gray-400 text-sm mt-1">
             We sent a 6-digit code to <span className="text-blue-400">{otpEmail}</span>
           </p>
         </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">
+        <div className="rounded-2xl p-8 shadow-2xl" style={{background:'var(--surface-2)', border:'1px solid var(--border)'}}>
           {error && (
             <div className="bg-red-900/30 border border-red-500/40 rounded-lg px-3 py-2.5 mb-4 text-sm text-red-400">
               {error}
@@ -224,15 +224,15 @@ export default function SignupPage() {
   const scoreColor = strength.score > 75 ? 'bg-emerald-500' : strength.score > 50 ? 'bg-yellow-400' : strength.score > 25 ? 'bg-amber-500' : 'bg-red-500'
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'var(--surface-0)'}}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🔮</div>
-          <h1 className="text-2xl font-bold text-white">Create Account</h1>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20"><span className="text-white text-2xl font-display font-black">A</span></div>
+          <h1 className="text-2xl font-display font-bold text-white tracking-tight">Create Account</h1>
           <p className="text-gray-400 text-sm mt-1">Join Alchemy Trading Platform</p>
         </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">
+        <div className="rounded-2xl p-8 shadow-2xl" style={{background:'var(--surface-2)', border:'1px solid var(--border)'}}>
           {error && (
             <div className="bg-red-900/30 border border-red-500/40 rounded-lg px-3 py-2.5 mb-4 text-sm text-red-400">
               {error}
@@ -242,13 +242,13 @@ export default function SignupPage() {
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Email</label>
+                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Email</label>
                 <input type="email" value={form.email} onChange={f('email')}
                   className="input-field" placeholder="you@example.com"
                   autoComplete="email" required />
               </div>
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Username</label>
+                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Username</label>
                 <input type="text" value={form.username} onChange={f('username')}
                   className="input-field" placeholder="trader123"
                   autoComplete="username" required />
@@ -262,14 +262,14 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Full Name</label>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Full Name</label>
               <input type="text" value={form.fullName} onChange={f('fullName')}
                 className="input-field" placeholder="Jai Kumar"
                 autoComplete="name" required />
             </div>
 
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Password</label>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Password</label>
               <div className="relative">
                 <input type={showPwd ? 'text' : 'password'} value={form.password}
                   onChange={f('password')} className="input-field pr-10"
@@ -295,7 +295,7 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Confirm Password</label>
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Confirm Password</label>
               <input type="password" value={form.confirm} onChange={f('confirm')}
                 className={clsx('input-field', form.confirm && (form.password === form.confirm ? 'border-emerald-500' : 'border-red-500'))}
                 placeholder="Repeat password" autoComplete="new-password" required />

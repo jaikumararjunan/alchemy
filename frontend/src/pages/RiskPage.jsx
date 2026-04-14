@@ -38,7 +38,7 @@ export default function RiskPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-bold text-white flex items-center gap-2">
+      <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
         <ShieldAlert size={20} className="text-amber-400"/> Risk Manager
       </h1>
 

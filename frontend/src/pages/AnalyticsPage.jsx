@@ -63,7 +63,7 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-white">Analytics</h1>
+        <h1 className="text-xl font-display font-bold text-white tracking-tight">Analytics</h1>
         <p className="text-sm text-gray-400">Real trade performance from your connected exchanges</p>
       </div>
 

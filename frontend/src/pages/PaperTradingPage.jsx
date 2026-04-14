@@ -86,7 +86,7 @@ export default function PaperTradingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -155,7 +155,7 @@ export default function PaperTradingPage() {
       <EquityCurveChart api={api} />
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 bg-gray-900/50 p-1 rounded-xl border border-gray-800">
+      <div className="flex gap-1 bg-[var(--surface-2)] p-1 rounded-xl border border-white/[0.04]">
         {[
           { id: 'trade', label: 'Quick Trade', icon: Zap },
           { id: 'positions', label: 'Positions', icon: TrendingUp, badge: Object.keys(positions).length },
@@ -218,7 +218,7 @@ function EquityCurveChart({ api }) {
   const isUp = last >= first
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+    <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-4">
       <div className="flex justify-between items-center mb-2">
         <span className="text-gray-400 text-xs font-medium">PORTFOLIO EQUITY CURVE (7D)</span>
         <span className={clsx('text-xs font-bold', isUp ? 'text-emerald-400' : 'text-red-400')}>
@@ -395,7 +395,7 @@ function QuickTradePanel({ api, portfolio }) {
     )}
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Order Form */}
-      <div className="lg:col-span-2 rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+      <div className="lg:col-span-2 rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-5">
         <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
           <Zap className="w-5 h-5 text-yellow-400" /> Place Paper Trade
         </h3>
@@ -495,14 +495,14 @@ function QuickTradePanel({ api, portfolio }) {
 
       {/* Market Info Sidebar */}
       <div className="space-y-3">
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+        <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-4">
           <h4 className="text-gray-400 text-xs font-medium mb-2">LIVE MARKET</h4>
           <div className="text-2xl font-bold text-white tabular-nums">
             ${parseFloat(price || 0).toLocaleString(undefined, {maximumFractionDigits: 2})}
           </div>
           <div className="text-sm text-gray-400 mt-1">{symbol}</div>
         </div>
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+        <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-4">
           <h4 className="text-gray-400 text-xs font-medium mb-3">QUICK STATS</h4>
           <div className="space-y-2.5">
             <StatRow label="Cash Available" value={`$${(cash).toLocaleString(undefined, {maximumFractionDigits: 0})}`} />
@@ -596,7 +596,7 @@ function PositionsPanel({ api, positions }) {
   const entries = Object.entries(positions)
   if (entries.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center">
+      <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-12 text-center">
         <TrendingUp className="w-12 h-12 text-gray-700 mx-auto mb-3" />
         <p className="text-gray-400 font-medium">No open positions</p>
         <p className="text-gray-600 text-sm mt-1">Place a trade to get started</p>
@@ -606,9 +606,9 @@ function PositionsPanel({ api, positions }) {
 
   return (
     <>
-    <div className="rounded-xl border border-gray-800 overflow-hidden">
+    <div className="rounded-xl border border-white/[0.04] overflow-hidden">
       <table className="w-full">
-        <thead className="bg-gray-800/50">
+        <thead className="bg-white/[0.02]">
           <tr className="text-xs text-gray-400">
             <th className="text-left px-4 py-3">Symbol</th>
             <th className="text-left px-4 py-3">Side</th>
@@ -622,7 +622,7 @@ function PositionsPanel({ api, positions }) {
         </thead>
         <tbody>
           {entries.map(([sym, pos]) => (
-            <tr key={sym} className="border-t border-gray-800 hover:bg-gray-800/30">
+            <tr key={sym} className="border-t border-white/[0.04] hover:bg-gray-800/30">
               <td className="px-4 py-3 text-white font-semibold text-sm">{sym.replace('USDT','')}/USDT</td>
               <td className="px-4 py-3">
                 <span className={clsx('px-2 py-0.5 rounded text-xs font-medium',
@@ -630,9 +630,9 @@ function PositionsPanel({ api, positions }) {
                   {pos.side?.toUpperCase()}
                 </span>
               </td>
-              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">{pos.quantity}</td>
-              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">${pos.avg_entry_price?.toLocaleString()}</td>
-              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums">${(livePrices[sym] || pos.current_price)?.toLocaleString()}</td>
+              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums font-mono">{pos.quantity}</td>
+              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums font-mono font-mono">${pos.avg_entry_price?.toLocaleString()}</td>
+              <td className="px-4 py-3 text-right text-gray-300 text-sm tabular-nums font-mono font-mono">${(livePrices[sym] || pos.current_price)?.toLocaleString()}</td>
               <td className="px-4 py-3 text-right"><PnL value={(() => {
                 const lp = livePrices[sym] || pos.current_price || 0
                 if (pos.side === 'long') return (lp - pos.avg_entry_price) * pos.quantity
@@ -778,7 +778,7 @@ function BacktestPanel({ api, strategies }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Config */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5 space-y-4">
+        <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-5 space-y-4">
           <h3 className="text-white font-semibold flex items-center gap-2">
             <Play className="w-5 h-5 text-purple-400" /> Configure Backtest
           </h3>
@@ -863,7 +863,7 @@ function BacktestPanel({ api, strategies }) {
                   ['Profit Factor', perf.profit_factor, 'text-cyan-400'],
                   ['Fees', `$${perf.total_fees?.toFixed(0)}`, 'text-gray-400'],
                 ].map(([l,v,c]) => (
-                  <div key={l} className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 text-center">
+                  <div key={l} className="rounded-lg border border-white/[0.04] bg-[var(--surface-2)] p-3 text-center">
                     <div className={`text-lg font-bold ${c} tabular-nums`}>{v}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{l}</div>
                   </div>
@@ -871,9 +871,9 @@ function BacktestPanel({ api, strategies }) {
               </div>
 
               {/* Trade list */}
-              <div className="rounded-xl border border-gray-800 overflow-hidden max-h-64 overflow-y-auto">
+              <div className="rounded-xl border border-white/[0.04] overflow-hidden max-h-64 overflow-y-auto">
                 <table className="w-full text-xs">
-                  <thead className="bg-gray-800/50 sticky top-0">
+                  <thead className="bg-white/[0.02] sticky top-0">
                     <tr className="text-gray-400">
                       <th className="text-left px-3 py-2">Entry</th>
                       <th className="text-right px-3 py-2">Price</th>
@@ -885,10 +885,10 @@ function BacktestPanel({ api, strategies }) {
                   </thead>
                   <tbody>
                     {(result.trades || []).slice(-15).reverse().map((t, i) => (
-                      <tr key={i} className="border-t border-gray-800/50">
+                      <tr key={i} className="border-t border-white/[0.04]/50">
                         <td className="px-3 py-1.5 text-gray-400">{t.entry_date?.split('T')[0]}</td>
-                        <td className="px-3 py-1.5 text-right text-gray-300 tabular-nums">${t.entry_price}</td>
-                        <td className="px-3 py-1.5 text-right text-gray-300 tabular-nums">${t.exit_price}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-300 tabular-nums font-mono">${t.entry_price}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-300 tabular-nums font-mono">${t.exit_price}</td>
                         <td className="px-3 py-1.5 text-right"><PnL value={t.net_pnl} prefix="$" /></td>
                         <td className="px-3 py-1.5 text-right"><PnL value={t.return_pct} suffix="%" /></td>
                         <td className="px-3 py-1.5 text-right text-gray-500">{t.exit_reason}</td>
@@ -899,7 +899,7 @@ function BacktestPanel({ api, strategies }) {
               </div>
             </>
           ) : (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-16 text-center">
+            <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-16 text-center">
               <LineChart className="w-16 h-16 text-gray-700 mx-auto mb-4" />
               <p className="text-gray-400 font-medium">Configure and run a backtest</p>
               <p className="text-gray-600 text-sm mt-1">Test strategies against real historical data</p>
@@ -917,8 +917,8 @@ function BacktestPanel({ api, strategies }) {
 function TradeHistoryPanel({ trades }) {
   const list = trades?.trades || []
   return (
-    <div className="rounded-xl border border-gray-800 overflow-hidden">
-      <div className="bg-gray-800/50 px-4 py-3 flex justify-between items-center">
+    <div className="rounded-xl border border-white/[0.04] overflow-hidden">
+      <div className="bg-white/[0.02] px-4 py-3 flex justify-between items-center">
         <span className="text-white font-medium text-sm">Trade History ({trades?.total || 0})</span>
         <span className="text-sm">Realized P&L: <PnL value={trades?.realized_pnl || 0} prefix="$" /></span>
         <a href="/api/paper/tax-export?financial_year=2025-26" target="_blank"
@@ -942,7 +942,7 @@ function TradeHistoryPanel({ trades }) {
           </tr></thead>
           <tbody>
             {list.slice().reverse().map((t, i) => (
-              <tr key={i} className="border-t border-gray-800/50 hover:bg-gray-800/20">
+              <tr key={i} className="border-t border-white/[0.04]/50 hover:bg-gray-800/20">
                 <td className="px-4 py-2 text-white font-medium">{t.symbol}</td>
                 <td className="px-4 py-2">
                   <span className={clsx('px-1.5 py-0.5 rounded text-xs',
@@ -950,8 +950,8 @@ function TradeHistoryPanel({ trades }) {
                     {t.side}
                   </span>
                 </td>
-                <td className="px-4 py-2 text-right text-gray-300 tabular-nums">${t.entry_price}</td>
-                <td className="px-4 py-2 text-right text-gray-300 tabular-nums">${t.exit_price}</td>
+                <td className="px-4 py-2 text-right text-gray-300 tabular-nums font-mono">${t.entry_price}</td>
+                <td className="px-4 py-2 text-right text-gray-300 tabular-nums font-mono">${t.exit_price}</td>
                 <td className="px-4 py-2 text-right text-gray-400 tabular-nums">{t.quantity}</td>
                 <td className="px-4 py-2 text-right"><PnL value={t.net_pnl} prefix="$" /></td>
                 <td className="px-4 py-2 text-right"><PnL value={t.return_pct} suffix="%" /></td>
@@ -1013,7 +1013,7 @@ function CapitalPanel({ api }) {
 
       {/* Position Allocations */}
       {posEntries.length > 0 && (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+        <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-5">
           <h3 className="text-white font-semibold mb-3">Current Position Allocation</h3>
           <div className="space-y-2">
             {/* Cash */}
@@ -1022,7 +1022,7 @@ function CapitalPanel({ api }) {
                 <span className="text-gray-300 font-medium text-sm">💵 Cash Reserve</span>
                 <div className="flex items-center gap-3">
                   <span className="text-gray-400 text-sm">{cashPct.toFixed(1)}%</span>
-                  <span className="text-white font-semibold text-sm tabular-nums">${(p.cash_balance||0).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                  <span className="text-white font-semibold text-sm tabular-nums font-mono font-mono">${(p.cash_balance||0).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                 </div>
               </div>
               <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
@@ -1046,7 +1046,7 @@ function CapitalPanel({ api }) {
                     </span>
                     <div className="flex items-center gap-3">
                       <span className="text-gray-400 text-sm">{pct.toFixed(1)}%</span>
-                      <span className="text-white font-semibold text-sm tabular-nums">${posValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                      <span className="text-white font-semibold text-sm tabular-nums font-mono font-mono">${posValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                       <PnL value={pos.unrealized_pnl || 0} prefix="$" />
                     </div>
                   </div>
@@ -1061,10 +1061,10 @@ function CapitalPanel({ api }) {
       )}
 
       {/* Strategy Templates */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+      <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-5">
         <h3 className="text-white font-semibold mb-3">{tree.length > 0 ? 'Strategy Buckets' : 'Quick Start — Choose a Template'}</h3>
         {tree.length === 0 ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
             {[
               ['conservative', 'Conservative', 'Capital preservation, 20% cash', Shield, 'text-green-400'],
               ['balanced', 'Balanced', 'Mix of trend + mean reversion', BarChart3, 'text-blue-400'],
@@ -1091,7 +1091,7 @@ function CapitalPanel({ api }) {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-gray-400 text-sm">{bucket.allocation_pct}%</span>
-                    <span className="text-white font-semibold text-sm tabular-nums">${bucket.allocated_capital?.toLocaleString()}</span>
+                    <span className="text-white font-semibold text-sm tabular-nums font-mono font-mono">${bucket.allocated_capital?.toLocaleString()}</span>
                     <PnL value={bucket.return_pct || 0} suffix="%" />
                   </div>
                 </div>
@@ -1130,7 +1130,7 @@ function AIRecommendationsPanel({ api }) {
     TAKE_PROFIT: 'border-emerald-500/40 bg-emerald-500/5',
     CUT_LOSS: 'border-red-500/40 bg-red-500/5',
     TIGHTEN_STOP: 'border-yellow-500/40 bg-yellow-500/5',
-    HOLD: 'border-gray-700 bg-gray-900/50',
+    HOLD: 'border-gray-700 bg-[var(--surface-2)]',
   }
   const actionIcons = {
     TAKE_PROFIT: '🎯', CUT_LOSS: '🛑', TIGHTEN_STOP: '⚠️', HOLD: '✅',
@@ -1160,7 +1160,7 @@ function AIRecommendationsPanel({ api }) {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+      <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-4">
         <div className="flex gap-6 text-sm">
           <div><span className="text-gray-500">Cash:</span> <span className="text-white font-medium">{portfolio.cash_pct}%</span></div>
           <div><span className="text-gray-500">Positions:</span> <span className="text-white font-medium">{portfolio.positions_count}</span></div>
@@ -1178,7 +1178,7 @@ function AIRecommendationsPanel({ api }) {
         <Zap className="w-5 h-5 text-yellow-400" /> Position Recommendations
       </h3>
       {recs.length === 0 ? (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center text-gray-500">
+        <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-12 text-center text-gray-500">
           No open positions to analyze
         </div>
       ) : (
@@ -1223,9 +1223,9 @@ function AIRecommendationsPanel({ api }) {
           <h3 className="text-white font-semibold mt-6 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-purple-400" /> Strategy Performance
           </h3>
-          <div className="rounded-xl border border-gray-800 overflow-hidden">
+          <div className="rounded-xl border border-white/[0.04] overflow-hidden">
             <table className="w-full text-xs">
-              <thead className="bg-gray-800/50"><tr className="text-gray-400">
+              <thead className="bg-white/[0.02]"><tr className="text-gray-400">
                 <th className="text-left px-4 py-2">Strategy</th>
                 <th className="text-right px-4 py-2">Trades</th>
                 <th className="text-right px-4 py-2">Win Rate</th>
@@ -1235,7 +1235,7 @@ function AIRecommendationsPanel({ api }) {
               </tr></thead>
               <tbody>
                 {strategies.map((s, i) => (
-                  <tr key={i} className="border-t border-gray-800/50">
+                  <tr key={i} className="border-t border-white/[0.04]/50">
                     <td className="px-4 py-2 text-white font-medium">{s.strategy}</td>
                     <td className="px-4 py-2 text-right text-gray-400">{s.trades}</td>
                     <td className="px-4 py-2 text-right"><span className={s.win_rate >= 50 ? 'text-emerald-400' : 'text-red-400'}>{s.win_rate}%</span></td>
@@ -1260,8 +1260,8 @@ function LeaderboardPanel({ data }) {
   const list = Array.isArray(data) ? data : []
   const medals = ['🥇','🥈','🥉']
   return (
-    <div className="rounded-xl border border-gray-800 overflow-hidden">
-      <div className="bg-gray-800/50 px-4 py-3">
+    <div className="rounded-xl border border-white/[0.04] overflow-hidden">
+      <div className="bg-white/[0.02] px-4 py-3">
         <span className="text-white font-medium text-sm flex items-center gap-2">
           <Trophy className="w-4 h-4 text-yellow-400" /> Paper Trading Leaderboard
         </span>
@@ -1281,10 +1281,10 @@ function LeaderboardPanel({ data }) {
           </tr></thead>
           <tbody>
             {list.map((u, i) => (
-              <tr key={i} className="border-t border-gray-800/50 hover:bg-gray-800/20">
+              <tr key={i} className="border-t border-white/[0.04]/50 hover:bg-gray-800/20">
                 <td className="px-4 py-2.5 text-center">{i < 3 ? medals[i] : `#${i+1}`}</td>
                 <td className="px-4 py-2.5 text-white font-medium">{u.user_id?.slice(0,8)}***</td>
-                <td className="px-4 py-2.5 text-right text-gray-300 tabular-nums">${u.portfolio_value?.toLocaleString()}</td>
+                <td className="px-4 py-2.5 text-right text-gray-300 tabular-nums font-mono">${u.portfolio_value?.toLocaleString()}</td>
                 <td className="px-4 py-2.5 text-right"><PnL value={u.total_return_pct} suffix="%" /></td>
                 <td className="px-4 py-2.5 text-right"><PnL value={u.realized_pnl} prefix="$" /></td>
                 <td className="px-4 py-2.5 text-right text-gray-400 tabular-nums">{u.total_trades}</td>

@@ -45,7 +45,7 @@ function CreateAlertModal({ onClose, onCreate }) {
           <h2 className="text-white font-bold text-lg">New Price Alert</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white"><XCircle size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 animate-fade-in">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-400 mb-1 block">Symbol *</label>
@@ -238,7 +238,7 @@ export default function AlertsPage() {
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
             <Bell size={20} className="text-blue-400" />
             Price Alerts
           </h1>
@@ -266,7 +266,7 @@ export default function AlertsPage() {
       {alerts.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{alerts.length}</p>
+            <p className="text-2xl font-display font-bold text-white tracking-tight">{alerts.length}</p>
             <p className="text-xs text-gray-400">Total</p>
           </div>
           <div className="bg-emerald-900/20 border border-emerald-700/30 rounded-xl p-3 text-center">

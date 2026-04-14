@@ -186,11 +186,11 @@ export default function AutonomousTradingPage() {
     .slice(0, 30)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
             <Bot size={22} className="text-blue-400"/>
             Autonomous Trading
           </h1>
@@ -335,7 +335,7 @@ export default function AutonomousTradingPage() {
       {/* Stats cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="card py-3 text-center">
-          <div className="text-2xl font-bold text-white">{statusData?.scan_count || 0}</div>
+          <div className="text-2xl font-display font-bold text-white tracking-tight">{statusData?.scan_count || 0}</div>
           <div className="text-xs text-gray-500">Scans</div>
         </div>
         <div className="card py-3 text-center">

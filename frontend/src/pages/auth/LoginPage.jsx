@@ -131,21 +131,74 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex" style={{background:'var(--surface-0)'}}>
+      {/* Left panel — animated branding */}
+      <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden items-center justify-center"
+        style={{background:'linear-gradient(135deg, #0B1120 0%, #1a1a3e 50%, #0B1120 100%)'}}>
+        {/* Animated gradient orbs */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute w-[500px] h-[500px] rounded-full opacity-20 blur-[100px]"
+            style={{background:'radial-gradient(circle, #3B82F6, transparent)', top:'-10%', left:'-10%',
+              animation:'float 8s ease-in-out infinite'}} />
+          <div className="absolute w-[400px] h-[400px] rounded-full opacity-15 blur-[80px]"
+            style={{background:'radial-gradient(circle, #8B5CF6, transparent)', bottom:'-5%', right:'-5%',
+              animation:'float 10s ease-in-out infinite reverse'}} />
+          <div className="absolute w-[300px] h-[300px] rounded-full opacity-10 blur-[60px]"
+            style={{background:'radial-gradient(circle, #10B981, transparent)', top:'40%', left:'50%',
+              animation:'float 12s ease-in-out infinite 2s'}} />
+        </div>
+        <style>{`@keyframes float { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,-30px)} }`}</style>
+
+        <div className="relative z-10 text-center px-12 animate-fade-in">
+          <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-blue-500/30">
+            <span className="text-white text-3xl font-display font-black">A</span>
+          </div>
+          <h1 className="text-4xl font-display font-bold text-white tracking-tight mb-3">Alchemy</h1>
+          <p className="text-lg text-blue-200/60 font-medium">AI-Powered Trading Platform</p>
+
+          <div className="mt-12 grid grid-cols-3 gap-6 text-center">
+            <div>
+              <div className="text-2xl font-display font-bold text-white">271</div>
+              <div className="text-xs text-gray-500 mt-1">API Routes</div>
+            </div>
+            <div>
+              <div className="text-2xl font-display font-bold text-white">44</div>
+              <div className="text-xs text-gray-500 mt-1">Features</div>
+            </div>
+            <div>
+              <div className="text-2xl font-display font-bold text-white">24/7</div>
+              <div className="text-xs text-gray-500 mt-1">Auto Trading</div>
+            </div>
+          </div>
+
+          <div className="mt-10 flex items-center justify-center gap-3 text-[11px] text-gray-600">
+            <span className="flex items-center gap-1"><ShieldCheck size={11}/> 256-bit TLS</span>
+            <span className="w-1 h-1 rounded-full bg-gray-700" />
+            <span className="flex items-center gap-1"><Lock size={11}/> TOTP 2FA</span>
+            <span className="w-1 h-1 rounded-full bg-gray-700" />
+            <span>Session Auth</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Right panel — auth form */}
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🔮</div>
-          <h1 className="text-2xl font-bold text-white">Alchemy</h1>
-          <p className="text-gray-400 text-sm mt-1">AI-Powered Trading Platform</p>
+        {/* Mobile logo (hidden on desktop) */}
+        <div className="text-center mb-8 lg:hidden">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+            <span className="text-white text-2xl font-display font-black">A</span>
+          </div>
+          <h1 className="text-2xl font-display font-bold text-white">Alchemy</h1>
+          <p className="text-gray-500 text-sm mt-1">AI-Powered Trading Platform</p>
         </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">
+        <div className="rounded-2xl p-8" style={{background:'var(--surface-2)', border:'1px solid var(--border)'}}>
           {step === 'credentials' ? (
             <>
               <div className="flex items-center gap-2 mb-6">
                 <Lock size={18} className="text-blue-400" />
-                <h2 className="text-lg font-semibold text-white">Sign in</h2>
+                <h2 className="text-xl font-display font-bold text-white">Welcome back</h2>
               </div>
 
               {error && (
@@ -157,7 +210,7 @@ export default function LoginPage() {
 
               <form onSubmit={handleCredentials} className="space-y-4" autoComplete="on">
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Email</label>
+                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Email</label>
                   <input ref={emailRef} type="email" value={email}
                     onChange={e => setEmail(e.target.value)}
                     className="input-field" placeholder="you@example.com"
@@ -166,7 +219,7 @@ export default function LoginPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Password</label>
+                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">Password</label>
                   <div className="relative">
                     <input type={showPwd ? 'text' : 'password'} value={password}
                       onChange={e => setPassword(e.target.value)}
@@ -232,11 +285,12 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Security badge */}
-        <div className="flex items-center justify-center gap-2 mt-4 text-xs text-gray-600">
+        {/* Security badge — mobile only */}
+        <div className="flex items-center justify-center gap-2 mt-4 text-xs text-gray-600 lg:hidden">
           <ShieldCheck size={12} />
-          <span>256-bit TLS encryption · TOTP 2FA · Session-based auth</span>
+          <span>256-bit TLS · TOTP 2FA · Session Auth</span>
         </div>
+      </div>
       </div>
     </div>
   )

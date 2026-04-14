@@ -58,7 +58,7 @@ function OrderPipeline({ workflow }) {
               done   ? 'bg-emerald-900/40 text-emerald-400' :
               active && isError ? 'bg-red-900/50 text-red-400' :
               active ? 'bg-blue-700/50 text-blue-300 ring-1 ring-blue-500' :
-                       'bg-gray-800/50 text-gray-600')}>
+                       'bg-white/[0.02] text-gray-600')}>
               <Icon size={10} className={active && step.key === 'monitoring' ? 'animate-spin' : ''} />
               {step.label}
             </div>
@@ -221,7 +221,7 @@ export default function WorkflowPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+        <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
           <GitBranch size={20} className="text-blue-400" /> Order Workflow Engine
         </h1>
         <p className="text-sm text-gray-400">LangGraph state machine · 9 stages · Smart Order Router · Token-gated execution</p>

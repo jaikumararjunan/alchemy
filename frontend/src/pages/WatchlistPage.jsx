@@ -40,10 +40,10 @@ function AddSymbolModal({ onClose, onAdd }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-bold text-lg">Add to Watchlist</h2>
+          <h2 className="text-white font-display font-bold text-lg">Add to Watchlist</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 animate-fade-in">
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Symbol *</label>
             <input
@@ -212,7 +212,7 @@ export default function WatchlistPage() {
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
             <Star size={20} className="text-amber-400" />
             Watchlist
           </h1>

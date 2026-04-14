@@ -96,9 +96,9 @@ export default function SubscriptionPage() {
   const currentPlan = user?.subscription || 'free'
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white mb-2">Choose Your Plan</h1>
+        <h1 className="text-2xl font-display font-bold text-white tracking-tight mb-2">Choose Your Plan</h1>
         <p className="text-gray-400 text-sm">Scale your trading with the right tools</p>
       </div>
 

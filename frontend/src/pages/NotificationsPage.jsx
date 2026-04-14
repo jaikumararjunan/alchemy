@@ -137,7 +137,7 @@ function AddChannelModal({ providers, onClose, onAdd }) {
                 })}
               </div>
               {/* "Add New Provider" hint */}
-              <div className="mt-3 bg-gray-800/50 rounded-lg p-3 text-xs text-gray-500 border border-gray-700/50">
+              <div className="mt-3 bg-white/[0.02] rounded-lg p-3 text-xs text-gray-500 border border-gray-700/50">
                 <span className="text-blue-400 font-medium">+ Add a new provider:</span> Create
                 {' '}<code className="text-gray-300">alchemy/notifications/providers/yourname.py</code>
                 {' '}extending <code className="text-gray-300">BaseNotificationProvider</code> and register in the registry. Done.
@@ -146,7 +146,7 @@ function AddChannelModal({ providers, onClose, onAdd }) {
           )}
 
           {step === 'configure' && provider && (
-            <div className="space-y-4">
+            <div className="space-y-4 animate-fade-in">
               <div className="flex items-center gap-2">
                 <button onClick={() => setStep('pick')} className="text-gray-500 hover:text-gray-300 text-sm">←</button>
                 <span className="text-2xl">{PROVIDER_META[provider.type]?.icon}</span>
@@ -312,11 +312,11 @@ export default function NotificationsPage() {
   const prefs     = prefData?.preferences || {}
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
             <Bell size={20} className="text-blue-400" /> Notifications
           </h1>
           <p className="text-sm text-gray-400">
@@ -462,7 +462,7 @@ export default function NotificationsPage() {
         <div className="card max-w-lg space-y-5">
           <h2 className="section-title">Notification Preferences</h2>
 
-          <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
+          <div className="flex items-center justify-between p-3 bg-white/[0.02] rounded-lg">
             <div>
               <div className="text-sm font-medium text-white">All Notifications</div>
               <div className="text-xs text-gray-500">Master enable/disable for all channels</div>

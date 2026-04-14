@@ -385,7 +385,7 @@ export default function TokenManagerPage() {
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
             <Key size={20} className="text-blue-400"/> Exchange Connections
           </h1>
           <p className="text-sm text-gray-400">Connect Binance, Delta Exchange, Angel Broking or Zerodha Kite</p>

@@ -25,7 +25,7 @@ export default function ForgotPasswordPage() {
   }
 
   if (status === 'sent') return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'var(--surface-0)'}}>
       <div className="w-full max-w-md text-center space-y-4">
         <CheckCircle size={52} className="text-emerald-400 mx-auto"/>
         <h2 className="text-xl font-bold text-white">Check Your Email</h2>
@@ -45,15 +45,15 @@ export default function ForgotPasswordPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'var(--surface-0)'}}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🔮</div>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20"><span className="text-white text-2xl font-display font-black">A</span></div>
           <h1 className="text-2xl font-bold text-white">Reset Password</h1>
           <p className="text-gray-400 text-sm mt-1">Enter your email to receive a reset link</p>
         </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl space-y-5">
+        <div className="rounded-2xl p-8 shadow-2xl space-y-5" style={{background:'var(--surface-2)', border:'1px solid var(--border)'}}>
           {error && (
             <div className="bg-red-900/30 border border-red-500/40 rounded-lg px-3 py-2.5 text-sm text-red-400">
               {error}

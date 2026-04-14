@@ -135,7 +135,7 @@ export default function StrategyPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+        <h1 className="text-xl font-display font-bold text-white tracking-tight flex items-center gap-2">
           <Brain size={20} className="text-purple-400"/> Strategy Engine
         </h1>
         <p className="text-sm text-gray-400">AI-generated trade ideas · Scalping · Momentum · Breakout · News-driven</p>
@@ -152,7 +152,7 @@ export default function StrategyPage() {
         </div>
         <div className="card text-center">
           <div className="text-xs text-gray-500 mb-1">Position Sizing</div>
-          <div className="text-2xl font-bold text-white">{sizing ? `${(sizing*100).toFixed(0)}%` : '—'}</div>
+          <div className="text-2xl font-display font-bold text-white tracking-tight">{sizing ? `${(sizing*100).toFixed(0)}%` : '—'}</div>
           <div className="text-xs text-gray-500 mt-1">of base size</div>
         </div>
         <div className="card text-center">
@@ -162,7 +162,7 @@ export default function StrategyPage() {
         </div>
         <div className="card text-center">
           <div className="text-xs text-gray-500 mb-1">Market Bias</div>
-          <div className="text-xl font-bold text-white capitalize">{ideasData?.market_bias || '—'}</div>
+          <div className="text-xl font-display font-bold text-white tracking-tight capitalize">{ideasData?.market_bias || '—'}</div>
           <div className="text-xs text-gray-500 mt-1">{ideasData?.signal_count || 0} intel signals</div>
         </div>
       </div>

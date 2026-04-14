@@ -285,10 +285,10 @@ export default function CryptoPage() {
   const tokens = tokenData?.tokens || {}
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-bold text-white">Crypto Markets</h1>
+          <h1 className="text-xl font-display font-bold text-white tracking-tight">Crypto Markets</h1>
           <p className="text-sm text-gray-500 flex items-center gap-1.5">
             <Wifi size={11} className="text-emerald-400"/>
             Live data · Binance WebSocket · No API key required
