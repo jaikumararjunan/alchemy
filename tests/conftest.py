@@ -12,7 +12,7 @@ import pytest
 # Set test env vars BEFORE any app imports
 TEST_DIR = tempfile.mkdtemp(prefix="alchemy_test_")
 os.environ["ALCHEMY_PAPER_DIR"] = TEST_DIR
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DIR}/test_alchemy.db"
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DIR}/test_alchemy.db"
 os.environ["SECRET_KEY"] = "test-secret-key-for-tests-only-0123456789"
 os.environ["JWT_SECRET"] = "test-jwt-secret-key-0123456789abcdef"
 
