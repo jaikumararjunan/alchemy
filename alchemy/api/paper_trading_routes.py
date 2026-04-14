@@ -461,3 +461,118 @@ async def strategy_comparison(user: CurrentUser = Depends(get_current_user)):
 
     result.sort(key=lambda x: x["total_pnl"], reverse=True)
     return {"strategies": result, "total_closed": len(portfolio.trade_log)}
+
+
+# ── Tax Report Export (CSV) ───────────────────────────────────────────────────
+
+@router.get("/tax-export")
+async def export_tax_report(
+    financial_year: str = Query("2025-26"),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Export trade history as CSV for Indian tax filing."""
+    from alchemy.paper_trading.engine import get_paper_engine
+    from datetime import datetime
+    portfolio = get_paper_engine().get_portfolio(user.user_id)
+
+    trades = portfolio.trade_log
+    if not trades:
+        return {"ok": False, "message": "No closed trades to export"}
+
+    lines = ["Symbol,Side,Entry Price,Exit Price,Quantity,Gross P&L,Fee,Net P&L,Return %,Strategy,Holding Period,Tax Category,Closed At"]
+    total_pnl = 0
+    total_tax = 0
+
+    for t in trades:
+        pnl = t.get("net_pnl", 0)
+        total_pnl += pnl
+        # Indian tax: crypto = 30% flat, equity STCG = 15%, LTCG = 10%
+        tax_cat = "Crypto 30%"
+        tax = abs(pnl) * 0.30 if pnl > 0 else 0
+        total_tax += tax
+
+        holding = t.get("holding_time", "")
+        lines.append(
+            f"{t.get('symbol','')},{t.get('side','')},{t.get('entry_price',0)},"
+            f"{t.get('exit_price',0)},{t.get('quantity',0)},{t.get('gross_pnl',0)},"
+            f"{t.get('fee',0)},{pnl},{t.get('return_pct',0)}%,"
+            f"{t.get('strategy','')},{holding},{tax_cat},{t.get('closed_at','')}"
+        )
+
+    lines.append("")
+    lines.append(f"TOTAL,,,,,,{round(total_pnl,2)},,,,,,")
+    lines.append(f"Estimated Tax ({financial_year}),,,,,,{round(total_tax,2)},,,,,,")
+
+    from fastapi.responses import PlainTextResponse
+    csv_content = "\n".join(lines)
+    return PlainTextResponse(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=alchemy_tax_{financial_year}.csv"}
+    )
+
+
+# ── AI Trade Recommendations ─────────────────────────────────────────────────
+
+@router.get("/ai-recommendations")
+async def get_ai_recommendations(user: CurrentUser = Depends(get_current_user)):
+    """Get AI-powered trade recommendations with reasoning."""
+    from alchemy.paper_trading.engine import get_paper_engine
+    import random
+
+    portfolio = get_paper_engine().get_portfolio(user.user_id)
+    positions = portfolio.positions
+    recommendations = []
+
+    # Analyze current positions
+    for sym, pos in positions.items():
+        pnl_pct = pos.unrealized_pct
+        rec = {
+            "symbol": sym,
+            "current_side": pos.side.value,
+            "entry_price": round(pos.avg_entry_price, 2),
+            "current_price": round(pos.current_price, 2),
+            "unrealized_pnl": round(pos.unrealized_pnl, 2),
+            "return_pct": round(pnl_pct, 2),
+            "quantity": pos.quantity,
+        }
+
+        # Generate recommendation based on P&L
+        if pnl_pct > 3:
+            rec["action"] = "TAKE_PROFIT"
+            rec["confidence"] = 0.75
+            rec["reasoning"] = f"Position up {pnl_pct:.1f}%. Consider taking partial profits (50%) to lock gains. Set trailing stop at entry price to protect remaining."
+        elif pnl_pct < -5:
+            rec["action"] = "CUT_LOSS"
+            rec["confidence"] = 0.80
+            rec["reasoning"] = f"Position down {abs(pnl_pct):.1f}%. Exceeds recommended 5% max loss. Consider closing to preserve capital for better setups."
+        elif pnl_pct < -2:
+            rec["action"] = "TIGHTEN_STOP"
+            rec["confidence"] = 0.65
+            rec["reasoning"] = f"Position down {abs(pnl_pct):.1f}%. Move stop loss closer to limit further downside. Current risk outweighs reward."
+        else:
+            rec["action"] = "HOLD"
+            rec["confidence"] = 0.60
+            rec["reasoning"] = f"Position within normal range ({pnl_pct:+.1f}%). No action needed. Monitor for breakout above entry + 2%."
+
+        recommendations.append(rec)
+
+    # Portfolio-level recommendations
+    cash_pct = (portfolio.cash_balance / portfolio.portfolio_value * 100) if portfolio.portfolio_value else 100
+    portfolio_rec = {
+        "type": "portfolio",
+        "cash_pct": round(cash_pct, 1),
+        "positions_count": len(positions),
+        "diversification": "low" if len(positions) <= 2 else "moderate" if len(positions) <= 5 else "good",
+    }
+
+    if cash_pct < 10:
+        portfolio_rec["warning"] = "Very low cash reserve. Consider closing weakest position to free up capital."
+    elif cash_pct > 80:
+        portfolio_rec["suggestion"] = "High cash allocation. Consider deploying capital into trending assets."
+
+    return {
+        "recommendations": recommendations,
+        "portfolio_summary": portfolio_rec,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }

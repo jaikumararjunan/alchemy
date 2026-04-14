@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useMutation } from '@tanstack/react-query'
-import { Shield, Bell, Moon, Globe, Key, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
+import { Shield, Bell, Moon, Sun, Globe, Key, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
+import { useTheme } from '@/context/ThemeContext'
 
 export default function SettingsPage() {
   const { user, apiClient } = useAuth()
   const api = apiClient()
+  const { theme, toggle: toggleTheme } = useTheme()
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' })
   const [show, setShow] = useState({})
 
@@ -87,6 +89,27 @@ export default function SettingsPage() {
             className="btn-primary flex items-center gap-2 text-sm">
             {changePwMut.isPending ? <RefreshCw size={14} className="animate-spin"/> : <Shield size={14}/>}
             Change Password
+          </button>
+        </div>
+      </div>
+
+      {/* Theme Toggle */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {theme === 'dark'
+              ? <Moon size={18} className="text-blue-400" />
+              : <Sun size={18} className="text-yellow-400" />}
+            <div>
+              <h2 className="text-sm font-semibold text-white">Theme</h2>
+              <p className="text-xs text-gray-500">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</p>
+            </div>
+          </div>
+          <button onClick={toggleTheme}
+            className={clsx('w-12 h-6 rounded-full transition-colors relative',
+              theme === 'dark' ? 'bg-blue-600' : 'bg-gray-400')}>
+            <div className={clsx('w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform',
+              theme === 'dark' ? 'translate-x-6' : 'translate-x-0.5')} />
           </button>
         </div>
       </div>

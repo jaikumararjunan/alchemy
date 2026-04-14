@@ -162,6 +162,7 @@ export default function PaperTradingPage() {
           { id: 'backtest', label: 'Backtest', icon: Play },
           { id: 'history', label: 'Trade History', icon: Clock },
           { id: 'capital', label: 'Capital', icon: PieChart },
+          { id: 'ai', label: 'AI Insights', icon: Zap },
           { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -188,6 +189,7 @@ export default function PaperTradingPage() {
       {activeTab === 'backtest' && <BacktestPanel api={api} strategies={strategies} />}
       {activeTab === 'history' && <TradeHistoryPanel trades={trades} />}
       {activeTab === 'capital' && <CapitalPanel api={api} />}
+      {activeTab === 'ai' && <AIRecommendationsPanel api={api} />}
       {activeTab === 'leaderboard' && <LeaderboardPanel data={leaderboard} />}
     </div>
   )
@@ -919,6 +921,10 @@ function TradeHistoryPanel({ trades }) {
       <div className="bg-gray-800/50 px-4 py-3 flex justify-between items-center">
         <span className="text-white font-medium text-sm">Trade History ({trades?.total || 0})</span>
         <span className="text-sm">Realized P&L: <PnL value={trades?.realized_pnl || 0} prefix="$" /></span>
+        <a href="/api/paper/tax-export?financial_year=2025-26" target="_blank"
+          className="px-3 py-1 rounded-lg text-xs bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20">
+          Export CSV
+        </a>
       </div>
       {list.length === 0 ? (
         <div className="p-12 text-center text-gray-500">No trades yet</div>
@@ -1097,6 +1103,152 @@ function CapitalPanel({ api }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI RECOMMENDATIONS
+// ══════════════════════════════════════════════════════════════════════════════
+function AIRecommendationsPanel({ api }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['ai-recommendations'],
+    queryFn: () => api.get('/paper/ai-recommendations').then(r => r.data),
+    refetchInterval: 30000,
+  })
+
+  const { data: stratData } = useQuery({
+    queryKey: ['strategy-comparison'],
+    queryFn: () => api.get('/paper/strategy-comparison').then(r => r.data),
+  })
+
+  const recs = data?.recommendations || []
+  const portfolio = data?.portfolio_summary || {}
+  const strategies = stratData?.strategies || []
+
+  const actionColors = {
+    TAKE_PROFIT: 'border-emerald-500/40 bg-emerald-500/5',
+    CUT_LOSS: 'border-red-500/40 bg-red-500/5',
+    TIGHTEN_STOP: 'border-yellow-500/40 bg-yellow-500/5',
+    HOLD: 'border-gray-700 bg-gray-900/50',
+  }
+  const actionIcons = {
+    TAKE_PROFIT: '🎯', CUT_LOSS: '🛑', TIGHTEN_STOP: '⚠️', HOLD: '✅',
+  }
+
+  if (isLoading) return <div className="py-12 text-center text-gray-500">Analyzing positions...</div>
+
+  return (
+    <div className="space-y-4">
+      {/* Portfolio Summary */}
+      {portfolio.warning && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-red-400 font-medium text-sm">Portfolio Warning</p>
+            <p className="text-gray-400 text-sm mt-1">{portfolio.warning}</p>
+          </div>
+        </div>
+      )}
+      {portfolio.suggestion && (
+        <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 flex items-start gap-3">
+          <Zap className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-blue-400 font-medium text-sm">Suggestion</p>
+            <p className="text-gray-400 text-sm mt-1">{portfolio.suggestion}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+        <div className="flex gap-6 text-sm">
+          <div><span className="text-gray-500">Cash:</span> <span className="text-white font-medium">{portfolio.cash_pct}%</span></div>
+          <div><span className="text-gray-500">Positions:</span> <span className="text-white font-medium">{portfolio.positions_count}</span></div>
+          <div><span className="text-gray-500">Diversification:</span>
+            <span className={clsx('font-medium ml-1',
+              portfolio.diversification === 'good' ? 'text-emerald-400' : portfolio.diversification === 'moderate' ? 'text-yellow-400' : 'text-red-400')}>
+              {portfolio.diversification}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Position Recommendations */}
+      <h3 className="text-white font-semibold flex items-center gap-2">
+        <Zap className="w-5 h-5 text-yellow-400" /> Position Recommendations
+      </h3>
+      {recs.length === 0 ? (
+        <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-12 text-center text-gray-500">
+          No open positions to analyze
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {recs.map((rec, i) => (
+            <div key={i} className={clsx('rounded-xl border p-4', actionColors[rec.action])}>
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{actionIcons[rec.action]}</span>
+                  <span className="text-white font-bold">{rec.symbol.replace('USDT','')}/USDT</span>
+                  <span className={clsx('px-2 py-0.5 rounded text-xs font-medium',
+                    rec.current_side === 'long' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400')}>
+                    {rec.current_side?.toUpperCase()}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className={clsx('font-bold text-sm px-2 py-1 rounded',
+                    rec.action === 'TAKE_PROFIT' ? 'bg-emerald-500/20 text-emerald-400' :
+                    rec.action === 'CUT_LOSS' ? 'bg-red-500/20 text-red-400' :
+                    rec.action === 'TIGHTEN_STOP' ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-gray-700 text-gray-300')}>
+                    {rec.action.replace('_',' ')}
+                  </span>
+                  <div className="text-xs text-gray-500 mt-1">{Math.round(rec.confidence * 100)}% confidence</div>
+                </div>
+              </div>
+              <div className="flex gap-4 text-xs text-gray-400 mb-2">
+                <span>Entry: ${rec.entry_price?.toLocaleString()}</span>
+                <span>Current: ${rec.current_price?.toLocaleString()}</span>
+                <PnL value={rec.return_pct} suffix="%" />
+                <PnL value={rec.unrealized_pnl} prefix="$" />
+              </div>
+              <p className="text-gray-300 text-sm leading-relaxed">{rec.reasoning}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Strategy Performance */}
+      {strategies.length > 0 && (
+        <>
+          <h3 className="text-white font-semibold mt-6 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-purple-400" /> Strategy Performance
+          </h3>
+          <div className="rounded-xl border border-gray-800 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-800/50"><tr className="text-gray-400">
+                <th className="text-left px-4 py-2">Strategy</th>
+                <th className="text-right px-4 py-2">Trades</th>
+                <th className="text-right px-4 py-2">Win Rate</th>
+                <th className="text-right px-4 py-2">Total P&L</th>
+                <th className="text-right px-4 py-2">Avg Return</th>
+                <th className="text-right px-4 py-2">Profit Factor</th>
+              </tr></thead>
+              <tbody>
+                {strategies.map((s, i) => (
+                  <tr key={i} className="border-t border-gray-800/50">
+                    <td className="px-4 py-2 text-white font-medium">{s.strategy}</td>
+                    <td className="px-4 py-2 text-right text-gray-400">{s.trades}</td>
+                    <td className="px-4 py-2 text-right"><span className={s.win_rate >= 50 ? 'text-emerald-400' : 'text-red-400'}>{s.win_rate}%</span></td>
+                    <td className="px-4 py-2 text-right"><PnL value={s.total_pnl} prefix="$" /></td>
+                    <td className="px-4 py-2 text-right"><PnL value={s.avg_return_pct} suffix="%" /></td>
+                    <td className="px-4 py-2 text-right text-gray-300">{s.profit_factor}x</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   )
 }
