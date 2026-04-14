@@ -372,20 +372,70 @@ class AutonomousTradingEngine:
             side = "buy" if record.direction == "long" else "sell"
             price = record.entry_price
 
-            # Calculate meaningful quantity based on portfolio
+            # Calculate meaningful quantity based on capital engine
             quantity = 0.0
             try:
+                from alchemy.trading.capital_engine import get_capital_engine
                 from alchemy.paper_trading.engine import get_paper_engine
                 paper = get_paper_engine()
                 portfolio = paper.get_portfolio(user_id)
-                # Use 5% of available cash per trade
-                trade_budget = portfolio.cash_balance * 0.05
-                if price > 0:
-                    quantity = round(trade_budget / price, 6)
+
+                ce = get_capital_engine(user_id)
+
+                # Calculate SL/TP from strategy defaults
+                sl_pct = 0.02  # 2% stop loss
+                tp_pct = 0.04  # 4% take profit
+                if record.direction == "long":
+                    sl_price = price * (1 - sl_pct)
+                    tp_price = price * (1 + tp_pct)
+                else:
+                    sl_price = price * (1 + sl_pct)
+                    tp_price = price * (1 - tp_pct)
+
+                decision = ce.evaluate_trade(
+                    symbol=record.symbol,
+                    confidence=record.confidence,
+                    entry_price=price,
+                    stop_loss=sl_price,
+                    take_profit=tp_price,
+                    strategy=record.strategy,
+                )
+
+                if not decision.allowed:
+                    log.warning("autonomous.capital_rejected",
+                                symbol=record.symbol, reason=decision.rejection_reason)
+                    record.status = "rejected"
+                    record.execution_error = f"Capital engine: {decision.rejection_reason}"
+                    return
+
+                # Use capital engine's calculated size
+                if price > 0 and decision.position_size_usd > 0:
+                    quantity = round(decision.position_size_usd / price, 6)
                 else:
                     quantity = 0.001
-            except Exception:
-                quantity = 0.001
+
+                log.info("autonomous.capital_sized",
+                         symbol=record.symbol, size_usd=decision.position_size_usd,
+                         qty=quantity, adjustment=decision.size_adjustment)
+
+            except ImportError:
+                # Fallback: 5% of cash
+                try:
+                    from alchemy.paper_trading.engine import get_paper_engine
+                    portfolio = get_paper_engine().get_portfolio(user_id)
+                    trade_budget = portfolio.cash_balance * 0.05
+                    quantity = round(trade_budget / price, 6) if price > 0 else 0.001
+                except Exception:
+                    quantity = 0.001
+            except Exception as e:
+                log.warning("autonomous.capital_engine_error", error=str(e))
+                try:
+                    from alchemy.paper_trading.engine import get_paper_engine
+                    portfolio = get_paper_engine().get_portfolio(user_id)
+                    trade_budget = portfolio.cash_balance * 0.05
+                    quantity = round(trade_budget / price, 6) if price > 0 else 0.001
+                except Exception:
+                    quantity = 0.001
 
             log.info("autonomous.recording_paper_trade",
                      user_id=user_id[:12], symbol=record.symbol,

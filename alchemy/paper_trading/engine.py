@@ -560,6 +560,20 @@ class PaperTradingEngine:
         if pos.quantity <= 0.000001:
             del portfolio.positions[order.symbol]
 
+        # Update capital engine
+        try:
+            from alchemy.trading.capital_engine import get_capital_engine
+            ce = get_capital_engine(portfolio.user_id if hasattr(portfolio, 'user_id') else order.user_id)
+            ce.record_trade(
+                symbol=order.symbol,
+                gross_pnl=pnl,
+                fee=fee,
+                strategy=pos.strategy or order.strategy,
+                position_size=cost,
+            )
+        except Exception:
+            pass
+
     # ── Leaderboard ───────────────────────────────────────────────────────────
 
     def get_leaderboard(self) -> list[dict]:

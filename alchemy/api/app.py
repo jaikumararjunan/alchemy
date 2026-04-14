@@ -257,6 +257,7 @@ from alchemy.api.webhook_routes     import router as webhook_router
 from alchemy.api.advanced_orders    import router as advanced_router
 from alchemy.api.copy_trading       import router as social_router
 from alchemy.api.security_audit_routes import router as security_router
+from alchemy.api.capital_engine_routes import router as capital_engine_router
 from fastapi import APIRouter
 
 # /api/* prefix  (what the built React frontend calls)
@@ -282,6 +283,7 @@ api.include_router(webhook_router)
 api.include_router(advanced_router)
 api.include_router(social_router)
 api.include_router(security_router)
+api.include_router(capital_engine_router)
 app.include_router(metrics_router)
 api.include_router(audit_router)
 app.include_router(api)
@@ -307,6 +309,7 @@ app.include_router(webhook_router)
 app.include_router(advanced_router)
 app.include_router(social_router)
 app.include_router(security_router)
+app.include_router(capital_engine_router)
 
 
 # ── Core endpoints ────────────────────────────────────────────────────────────
