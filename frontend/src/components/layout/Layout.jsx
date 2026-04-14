@@ -116,8 +116,8 @@ export default function Layout() {
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
+      {/* Nav — scrollable */}
+      <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden min-h-0" style={{scrollbarWidth:'thin', scrollbarColor:'#334155 transparent'}}>
         {NAV_GROUPS.map(group => (
           <div key={group.label} className="mb-2">
             <div className="px-4 py-1 text-[10px] font-bold text-gray-600 uppercase tracking-widest">{group.label}</div>
@@ -140,32 +140,29 @@ export default function Layout() {
       </nav>
 
       {/* User footer */}
-      <div className="p-3 border-t border-gray-800 flex-shrink-0">
+      <div className="px-3 py-2 border-t border-white/[0.04] flex-shrink-0">
         {user && (
-          <div className="flex items-center gap-2.5 mb-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
               {user.email?.[0]?.toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-white truncate">{user.email}</div>
-              <div className="flex items-center gap-1.5">
-                <span className={clsx('text-[10px] capitalize', ROLE_CLR[user.role]||'text-gray-400')}>
+              <div className="text-[11px] font-semibold text-white truncate">{user.email}</div>
+              <div className="flex items-center gap-1">
+                <span className={clsx('text-[9px] capitalize', ROLE_CLR[user.role]||'text-gray-400')}>
                   {user.role?.replace('_',' ')}
                 </span>
-                <span className="text-[10px] text-gray-700">·</span>
-                <span className={clsx('text-[10px] capitalize px-1 rounded',
-                  user.subscription==='enterprise'?'text-amber-400':'text-blue-400')}>
-                  {user.subscription||'free'}
-                </span>
+                <span className="text-[9px] text-gray-700">·</span>
+                <span className="text-[9px] text-blue-400 capitalize">{user.subscription||'free'}</span>
               </div>
             </div>
             <button onClick={logout} title="Sign out"
-              className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-900/20 transition-colors">
-              <LogOut size={13}/>
+              className="p-1 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-900/20 transition-colors">
+              <LogOut size={12}/>
             </button>
           </div>
         )}
-        <div className="flex items-center justify-between text-[10px]">
+        <div className="flex items-center justify-between text-[9px] mt-1.5">
           <span className="text-gray-600">Live Feed</span>
           <span className={clsx('flex items-center gap-1', connected?'text-emerald-400':'text-gray-600')}>
             <span className={clsx('w-1.5 h-1.5 rounded-full', connected?'bg-emerald-400 animate-pulse':'bg-gray-600')}/>
