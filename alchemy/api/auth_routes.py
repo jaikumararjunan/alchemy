@@ -225,10 +225,35 @@ async def login(req: LoginRequest, request: Request, response: Response,
             return result
 
         _set_cookie(response, result["refresh_token"])
+
+        # Security audit: record successful login
+        try:
+            from alchemy.security.audit_engine import audit_login_attempt
+            audit_event = await audit_login_attempt(
+                user_id=result["user"].get("id", ""),
+                email=req.email, ip=ip, user_agent=ua,
+                success=True, session_id=result.get("session_id", ""),
+                client_hints={
+                    "platform": request.headers.get("sec-ch-ua-platform", ""),
+                    "mobile": "?1" in request.headers.get("sec-ch-ua-mobile", ""),
+                },
+            )
+            # Add risk info to response
+            login_context = {
+                "risk_score": audit_event.risk_score,
+                "risk_level": audit_event.risk_level.value,
+                "device": audit_event.device.browser + " / " + audit_event.device.os if audit_event.device else "",
+                "location": (audit_event.geo.city + ", " + audit_event.geo.country) if audit_event.geo else "",
+            }
+        except Exception as e:
+            log.warning("audit.login_record_failed", error=str(e))
+            login_context = {}
+
         return {
             "access_token": result["access_token"],
             "token_type":   "bearer",
             "user":         result["user"],
+            "security":     login_context,
         }
     except AuthError as e:
         # Persist failed-login counter / lockout changes so brute-force
@@ -289,6 +314,17 @@ async def login(req: LoginRequest, request: Request, response: Response,
             "account_locked":               msg("auth_login_locked"),
         }
         status_code = 429 if code == "account_locked" else 401
+
+        # Security audit: record failed login
+        try:
+            from alchemy.security.audit_engine import audit_login_attempt
+            await audit_login_attempt(
+                user_id="", email=req.email, ip=ip, user_agent=ua,
+                success=False, failure_reason=code,
+            )
+        except Exception:
+            pass
+
         raise HTTPException(status_code, {
             "code":    code,
             "message": messages.get(code, msg("auth_login_invalid")),
@@ -428,7 +464,8 @@ async def refresh_tokens(response: Response, db: AsyncSession = Depends(get_db),
 
 
 @router.post("/logout")
-async def logout(response: Response, db: AsyncSession = Depends(get_db),
+async def logout(response: Response, request: Request,
+                  db: AsyncSession = Depends(get_db),
                   user: CurrentUser = Depends(get_current_user),
                   refresh_token: Optional[str] = Cookie(None, alias="refresh_token")):
     """Invalidate current session."""
@@ -440,6 +477,22 @@ async def logout(response: Response, db: AsyncSession = Depends(get_db),
             await db.commit()
         except Exception:
             pass  # Best-effort — cookie is already cleared
+
+    # Security audit: record logout
+    try:
+        from alchemy.security.audit_engine import get_audit_log, AuditEvent, AuditEventType, parse_device, geolocate_ip
+        ip = request.client.host if request.client else "unknown"
+        ua = request.headers.get("user-agent", "")
+        device = parse_device(ua)
+        geo = await geolocate_ip(ip)
+        get_audit_log().record(AuditEvent(
+            event_type=AuditEventType.LOGOUT,
+            user_id=user.user_id, email=getattr(user, "email", ""),
+            ip=ip, geo=geo, device=device,
+        ))
+    except Exception:
+        pass
+
     return {"message": "Logged out"}
 
 
