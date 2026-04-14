@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useAlchemySocket } from '@/hooks/useAlchemySocket'
 import { useAlchemyStore } from '@/store'
@@ -6,285 +6,228 @@ import { useAuth } from '@/context/AuthContext'
 import {
   LayoutDashboard, Briefcase, Zap, Bitcoin, Key, GitBranch,
   ShieldAlert, BarChart3, BookOpen, Settings, Bell, Shield,
-  LogOut, Radio, AlertTriangle, Menu, X, ChevronRight,
-  TrendingUp, Star, Bot, Wallet, BellRing,
+  LogOut, AlertTriangle, Menu, X, Star, Bot, Wallet, BellRing,
 } from 'lucide-react'
 import clsx from 'clsx'
-import OnboardingWizard, { useOnboarding } from '@/components/OnboardingWizard'
 import NotificationPanel, { NotificationBell } from '@/components/NotificationPanel'
 
-const NAV_GROUPS = [
-  { label: 'MARKETS', items: [
-    { to:'/dashboard',     icon:LayoutDashboard, label:'Dashboard' },
-    { to:'/portfolio',     icon:Briefcase,       label:'Portfolio' },
-    { to:'/crypto',        icon:Bitcoin,         label:'Crypto' },
-    { to:'/watchlist',     icon:Star,            label:'Watchlist' },
+const NAV = [
+  { section: 'MARKETS', items: [
+    { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/portfolio',     icon: Briefcase,       label: 'Portfolio' },
+    { to: '/crypto',        icon: Bitcoin,         label: 'Crypto' },
+    { to: '/watchlist',     icon: Star,            label: 'Watchlist' },
   ]},
-  { label: 'TRADING', items: [
-    { to:'/paper-trading', icon:Wallet,          label:'Paper Trade' },
-    { to:'/autonomous',    icon:Bot,             label:'Auto Trade' },
-    { to:'/signals',       icon:Zap,             label:'AI Signals' },
-    { to:'/strategy',      icon:BookOpen,        label:'Strategy' },
+  { section: 'TRADING', items: [
+    { to: '/paper-trading', icon: Wallet,          label: 'Paper Trade' },
+    { to: '/autonomous',    icon: Bot,             label: 'Auto Trade' },
+    { to: '/signals',       icon: Zap,             label: 'AI Signals' },
+    { to: '/strategy',      icon: BookOpen,        label: 'Strategy' },
   ]},
-  { label: 'ANALYSIS', items: [
-    { to:'/analytics',     icon:BarChart3,       label:'Analytics' },
-    { to:'/risk',          icon:ShieldAlert,     label:'Risk' },
-    { to:'/alerts',        icon:BellRing,        label:'Price Alerts' },
+  { section: 'ANALYSIS', items: [
+    { to: '/analytics',     icon: BarChart3,       label: 'Analytics' },
+    { to: '/risk',          icon: ShieldAlert,     label: 'Risk' },
+    { to: '/alerts',        icon: BellRing,        label: 'Price Alerts' },
   ]},
-  { label: 'SETTINGS', items: [
-    { to:'/security',      icon:Shield,          label:'Security' },
-    { to:'/tokens',        icon:Key,             label:'Exchange Keys' },
-    { to:'/workflows',     icon:GitBranch,       label:'Workflows' },
-    { to:'/notifications', icon:Bell,            label:'Notifications' },
-    { to:'/settings',      icon:Settings,        label:'Settings' },
+  { section: 'SETTINGS', items: [
+    { to: '/security',      icon: Shield,          label: 'Security' },
+    { to: '/tokens',        icon: Key,             label: 'Exchange Keys' },
+    { to: '/workflows',     icon: GitBranch,       label: 'Workflows' },
+    { to: '/notifications', icon: Bell,            label: 'Notifications' },
+    { to: '/settings',      icon: Settings,        label: 'Settings' },
   ]},
 ]
 
-const ROLE_CLR = {
-  super_admin:'text-purple-400', admin:'text-blue-400',
-  trader:'text-emerald-400', analyst:'text-amber-400', viewer:'text-gray-400',
-}
+/* ── Sidebar (memoized — won't re-render on price ticks) ─────────────────── */
+const Sidebar = memo(function Sidebar({ user, isAdmin, onLogout, onClose }) {
+  const connected = useAlchemyStore(s => s.connected)
 
-function NavItem({ to, icon: Icon, label, onClick }) {
   return (
-    <NavLink
-      to={to}
-      onClick={onClick}
-      className={({ isActive }) => clsx(
-        'flex items-center gap-3 px-3 py-2 text-[13px] rounded-xl transition-all duration-150 mx-2 mb-0.5 relative cursor-pointer select-none no-underline',
-        isActive
-          ? 'bg-gradient-to-r from-blue-600/15 to-indigo-600/10 text-blue-400 font-semibold nav-active'
-          : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.03]'
-      )}>
-      <Icon size={15} className="flex-shrink-0" />
-      <span className="truncate">{label}</span>
-    </NavLink>
-  )
-}
-
-export default function Layout() {
-  useAlchemySocket()
-  const { connected, emergencyStop, portfolioNAV, portfolioPnL, setPortfolio } = useAlchemyStore()
-  const { user, logout, isAdmin, apiClient } = useAuth()
-  const location  = useLocation()
-  const [open, setOpen] = useState(false)
-  const [notifOpen, setNotifOpen] = useState(false)
-  const { showOnboarding, completeOnboarding } = useOnboarding()
-  const overlayRef = useRef(null)
-
-  // Fetch portfolio for header display
-  useEffect(() => {
-    const api = apiClient()
-    const fetchPortfolio = async () => {
-      try {
-        const { data } = await api.get('/paper/portfolio')
-        if (data) {
-          setPortfolio(
-            data.portfolio_value || 0,
-            (data.unrealized_pnl || 0) + (data.realized_pnl || 0),
-            data.open_positions || 0,
-          )
-        }
-      } catch {}
-    }
-    fetchPortfolio()
-    const interval = setInterval(fetchPortfolio, 15000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Close nav on route change
-  useEffect(() => { setOpen(false) }, [location.pathname])
-
-  const Sidebar = ({ mobile }) => (
-    <aside className={clsx(
-      'flex flex-col border-r border-white/[0.04]',
-      mobile ? 'h-full w-72 bg-[#0D1526]' : 'w-56 h-full bg-[#0D1526]/95'
-    )}>
+    <div className="flex flex-col h-full w-56 bg-[#0D1526] border-r border-white/[0.06]">
       {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-5 border-b border-white/[0.04] flex-shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <span className="text-white text-sm font-black">A</span>
+      <div className="h-14 flex items-center justify-between px-4 flex-shrink-0 border-b border-white/[0.06]">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+            <span className="text-white text-xs font-black">A</span>
           </div>
           <div>
-            <div className="text-sm font-display font-black text-white tracking-wide leading-tight">ALCHEMY</div>
-            <div className="text-[10px] text-gray-600 font-medium">AI Trading Platform</div>
+            <div className="text-xs font-black text-white tracking-wide">ALCHEMY</div>
+            <div className="text-[9px] text-gray-600">AI Trading Platform</div>
           </div>
         </div>
-        {mobile && (
-          <button onClick={()=>setOpen(false)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-gray-800">
+        {onClose && (
+          <button onClick={onClose} className="p-1 rounded text-gray-500 hover:text-white">
             <X size={16}/>
           </button>
         )}
       </div>
 
-      {/* Nav — scrollable */}
-      <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden min-h-0" style={{scrollbarWidth:'thin', scrollbarColor:'#334155 transparent'}}>
-        {NAV_GROUPS.map(group => (
-          <div key={group.label} className="mb-2">
-            <div className="px-4 py-1 text-[10px] font-bold text-gray-600 uppercase tracking-widest">{group.label}</div>
+      {/* Nav — this is the scrollable area */}
+      <div className="flex-1 overflow-y-auto py-2" style={{ minHeight: 0 }}>
+        {NAV.map(group => (
+          <div key={group.section} className="mb-1">
+            <div className="px-4 py-1 text-[9px] font-bold text-gray-600 uppercase tracking-[0.15em]">{group.section}</div>
             {group.items.map(item => (
-              <NavItem key={item.to} {...item} onClick={()=>mobile&&setOpen(false)}/>
+              <SidebarLink key={item.to} to={item.to} icon={item.icon} label={item.label} onNavigate={onClose} />
             ))}
           </div>
         ))}
         {isAdmin && (
-          <div className="mt-2 pt-2 border-t border-gray-800 mx-2">
-            <NavLink to="/admin"
-              className={({ isActive }) => clsx(
-                'flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-all',
-                isActive ? 'bg-purple-600/20 text-purple-400 font-semibold' : 'text-purple-400/70 hover:text-purple-300 hover:bg-purple-900/20'
-              )}>
-              <Shield size={16}/><span>Admin Panel</span><ChevronRight size={12} className="ml-auto opacity-30"/>
-            </NavLink>
+          <div className="mx-2 mt-1 pt-1 border-t border-white/[0.06]">
+            <SidebarLink to="/admin" icon={Shield} label="Admin" onNavigate={onClose} />
           </div>
         )}
-      </nav>
+      </div>
 
-      {/* User footer */}
-      <div className="px-3 py-2 border-t border-white/[0.04] flex-shrink-0">
+      {/* Footer */}
+      <div className="px-3 py-2 border-t border-white/[0.06] flex-shrink-0">
         {user && (
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+            <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
               {user.email?.[0]?.toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-semibold text-white truncate">{user.email}</div>
-              <div className="flex items-center gap-1">
-                <span className={clsx('text-[9px] capitalize', ROLE_CLR[user.role]||'text-gray-400')}>
-                  {user.role?.replace('_',' ')}
-                </span>
-                <span className="text-[9px] text-gray-700">·</span>
-                <span className="text-[9px] text-blue-400 capitalize">{user.subscription||'free'}</span>
-              </div>
-            </div>
-            <button onClick={logout} title="Sign out"
-              className="p-1 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-900/20 transition-colors">
-              <LogOut size={12}/>
-            </button>
+            <div className="flex-1 min-w-0 text-[10px] text-gray-400 truncate">{user.email}</div>
+            <button onClick={onLogout} className="p-1 text-gray-600 hover:text-red-400"><LogOut size={12}/></button>
           </div>
         )}
-        <div className="flex items-center justify-between text-[9px] mt-1.5">
-          <span className="text-gray-600">Live Feed</span>
-          <span className={clsx('flex items-center gap-1', connected?'text-emerald-400':'text-gray-600')}>
-            <span className={clsx('w-1.5 h-1.5 rounded-full', connected?'bg-emerald-400 animate-pulse':'bg-gray-600')}/>
-            {connected?'Connected':'Offline'}
+        <div className="flex items-center justify-between text-[9px] mt-1">
+          <span className="text-gray-700">Feed</span>
+          <span className={connected ? 'text-emerald-400' : 'text-gray-600'}>
+            {connected ? '● Connected' : '○ Offline'}
           </span>
         </div>
       </div>
-    </aside>
+    </div>
   )
+})
+
+/* ── Single sidebar link ─────────────────────────────────────────────────── */
+function SidebarLink({ to, icon: Icon, label, onNavigate }) {
+  return (
+    <NavLink
+      to={to}
+      end={to === '/dashboard'}
+      onClick={onNavigate || undefined}
+      className={({ isActive }) => clsx(
+        'flex items-center gap-2.5 px-3 py-[7px] mx-2 mb-px rounded-lg text-[12.5px] transition-colors',
+        isActive
+          ? 'bg-blue-500/15 text-blue-400 font-semibold'
+          : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.04]'
+      )}
+    >
+      <Icon size={14} />
+      <span>{label}</span>
+    </NavLink>
+  )
+}
+
+/* ── Main Layout ─────────────────────────────────────────────────────────── */
+export default function Layout() {
+  useAlchemySocket()
+  const { connected, emergencyStop, portfolioNAV, portfolioPnL, setPortfolio } = useAlchemyStore()
+  const { user, logout, isAdmin, apiClient } = useAuth()
+  const location = useLocation()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+
+  // Fetch portfolio
+  useEffect(() => {
+    const api = apiClient()
+    const fetch = async () => {
+      try {
+        const { data } = await api.get('/paper/portfolio')
+        if (data) setPortfolio(data.portfolio_value || 0, (data.unrealized_pnl || 0) + (data.realized_pnl || 0), data.open_positions || 0)
+      } catch {}
+    }
+    fetch()
+    const id = setInterval(fetch, 15000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Auto-close mobile nav on route change
+  useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   return (
-    <div className="flex h-screen bg-gray-950 overflow-hidden">
-      {/* Desktop sidebar */}
-      <div className="hidden lg:flex flex-shrink-0">
-        <Sidebar mobile={false}/>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--surface-0)' }}>
+
+      {/* Desktop sidebar — always visible on lg+ */}
+      <div className="hidden lg:block flex-shrink-0">
+        <Sidebar user={user} isAdmin={isAdmin} onLogout={logout} />
       </div>
 
-      {/* Mobile slide-in overlay */}
-      {open && (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
-          <div ref={overlayRef} className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-               onClick={()=>setOpen(false)}/>
-          <div className="relative flex-shrink-0 animate-slide-in z-10">
-            <Sidebar mobile={true}/>
+      {/* Mobile sidebar overlay */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <div className="relative z-10 h-full w-64" style={{ animation: 'slideIn .2s ease-out' }}>
+            <Sidebar user={user} isAdmin={isAdmin} onLogout={logout} onClose={() => setMobileOpen(false)} />
           </div>
         </div>
       )}
+      <style>{`@keyframes slideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}`}</style>
 
-      {/* Main content */}
+      {/* Right side: header + content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Topbar */}
-        <header className="h-16 glass border-b border-white/[0.04] flex items-center px-5 flex-shrink-0 gap-4 sticky top-0 z-40">
-          {/* Mobile menu button */}
-          <button onClick={()=>setOpen(true)}
-            className="lg:hidden p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/[0.05] transition-colors flex-shrink-0">
+        {/* Header */}
+        <header className="h-14 flex items-center px-4 gap-3 flex-shrink-0 border-b border-white/[0.06]" style={{ background: 'var(--surface-1)' }}>
+          <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-lg text-gray-400 hover:text-white">
             <Menu size={18}/>
           </button>
 
-          {/* Page title */}
-          <h1 className="text-sm font-display font-semibold text-gray-300 hidden lg:block capitalize">
-            {location.pathname.replace('/', '').replace('-', ' ') || 'Dashboard'}
-          </h1>
-
-          {/* Emergency stop banner */}
           {emergencyStop && (
-            <div className="flex items-center gap-1.5 bg-red-900/40 border border-red-500/60 text-red-400 text-xs px-3 py-1.5 rounded-xl animate-pulse font-semibold">
-              <AlertTriangle size={13}/><span>Emergency Stop Active</span>
+            <div className="flex items-center gap-1 bg-red-900/40 border border-red-500/50 text-red-400 text-xs px-2 py-1 rounded-lg animate-pulse font-semibold">
+              <AlertTriangle size={12}/> Emergency Stop
             </div>
           )}
 
-          {/* Notification bell */}
           <NotificationBell onClick={() => setNotifOpen(true)} />
 
-          {/* Portfolio metrics — right side */}
-          <div className="flex items-center gap-5 ml-auto">
-            {/* Connection status */}
+          <div className="flex items-center gap-4 ml-auto">
             <div className="hidden md:flex items-center gap-1.5">
-              <span className={clsx('w-2 h-2 rounded-full', connected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600')} />
-              <span className="text-[11px] text-gray-500 font-medium">{connected ? 'Live' : 'Offline'}</span>
+              <span className={clsx('w-1.5 h-1.5 rounded-full', connected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600')} />
+              <span className="text-[11px] text-gray-500">{connected ? 'Live' : 'Offline'}</span>
             </div>
-
-            {/* Portfolio value */}
             <div className="hidden sm:block text-right">
-              <div className="text-[10px] text-gray-500 font-medium tracking-wider uppercase">Portfolio</div>
-              <div className="text-sm font-bold text-white font-mono tabular-nums">
-                {portfolioNAV ? `$${portfolioNAV.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—'}
-              </div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider">Portfolio</div>
+              <div className="text-sm font-bold text-white font-mono">{portfolioNAV ? `$${portfolioNAV.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</div>
             </div>
-
-            {/* Day P&L */}
             <div className="text-right">
-              <div className="text-[10px] text-gray-500 font-medium tracking-wider uppercase">P&L</div>
-              <div className={clsx('text-sm font-bold font-mono tabular-nums', portfolioPnL>=0?'text-emerald-400':'text-rose-400')}>
-                {portfolioPnL>=0?'+':''}{portfolioPnL ? `$${Math.abs(portfolioPnL).toLocaleString(undefined,{maximumFractionDigits:0})}` : '$0'}
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider">P&L</div>
+              <div className={clsx('text-sm font-bold font-mono', portfolioPnL >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
+                {portfolioPnL >= 0 ? '+' : ''}{portfolioPnL ? `$${Math.abs(portfolioPnL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '$0'}
               </div>
-            </div>
-
-            {/* Time */}
-            <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-gray-600 font-mono">
-              {new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} IST
             </div>
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden" style={{background:'var(--surface-0)'}}>
-          <div className="p-5 md:p-6 max-w-[1400px] mx-auto w-full animate-fade-in" key={location.pathname}>
-            <Outlet/>
+        {/* Page content — scrollable */}
+        <main className="flex-1 overflow-y-auto" style={{ background: 'var(--surface-0)' }}>
+          <div className="p-4 md:p-6 max-w-[1400px] mx-auto w-full">
+            <Outlet />
           </div>
         </main>
 
         {/* Mobile bottom nav */}
-        <nav className="lg:hidden flex-shrink-0 border-t border-white/[0.04] flex items-center px-1 py-1.5 safe-area-inset-bottom" style={{background:'var(--surface-1)'}}>
-          {NAV_GROUPS[0].items.concat([NAV_GROUPS[1].items[0]]).map(item => {
+        <nav className="lg:hidden flex-shrink-0 flex items-center border-t border-white/[0.06] px-1 py-1" style={{ background: 'var(--surface-1)' }}>
+          {NAV[0].items.concat([NAV[1].items[0]]).map(item => {
             const Icon = item.icon
             return (
-              <NavLink key={item.to} to={item.to}
-                className={({ isActive }) => clsx(
-                  'flex-1 flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-xl transition-all active:scale-95',
-                  isActive ? 'text-blue-400' : 'text-gray-600'
-                )}>
-                <Icon size={18}/>
-                <span className="text-[9px] font-medium">{item.label}</span>
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => clsx(
+                'flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px]',
+                isActive ? 'text-blue-400' : 'text-gray-600'
+              )}>
+                <Icon size={17}/><span>{item.label}</span>
               </NavLink>
             )
           })}
-          {/* More button */}
-          <button onClick={()=>setOpen(true)}
-            className="flex-1 flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-xl text-gray-600 active:scale-95 transition-all">
-            <Menu size={18}/>
-            <span className="text-[9px] font-medium">More</span>
+          <button onClick={() => setMobileOpen(true)} className="flex-1 flex flex-col items-center gap-0.5 py-1.5 text-[9px] text-gray-600">
+            <Menu size={17}/><span>More</span>
           </button>
         </nav>
       </div>
-      {/* Notification slide-out panel */}
-      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
 
-      {/* First-time onboarding wizard */}
-      {showOnboarding && <OnboardingWizard onComplete={completeOnboarding} />}
+      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
     </div>
   )
 }
