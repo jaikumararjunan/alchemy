@@ -6,25 +6,31 @@ import { TrendingUp, TrendingDown, Zap, ShieldCheck, Activity, Bitcoin, RefreshC
 import clsx from 'clsx'
 
 function StatCard({ label, value, sub, trend, icon: Icon, color = 'blue', loading }) {
-  const colors = {
-    blue:  'from-blue-600/20 to-blue-600/5 border-blue-500/30 text-blue-400',
-    green: 'from-emerald-600/20 to-emerald-600/5 border-emerald-500/30 text-emerald-400',
-    red:   'from-red-600/20 to-red-600/5 border-red-500/30 text-red-400',
-    amber: 'from-amber-600/20 to-amber-600/5 border-amber-500/30 text-amber-400',
+  const palette = {
+    blue:  { bg:'from-blue-500/10 to-blue-600/5', border:'border-blue-500/20', icon:'text-blue-400', glow:'shadow-blue-500/10' },
+    green: { bg:'from-emerald-500/10 to-emerald-600/5', border:'border-emerald-500/20', icon:'text-emerald-400', glow:'shadow-emerald-500/10' },
+    red:   { bg:'from-rose-500/10 to-rose-600/5', border:'border-rose-500/20', icon:'text-rose-400', glow:'shadow-rose-500/10' },
+    amber: { bg:'from-amber-500/10 to-amber-600/5', border:'border-amber-500/20', icon:'text-amber-400', glow:'shadow-amber-500/10' },
   }
+  const p = palette[color]
   return (
-    <div className={clsx('card bg-gradient-to-br', colors[color])}>
+    <div className={clsx('rounded-2xl p-4 bg-gradient-to-br border transition-all duration-300 hover:shadow-lg', p.bg, p.border, p.glow)}
+      style={{background:'var(--surface-2)', borderColor:'var(--border)'}}>
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs text-gray-400 mb-1">{label}</p>
-          <p className="text-2xl font-bold text-white">
-            {loading ? <span className="animate-pulse text-gray-500">—</span> : value}
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{label}</p>
+          <p className="text-2xl font-display font-bold text-white tracking-tight">
+            {loading ? <span className="skeleton inline-block w-20 h-7" /> : value}
           </p>
           {sub && !loading && (
-            <p className={clsx('text-xs mt-1', trend >= 0 ? 'text-emerald-400' : 'text-red-400')}>{sub}</p>
+            <p className={clsx('text-xs font-medium', trend >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{sub}</p>
           )}
         </div>
-        {Icon && <div className="p-2 bg-gray-800/60 rounded-lg"><Icon size={20} className={colors[color].split(' ')[3]} /></div>}
+        {Icon && (
+          <div className={clsx('p-2.5 rounded-xl', `bg-gradient-to-br ${p.bg}`)}>
+            <Icon size={18} className={p.icon} />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -75,9 +81,9 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-gray-400">
-            Real-time overview · Alchemy AI Trading Platform
+          <h1 className="text-2xl font-display font-bold text-white tracking-tight">Dashboard</h1>
+          <p className="text-sm text-gray-500">
+            Real-time overview
             <span className={clsx('ml-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full',
               connected ? 'bg-emerald-900/30 text-emerald-400' : 'bg-gray-800 text-gray-500')}>
               <span className={clsx('w-1.5 h-1.5 rounded-full', connected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600')}/>
@@ -95,7 +101,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
         <StatCard
           label="Exchanges Connected"
           value={connectedExchanges}
@@ -135,7 +141,7 @@ export default function DashboardPage() {
 
       {/* Connected exchanges */}
       {connectedExchanges > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
           {Object.entries(tokens).map(([ex, t]) => (
             <div key={ex} className="card py-3 text-center">
               <div className="text-xs text-gray-500 mb-1 capitalize">{ex}</div>
@@ -151,7 +157,7 @@ export default function DashboardPage() {
 
       {/* Recent signals */}
       <div className="card">
-        <h2 className="section-title mb-3">Recent AI Signals</h2>
+        <h2 className="text-base font-display font-semibold text-gray-200 mb-3 tracking-tight">Recent AI Signals</h2>
         {recentSignals.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Zap size={24} className="mx-auto mb-2 opacity-30"/>
