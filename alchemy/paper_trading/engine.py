@@ -157,6 +157,15 @@ class PaperTradingEngine:
 
         log.info("paper.order_placed", user_id=user_id, symbol=symbol,
                  side=side, qty=quantity, status=order.status.value)
+
+        # Dispatch copy trades to followers
+        if order.status.value == "filled":
+            try:
+                from alchemy.api.copy_trading import execute_copy_trades
+                execute_copy_trades(user_id, symbol, side, quantity, order.filled_price or current_price)
+            except Exception:
+                pass
+
         return order
 
     def close_position(

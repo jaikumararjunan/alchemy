@@ -253,6 +253,9 @@ from alchemy.api.watchlist_routes   import router as watchlist_router
 from alchemy.api.alert_routes       import router as alert_router
 from alchemy.api.push_routes        import router as push_router
 from alchemy.api.journal_routes     import router as journal_router
+from alchemy.api.webhook_routes     import router as webhook_router
+from alchemy.api.advanced_orders    import router as advanced_router
+from alchemy.api.copy_trading       import router as social_router
 from fastapi import APIRouter
 
 # /api/* prefix  (what the built React frontend calls)
@@ -274,6 +277,9 @@ api.include_router(watchlist_router)
 api.include_router(alert_router)
 api.include_router(push_router)
 api.include_router(journal_router)
+api.include_router(webhook_router)
+api.include_router(advanced_router)
+api.include_router(social_router)
 app.include_router(metrics_router)
 api.include_router(audit_router)
 app.include_router(api)
@@ -295,6 +301,9 @@ app.include_router(watchlist_router)
 app.include_router(alert_router)
 app.include_router(push_router)
 app.include_router(journal_router)
+app.include_router(webhook_router)
+app.include_router(advanced_router)
+app.include_router(social_router)
 
 
 # ── Core endpoints ────────────────────────────────────────────────────────────

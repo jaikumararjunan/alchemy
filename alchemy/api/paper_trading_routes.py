@@ -182,6 +182,14 @@ async def update_prices(
     from alchemy.paper_trading.engine import get_paper_engine
     events = get_paper_engine().update_prices(user.user_id, body.prices)
 
+    # Check advanced orders (OCO, trailing stops)
+    try:
+        from alchemy.api.advanced_orders import check_advanced_orders
+        adv_events = check_advanced_orders(user.user_id, body.prices)
+        events.extend(adv_events)
+    except Exception:
+        pass
+
     # Send push + email notification for SL/TP triggers
     if events:
         try:
