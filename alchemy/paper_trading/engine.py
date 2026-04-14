@@ -118,7 +118,40 @@ class PaperTradingEngine:
         For limit orders: stored as pending, filled when price reaches limit.
         """
         portfolio = self.get_portfolio(user_id)
-        order_side = OrderSide(side.lower())
+
+        # Input validation
+        if not symbol or not symbol.strip():
+            order = PaperOrder(user_id=user_id, symbol="", side=OrderSide.BUY,
+                               order_type=OrderType.MARKET, quantity=0, price=0)
+            order.status = OrderStatus.REJECTED
+            order.notes = "Symbol is required"
+            log.warning("paper.order_rejected", reason=order.notes, symbol="", user_id=user_id)
+            return order
+        if quantity <= 0:
+            order = PaperOrder(user_id=user_id, symbol=symbol.upper(), side=OrderSide.BUY,
+                               order_type=OrderType.MARKET, quantity=quantity, price=current_price)
+            order.status = OrderStatus.REJECTED
+            order.notes = "Quantity must be positive"
+            log.warning("paper.order_rejected", reason=order.notes, symbol=symbol, user_id=user_id)
+            return order
+        if current_price <= 0:
+            order = PaperOrder(user_id=user_id, symbol=symbol.upper(), side=OrderSide.BUY,
+                               order_type=OrderType.MARKET, quantity=quantity, price=current_price)
+            order.status = OrderStatus.REJECTED
+            order.notes = "Price must be positive"
+            log.warning("paper.order_rejected", reason=order.notes, symbol=symbol, user_id=user_id)
+            return order
+
+        try:
+            order_side = OrderSide(side.lower())
+        except ValueError:
+            order = PaperOrder(user_id=user_id, symbol=symbol.upper(), side=OrderSide.BUY,
+                               order_type=OrderType.MARKET, quantity=quantity, price=current_price)
+            order.status = OrderStatus.REJECTED
+            order.notes = f"Invalid side: {side}. Use 'buy' or 'sell'"
+            log.warning("paper.order_rejected", reason=order.notes, symbol=symbol, user_id=user_id)
+            return order
+
         o_type = OrderType(order_type.lower())
 
         order = PaperOrder(
