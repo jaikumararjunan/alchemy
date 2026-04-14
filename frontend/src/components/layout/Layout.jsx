@@ -49,18 +49,13 @@ function NavItem({ to, icon: Icon, label, onClick }) {
   return (
     <NavLink to={to} onClick={onClick}
       className={({ isActive }) => clsx(
-        'group flex items-center gap-3 px-3 py-2 text-[13px] rounded-xl transition-all duration-200 mx-2 mb-0.5 relative',
+        'flex items-center gap-3 px-3 py-2 text-[13px] rounded-xl transition-all duration-200 mx-2 mb-0.5 relative',
         isActive
-          ? 'bg-gradient-to-r from-blue-600/15 to-indigo-600/10 text-blue-400 font-semibold'
+          ? 'bg-gradient-to-r from-blue-600/15 to-indigo-600/10 text-blue-400 font-semibold nav-active'
           : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.03] active:scale-[0.98]'
       )}>
-      {({ isActive }) => (
-        <>
-          {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-gradient-to-b from-blue-400 to-indigo-500" />}
-          <Icon size={15} className={clsx("flex-shrink-0 transition-colors", isActive ? "text-blue-400" : "text-gray-600 group-hover:text-gray-400")}/>
-          <span className="truncate">{label}</span>
-        </>
-      )}
+      <Icon size={15} className="flex-shrink-0"/>
+      <span className="truncate">{label}</span>
     </NavLink>
   )
 }
@@ -123,10 +118,10 @@ export default function Layout() {
 
       {/* Nav */}
       <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
-        {Object.entries(groups).map(([key, { label, items }]) => (
-          <div key={key} className="mb-2">
-            <div className="px-4 py-1 text-[10px] font-bold text-gray-600 uppercase tracking-widest">{label}</div>
-            {items.map(item => (
+        {NAV_GROUPS.map(group => (
+          <div key={group.label} className="mb-2">
+            <div className="px-4 py-1 text-[10px] font-bold text-gray-600 uppercase tracking-widest">{group.label}</div>
+            {group.items.map(item => (
               <NavItem key={item.to} {...item} onClick={()=>mobile&&setOpen(false)}/>
             ))}
           </div>

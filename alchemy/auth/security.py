@@ -352,8 +352,8 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self' 'nonce-{nonce}'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com; "
+        "font-src 'self' https://fonts.gstatic.com https://api.fontshare.com; "
         "img-src 'self' data: https:; "
         "connect-src 'self' ws: wss: "
         "https://api.binance.com https://fapi.binance.com "
