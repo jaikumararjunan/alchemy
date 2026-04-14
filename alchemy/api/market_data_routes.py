@@ -13,6 +13,7 @@ Endpoints:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from alchemy.auth.middleware import get_current_user, CurrentUser
 
 import structlog
@@ -111,3 +112,77 @@ async def funding_rates(user: CurrentUser = Depends(get_current_user)):
     bridge = get_delta_bridge()
     state = await bridge.get_market_state()
     return {"funding_rates": state.get("funding_rates", {}), "regime": state.get("regime", "unknown")}
+
+
+# ── Candles ───────────────────────────────────────────────────────────────────
+
+@router.get("/market/candles")
+async def get_candles(
+    symbol: str = Query("BTCUSDT", description="Trading pair"),
+    interval: str = Query("1h", description="1m, 5m, 15m, 1h, 4h, 1d"),
+    limit: int = Query(200, ge=10, le=1000),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Fetch historical candlestick data from Binance."""
+    from alchemy.services.candle_stream import fetch_candles
+    candles = await fetch_candles(symbol, interval, limit)
+    return {"symbol": symbol, "interval": interval, "candles": candles, "count": len(candles)}
+
+
+# ── Options Pricing ───────────────────────────────────────────────────────────
+
+class OptionPriceReq(BaseModel):
+    spot: float
+    strike: float
+    days_to_expiry: int
+    risk_free_rate: float = 0.05
+    volatility: float
+    option_type: str = "call"
+
+
+@router.post("/options/price")
+async def options_price(req: OptionPriceReq, user: CurrentUser = Depends(get_current_user)):
+    """Price a European option with full Greeks."""
+    from alchemy.services.options_pricer import price_option
+    T = req.days_to_expiry / 365
+    result = price_option(req.spot, req.strike, T, req.risk_free_rate, req.volatility, req.option_type)
+    return {"input": {"spot": req.spot, "strike": req.strike, "days": req.days_to_expiry,
+                      "iv": f"{req.volatility*100:.0f}%", "type": req.option_type}, **result.to_dict()}
+
+
+class IVReq(BaseModel):
+    market_price: float
+    spot: float
+    strike: float
+    days_to_expiry: int
+    risk_free_rate: float = 0.05
+    option_type: str = "call"
+
+
+@router.post("/options/iv")
+async def options_iv(req: IVReq, user: CurrentUser = Depends(get_current_user)):
+    """Solve for implied volatility."""
+    from alchemy.services.options_pricer import implied_volatility
+    T = req.days_to_expiry / 365
+    iv = implied_volatility(req.market_price, req.spot, req.strike, T, req.risk_free_rate, req.option_type)
+    return {"implied_volatility": round(iv, 4), "iv_pct": f"{iv*100:.1f}%"}
+
+
+@router.post("/options/scenarios")
+async def options_scenarios(req: OptionPriceReq, user: CurrentUser = Depends(get_current_user)):
+    """Run what-if scenarios (price, IV, time changes)."""
+    from alchemy.services.options_pricer import scenario_analysis
+    T = req.days_to_expiry / 365
+    return scenario_analysis(req.spot, req.strike, T, req.risk_free_rate, req.volatility, req.option_type)
+
+
+# ── Weekly Review ─────────────────────────────────────────────────────────────
+
+@router.get("/reports/weekly-review")
+async def weekly_review(
+    weeks_back: int = Query(1, ge=1, le=12),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """AI-powered weekly trade review with grade and action items."""
+    from alchemy.services.weekly_review import generate_weekly_review
+    return generate_weekly_review(user.user_id, weeks_back)
