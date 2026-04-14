@@ -696,3 +696,12 @@ async def correlation_matrix(
         "avg_correlation": round(avg_corr, 4),
         "diversification": diversification,
     }
+
+
+@router.get("/trade-insights")
+async def trade_insights(user: CurrentUser = Depends(get_current_user)):
+    """AI-powered trade journal analysis — patterns, streaks, improvement suggestions."""
+    from alchemy.services.trade_insights import analyze_trades
+    engine = get_paper_engine()
+    p = engine.get_portfolio(user.user_id)
+    return analyze_trades(p.trade_log)

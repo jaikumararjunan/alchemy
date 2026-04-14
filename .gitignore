@@ -69,3 +69,4 @@ node_modules/
 binance-key.txt
 *-key.txt
 *-secret.txt
+.github/workflows/

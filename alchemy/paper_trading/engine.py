@@ -574,6 +574,24 @@ class PaperTradingEngine:
         except Exception:
             pass
 
+        # Telegram alert (fire-and-forget)
+        try:
+            import asyncio
+            from alchemy.services.telegram_bot import broadcast_trade_alert
+            user = portfolio.user_id if hasattr(portfolio, 'user_id') else order.user_id
+            asyncio.get_event_loop().create_task(
+                broadcast_trade_alert(
+                    symbol=order.symbol,
+                    side=close_side,
+                    price=fill_price,
+                    pnl=round(pnl - fee, 2),
+                    strategy=pos.strategy or order.strategy,
+                    user_id=user,
+                )
+            )
+        except Exception:
+            pass
+
     # ── Leaderboard ───────────────────────────────────────────────────────────
 
     def get_leaderboard(self) -> list[dict]:
