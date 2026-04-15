@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<full-backup-content>
-    <!-- Include task database in backups -->
-    <include domain="database" path="alchemy_tasks.db" />
-    <!-- Exclude sensitive cache -->
-    <exclude domain="cache" path="." />
-</full-backup-content>
