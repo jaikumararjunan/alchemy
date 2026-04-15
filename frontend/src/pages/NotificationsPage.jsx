@@ -417,7 +417,7 @@ export default function NotificationsPage() {
         <div className="card">
           <h2 className="section-title">Delivery Log</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[500px] text-xs">
               <thead>
                 <tr className="text-gray-500 border-b border-gray-800">
                   {['Time','Provider','Event','Status','Message ID'].map(h =>

@@ -155,3 +155,30 @@
   border-radius: 9999px;
   background: linear-gradient(to bottom, #60A5FA, #6366F1);
 }
+
+/* ── Mobile Responsive Fixes ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Allow horizontal scroll on tables */
+  table { font-size: 12px; }
+  th, td { padding: 8px 10px !important; white-space: nowrap; }
+  
+  /* Compact card padding on mobile */
+  .card { padding: 12px; }
+  .card-sm { padding: 8px; }
+  
+  /* Stack grids on very small screens */
+  .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+  
+  /* Ensure touch targets are big enough */
+  button, a { min-height: 36px; }
+  
+  /* Fix page padding */
+  main > div { padding: 12px !important; }
+}
+
+/* Smooth horizontal scroll */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.overflow-x-auto::-webkit-scrollbar { display: none; }

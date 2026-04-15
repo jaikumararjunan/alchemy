@@ -406,7 +406,7 @@ export default function AutonomousTradingPage() {
             <BarChart3 size={13} className="text-blue-400"/> Trade History
           </h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[500px] text-xs">
               <thead>
                 <tr className="text-gray-500 border-b border-gray-800">
                   <th className="text-left py-2 px-2">Symbol</th>

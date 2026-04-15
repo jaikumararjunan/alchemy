@@ -606,8 +606,8 @@ function PositionsPanel({ api, positions }) {
 
   return (
     <>
-    <div className="rounded-xl border border-white/[0.04] overflow-hidden">
-      <table className="w-full">
+    <div className="rounded-xl border border-white/[0.04] overflow-hidden overflow-x-auto -mx-0">
+      <table className="w-full min-w-[700px]">
         <thead className="bg-white/[0.02]">
           <tr className="text-xs text-gray-400">
             <th className="text-left px-4 py-3">Symbol</th>
@@ -871,8 +871,8 @@ function BacktestPanel({ api, strategies }) {
               </div>
 
               {/* Trade list */}
-              <div className="rounded-xl border border-white/[0.04] overflow-hidden max-h-64 overflow-y-auto">
-                <table className="w-full text-xs">
+              <div className="rounded-xl border border-white/[0.04] overflow-hidden overflow-x-auto max-h-64 overflow-y-auto">
+                <table className="w-full min-w-[600px] text-xs">
                   <thead className="bg-white/[0.02] sticky top-0">
                     <tr className="text-gray-400">
                       <th className="text-left px-3 py-2">Entry</th>
@@ -1064,7 +1064,7 @@ function CapitalPanel({ api }) {
       <div className="rounded-xl border border-white/[0.04] bg-[var(--surface-2)] p-5">
         <h3 className="text-white font-semibold mb-3">{tree.length > 0 ? 'Strategy Buckets' : 'Quick Start — Choose a Template'}</h3>
         {tree.length === 0 ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
             {[
               ['conservative', 'Conservative', 'Capital preservation, 20% cash', Shield, 'text-green-400'],
               ['balanced', 'Balanced', 'Mix of trend + mean reversion', BarChart3, 'text-blue-400'],
@@ -1223,8 +1223,8 @@ function AIRecommendationsPanel({ api }) {
           <h3 className="text-white font-semibold mt-6 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-purple-400" /> Strategy Performance
           </h3>
-          <div className="rounded-xl border border-white/[0.04] overflow-hidden">
-            <table className="w-full text-xs">
+          <div className="rounded-xl border border-white/[0.04] overflow-hidden overflow-x-auto">
+            <table className="w-full min-w-[600px] text-xs">
               <thead className="bg-white/[0.02]"><tr className="text-gray-400">
                 <th className="text-left px-4 py-2">Strategy</th>
                 <th className="text-right px-4 py-2">Trades</th>

@@ -187,7 +187,7 @@ function TradeHistory({ api }) {
         </div>
       )}
 
-      <table className="w-full text-xs">
+      <table className="w-full min-w-[500px] text-xs">
         <thead><tr className="text-gray-500 border-b border-gray-800">
           {['Symbol','Exchange','Side','Strategy','P&L','Status','Closed'].map(h => (
             <th key={h} className="pb-2 text-left font-medium pr-3">{h}</th>

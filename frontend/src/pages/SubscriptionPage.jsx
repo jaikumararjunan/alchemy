@@ -175,7 +175,7 @@ export default function SubscriptionPage() {
       <div className="card">
         <h2 className="section-title mb-4">Quick Feature Comparison</h2>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[500px] text-xs">
             <thead>
               <tr className="border-b border-gray-800">
                 <th className="text-left pb-3 text-gray-400 font-medium">Feature</th>

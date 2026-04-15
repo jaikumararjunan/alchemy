@@ -114,7 +114,7 @@ export default function AnalyticsPage() {
         {perfList.length === 0 ? (
           <Empty msg="No strategy data yet — strategies are tracked as trades are recorded"/>
         ) : (
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[500px] text-xs">
             <thead>
               <tr className="text-gray-500 border-b border-gray-800">
                 {['Strategy','Trades','Wins','Win Rate','Net P&L','Avg P&L/Trade'].map(h => (
