@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Provides content:// URIs for camera captures stored in cache -->
+    <cache-path name="camera_images" path="." />
+    <!-- Provides content:// URIs for files in internal storage -->
+    <files-path name="internal_files" path="." />
+</paths>
