@@ -82,7 +82,7 @@ class UpdateKiteTokenRequest(BaseModel):
 async def register_token(req: RegisterRequest,
                           user: CurrentUser = Depends(get_current_user),
                           _2fa: CurrentUser = Depends(require_2fa)):
-    if req.exchange not in ("delta","binance","angel","kite","ib"):
+    if req.exchange not in ("delta","binance","angel","kite","ib","dhan"):
         raise HTTPException(400, f"Unknown exchange: {req.exchange}")
     if not req.api_key:
         raise HTTPException(400, "api_key is required")
@@ -281,6 +281,20 @@ async def _test_connection(exchange, data):
             if missing: return {"valid": False, "exchange": "angel", "error": f"Missing: {', '.join(missing)}"}
             return {"valid": True, "exchange": "angel", "mode": mode,
                     "message": "Angel credentials saved — TOTP login at trade time"}
+
+        elif exchange == "dhan":
+            token, cid = data.get("access_token") or data.get("api_key"), data.get("client_id")
+            if not token or not cid:
+                return {"valid": False, "exchange": "dhan", "error": "Client ID and Access Token required"}
+            import httpx
+            r = httpx.get("https://api.dhan.co/v2/fundlimit", timeout=8,
+                          headers={"access-token": token, "client-id": cid})
+            if r.status_code == 200:
+                bal = r.json().get("availabelBalance", r.json().get("availableBalance", "?"))
+                return {"valid": True, "exchange": "dhan", "mode": mode,
+                        "message": f"Dhan auth OK — available balance ₹{bal}"}
+            return {"valid": False, "exchange": "dhan", "mode": mode,
+                    "error": f"Dhan {r.status_code}: token invalid/expired or IP not allowed"}
 
         elif exchange == "kite":
             if not data.get("api_key") or not data.get("api_secret"):

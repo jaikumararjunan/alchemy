@@ -63,6 +63,22 @@ const EXCHANGES = {
       'TOTP Secret: in Angel One app → Profile → TOTP → Enable → copy secret key',
     ],
   },
+  dhan: {
+    name:'Dhan', logo:'Dhan', color:'#00B386',
+    bg:'bg-emerald-900/20 border-emerald-500/30',
+    description:'NSE / BSE equity, F&O, commodity — DhanHQ v2 API (live orders)',
+    paper_mode: true, docs:'https://dhanhq.co/docs/v2/',
+    fields:[
+      {key:'client_id', label:'Dhan Client ID', secret:false, placeholder:'e.g. 1000000123'},
+      {key:'api_key',   label:'Access Token',   secret:true,  placeholder:'DhanHQ access token (JWT)'},
+    ],
+    setup_steps:[
+      'Login at web.dhan.co → My Profile → Access DhanHQ APIs',
+      'Generate an Access Token (valid up to 30 days) and copy it',
+      'Client ID is shown on the same page / your profile',
+      'Keep PAPER mode on until you have tested; live orders also need 2FA + confirm',
+    ],
+  },
   kite: {
     name:'Zerodha Kite', logo:'Kite', color:'#387ED1',
     bg:'bg-blue-900/20 border-blue-500/30',

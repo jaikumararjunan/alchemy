@@ -7,7 +7,7 @@ from __future__ import annotations
 import structlog
 log = structlog.get_logger(__name__)
 
-ALL_EXCHANGES = ["kite", "delta", "binance", "ib", "angel"]
+ALL_EXCHANGES = ["kite", "delta", "binance", "ib", "angel", "dhan"]
 
 
 class TokenError(Exception):

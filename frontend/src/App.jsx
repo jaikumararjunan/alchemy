@@ -15,6 +15,7 @@ import DashboardPage      from '@/pages/DashboardPage'
 import PortfolioPage      from '@/pages/PortfolioPage'
 import SignalsPage        from '@/pages/SignalsPage'
 import CryptoPage         from '@/pages/CryptoPage'
+import DhanPage           from '@/pages/DhanPage'
 import RiskPage           from '@/pages/RiskPage'
 import AnalyticsPage      from '@/pages/AnalyticsPage'
 import StrategyPage       from '@/pages/StrategyPage'
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="portfolio"     element={<PortfolioPage />} />
           <Route path="signals"       element={<SignalsPage />} />
           <Route path="crypto"        element={<CryptoPage />} />
+          <Route path="dhan"          element={<DhanPage />} />
           <Route path="tokens"        element={<TokenManagerPage />} />
           <Route path="workflows"     element={<WorkflowPage />} />
           <Route path="risk"          element={<RiskPage />} />
